@@ -27,6 +27,7 @@
     "active": true,
     "targets": "all",
     "resources": {
+      "resources/toolbox_presets.json": "toolbox_presets.json",
       "resources/plugins/file_search/manifest.json": "plugins/file_search/manifest.json",
       "resources/plugins/file_search/index.js": "plugins/file_search/index.js",
       "resources/plugins/text_tools/manifest.json": "plugins/text_tools/manifest.json",
