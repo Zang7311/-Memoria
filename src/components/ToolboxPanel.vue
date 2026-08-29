@@ -4,6 +4,7 @@
 import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
 import type { ToolboxItem } from '../types'
+import PixelArtPanel from './PixelArtPanel.vue'
 
 const desktop = useDesktopStore()
 
@@ -12,6 +13,8 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 
 const executingId = ref<string | null>(null)
 const feedback = ref<{ ok: boolean; text: string } | null>(null)
+// —— 像素画板（批次3，前端组件）——
+const showPixelArt = ref(false)
 // —— 输出弹窗（执行有输出的工具时弹出完整内容，避免视觉盲区）——
 const showOutput = ref(false)
 const outputContent = ref('')
@@ -38,6 +41,18 @@ async function runItem(item: ToolboxItem) {
       '⚠️ WiFi 密码查看声明：\n\n· 仅查看本机已保存的 WiFi 密码（你自己的网络）\n· 所有处理均在本机完成，不会上传任何数据\n\n是否继续？'
     )
     if (!ok) return
+  }
+  // XOR 破解声明（仅限授权数据）
+  if (item.id === 'xor') {
+    const ok = confirm(
+      '⚠️ XOR 破解声明：\n\n· 仅用于破解你拥有或获授权测试的加密数据\n· 请勿用于非法破解他人数据\n\n是否继续？'
+    )
+    if (!ok) return
+  }
+  // 像素画板：前端交互组件，不执行命令
+  if (item.id === 'pixel-art') {
+    showPixelArt.value = true
+    return
   }
   // 需要输入参数的工具：先弹输入框
   let input: string | undefined
@@ -113,6 +128,8 @@ async function confirmDelete() {
 
 <template>
   <div class="toolbox-panel">
+    <!-- 像素画板（批次3，全屏遮罩） -->
+    <PixelArtPanel v-if="showPixelArt" @close="showPixelArt = false" />
     <div class="panel-header">
       <span class="panel-title">工具箱</span>
       <div class="header-btns">

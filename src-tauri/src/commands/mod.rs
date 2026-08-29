@@ -24,6 +24,7 @@ pub mod monitor_rules;
 pub mod toolbox_execute;
 pub mod tray;
 pub mod window_info;
+pub mod pixel_art;
 // —— AI-7 配置与诊断命令 ——
 pub mod config_export;
 pub mod config_get;
