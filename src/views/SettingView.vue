@@ -385,7 +385,7 @@ async function onAvatarFile(e: Event) {
     <!-- 标签导航 -->
     <div class="tabs">
       <div v-for="t in tabs" :key="t.key" class="tab" :class="{ active: activeTab === t.key }" @click="activeTab = t.key">
-        <span class="tab-icon">{{ t.icon }}</span>{{ t.label }}
+        {{ t.label }}
       </div>
     </div>
 
@@ -396,8 +396,8 @@ async function onAvatarFile(e: Event) {
           <div class="card-title">外观</div>
           <div class="row">
             <span class="label">主题</span>
-            <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">🌙 深色</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'light' }" @click="setting.setTheme('light')">☀️ 亮色</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">深色</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'light' }" @click="setting.setTheme('light')">亮色</button>
           </div>
           <div class="row theme-row">
             <span class="label">风格</span>
@@ -489,7 +489,7 @@ async function onAvatarFile(e: Event) {
           </label>
           <p class="hint">开启后每次启动自动提权（弹一次 UAC 确认），适合常需要管理员工具的深度用户；无需可关闭。</p>
           <div v-if="adminState === false" class="row">
-            <button class="btn primary" @click="requestAdmin">🔐 以管理员权限重启</button>
+            <button class="btn primary" @click="requestAdmin">以管理员权限重启</button>
           </div>
         </section>
 
@@ -627,7 +627,7 @@ async function onAvatarFile(e: Event) {
             </div>
             <div class="row" style="margin-top:10px">
               <input v-model="modelsPath" class="input long" placeholder="模型存储路径（可选，如 D:\ollama-models）" />
-              <button class="btn ghost" @click="doSaveModelsPath">💾 保存路径</button>
+              <button class="btn ghost" @click="doSaveModelsPath">保存路径</button>
             </div>
             <div v-if="pathMsg" class="msg">{{ pathMsg }}</div>
           </template>
