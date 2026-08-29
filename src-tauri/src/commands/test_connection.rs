@@ -30,6 +30,10 @@ pub async fn test_api_connection(
             success: true,
             message: format!("连接成功（HTTP {}）", r.status()),
         }),
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => Ok(TestConnectionResponse {
+            success: false,
+            message: "服务可达，但 API Key 无效或未授权（HTTP 401）。请检查：① Key 是否 sk- 开头且复制完整 ② 是否在当前平台的开放平台生成 ③ base_url 是否填对".to_string(),
+        }),
         Ok(r) => Ok(TestConnectionResponse {
             success: false,
             message: format!("服务可达但返回 HTTP {}", r.status()),
