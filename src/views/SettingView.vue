@@ -72,21 +72,30 @@ async function detectLocalAI() {
 async function detectVramOnly() {
   try { gpuVram.value = await detectGpuVram() } catch { gpuVram.value = [] }
 }
-// 部署前检查显存，不合适弹温馨提示
+// 部署前检查显存，不合适弹温馨提示（含「我偏不」强制继续按钮）
+const vramWarn = ref(false)
+const vramWarnText = ref('')
+const vramForceOk = ref(false)
 async function checkVram(): Promise<boolean> {
   try {
     const gpus = await detectGpuVram()
     gpuVram.value = gpus
     if (gpus.length === 0) return true
     const maxVram = Math.max(...gpus.map((g) => g.vram_mb))
-    if (maxVram < 4000) {
-      alert(`主人～ 你的显卡显存只有 ${(maxVram / 1024).toFixed(1)}GB，跑本地 AI 会比较吃力哦 😿\n\n建议用轻量模型（qwen2.5:3b 或更小），或改用 API 模式更流畅～`)
+    if (maxVram < 4000 && !vramForceOk.value) {
+      vramWarnText.value = `你的显卡显存只有 ${(maxVram / 1024).toFixed(1)}GB，跑本地 AI 会比较吃力哦 😿`
+      vramWarn.value = true
       return false
     }
     return true
   } catch {
     return true
   }
+}
+function vramIgnore() {
+  vramForceOk.value = true
+  vramWarn.value = false
+  doPullModel()
 }
 async function doPullModel() {
   if (!pullModelName.value.trim()) return
@@ -448,6 +457,19 @@ async function savePersona() {
               <button class="btn primary" @click="doPullModel">⬇️ 一键拉取模型</button>
             </div>
             <div v-if="localAiMsg" class="msg">{{ localAiMsg }}</div>
+
+            <!-- 显存不足弹窗（含「我偏不」强制继续） -->
+            <div v-if="vramWarn" class="modal-mask" @click.self="vramWarn = false">
+              <div class="modal vram-modal">
+                <div class="modal-title">🖥️ 显存不足提醒</div>
+                <p class="modal-body">{{ vramWarnText }}</p>
+                <p class="modal-tip">建议改用轻量模型（qwen2.5:3b 或更小），或切换 API 模式更流畅。</p>
+                <div class="modal-actions">
+                  <button class="btn ghost" @click="vramWarn = false">改用 API 模式</button>
+                  <button class="btn primary" @click="vramIgnore">我偏不，老子电脑很牛逼 🔥</button>
+                </div>
+              </div>
+            </div>
             <div class="row" style="margin-top:10px">
               <input v-model="modelsPath" class="input long" placeholder="模型存储路径（可选，如 D:\ollama-models）" />
               <button class="btn ghost" @click="doSaveModelsPath">💾 保存路径</button>
@@ -574,7 +596,7 @@ async function savePersona() {
     <div v-if="generalMsg" class="msg global">{{ generalMsg }}</div>
 
     <!-- 工具箱悬浮窗（AI-6） -->
-    <ToolboxPanel v-if="showToolbox" />
+    <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
   </div>
 </template>
 
@@ -624,6 +646,9 @@ async function savePersona() {
   font-size: 13px; background: transparent;
 }
 .mode.sel { border-color: var(--accent); background: var(--accent); color: #fff; }
+.vram-modal { width: 360px; text-align: left; }
+.modal-body { font-size: 13px; line-height: 1.6; margin: 0 0 8px; }
+.modal-tip { font-size: 12px; color: var(--text-secondary, #999); margin: 0 0 14px; line-height: 1.6; }
 .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; }
 .btn.primary { background: var(--accent, #ff7a94); color: #fff; }
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
