@@ -19,7 +19,7 @@ const setting = useSettingStore()
 const desktop = useDesktopStore()
 const sync = useSyncStore()
 const chat = useChatStore()
-const theme = computed(() => (setting.theme === 'dark' ? 'dark' : 'light'))
+const theme = computed(() => setting.theme || 'dark')
 
 // —— AI-5：插件管理面板开关 ——
 const showPlugins = ref(false)
