@@ -90,13 +90,19 @@ pub struct GpuVram {
 #[tauri::command]
 pub fn detect_gpu_vram() -> Vec<GpuVram> {
     let mut result = Vec::new();
-    let output = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_VideoController | ForEach-Object { \"$($_.Name)|$($_.AdapterRAM)\" }",
-        ])
-        .output();
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_VideoController | ForEach-Object { \"$($_.Name)|$($_.AdapterRAM)\" }",
+    ]);
+    // GUI 应用隐藏控制台窗口，避免弹出蓝色终端
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let output = cmd.output();
     if let Ok(o) = output {
         if o.status.success() {
             let text = String::from_utf8_lossy(&o.stdout);
@@ -123,9 +129,15 @@ pub fn set_ollama_models_path(path: String) -> Result<String, AppError> {
     if p.is_empty() {
         return Err(AppError::ConfigError("路径不能为空".into()));
     }
-    let out = std::process::Command::new("setx")
-        .args(["OLLAMA_MODELS", p])
-        .output()
+    let mut cmd = std::process::Command::new("setx");
+    cmd.args(["OLLAMA_MODELS", p]);
+    // 隐藏控制台窗口
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let out = cmd.output()
         .map_err(|e| AppError::ConfigError(format!("设置环境变量失败：{e}")))?;
     if out.status.success() {
         log::info!("[local-ai] 已设置 OLLAMA_MODELS = {p}");
