@@ -260,6 +260,11 @@ export function executeToolbox(item_id: string, input?: string): Promise<Execute
   return invoke('execute_toolbox', { request: { item_id, input: input ?? null } })
 }
 
+/** 保存像素画 PNG（data URL）到桌面，返回保存路径 */
+export function savePixelArt(dataUrl: string): Promise<string> {
+  return invoke('save_pixel_art', { dataUrl })
+}
+
 /** 新增/更新用户自定义工具箱条目 */
 export function saveToolboxItem(item: ToolboxItem): Promise<void> {
   return invoke('save_toolbox_item', { request: { item } })
