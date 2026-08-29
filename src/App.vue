@@ -18,6 +18,8 @@ const customStyle = computed<Record<string, string>>(() => {
   if (setting.bgColor) s['--bg-main'] = setting.bgColor
   if (setting.bgImage) s['--bg-image'] = `url("${setting.bgImage}")`
   if (setting.uiRadius != null) s['--radius-ui'] = `${setting.uiRadius}px`
+  if (setting.bubbleUserColor) s['--bubble-user-bg'] = setting.bubbleUserColor
+  if (setting.bubbleSuzuColor) s['--bubble-suzu-bg'] = setting.bubbleSuzuColor
   return s
 })
 
@@ -253,6 +255,9 @@ onMounted(async () => {
 .app-root .session-tab, .app-root .mode {
   border-radius: var(--radius-ui) !important;
 }
+/* 用户自定义气泡色：始终走变量，用户设置时覆盖主题默认（如 iOS 毛玻璃的红色气泡） */
+.app-root .bubble-suzu { background: var(--bubble-suzu-bg) !important; }
+.app-root .bubble-user { background: var(--bubble-user-bg) !important; }
 
 html,
 body {
