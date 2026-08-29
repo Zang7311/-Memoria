@@ -30,6 +30,7 @@ export const useSettingStore = defineStore('setting', () => {
   const bubbleUserColor = ref<string | null>(null)
   const bubbleSuzuColor = ref<string | null>(null)
   const uiThemes = ref<UiThemePreset[] | null>(null)
+  const runAsAdmin = ref(false)
   const contextLength = ref(10)
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
@@ -70,6 +71,7 @@ export const useSettingStore = defineStore('setting', () => {
     bubbleUserColor.value = c.bubble_user_color ?? null
     bubbleSuzuColor.value = c.bubble_suzu_color ?? null
     uiThemes.value = c.ui_themes ?? null
+    runAsAdmin.value = c.run_as_admin ?? false
     contextLength.value = c.context_length
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
@@ -229,6 +231,7 @@ export const useSettingStore = defineStore('setting', () => {
     theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiKeyPlain, apiModel, modelMode, depth,
     accentColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
+    runAsAdmin,
     saveThemePreset, switchThemePreset, deleteThemePreset,
     languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,

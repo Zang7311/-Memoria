@@ -221,6 +221,7 @@ export interface AppConfig {
   bubble_user_color?: string | null
   bubble_suzu_color?: string | null
   ui_themes?: UiThemePreset[] | null
+  run_as_admin?: boolean
 }
 
 /** 一套完整的外观自定义组合（用户命名保存，可一键切换） */
