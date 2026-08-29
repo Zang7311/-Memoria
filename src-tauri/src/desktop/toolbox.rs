@@ -13,13 +13,14 @@ pub fn list_items(resource_dir: &std::path::Path) -> Vec<ToolboxItem> {
     items
 }
 
-/// 从资源目录加载预设命令
-fn load_presets(resource_dir: &std::path::Path) -> Vec<ToolboxItem> {
-    let path = resource_dir.join("toolbox_presets.json");
-    match std::fs::read_to_string(&path) {
-        Ok(s) => serde_json::from_str::<Vec<ToolboxItem>>(&s).unwrap_or_default(),
+/// 加载预设命令（编译期内嵌，保证绿色版/安装版都能加载，不依赖运行时 resource_dir）
+fn load_presets(_resource_dir: &std::path::Path) -> Vec<ToolboxItem> {
+    match serde_json::from_str::<Vec<ToolboxItem>>(
+        include_str!("../../resources/toolbox_presets.json"),
+    ) {
+        Ok(items) => items,
         Err(e) => {
-            log::warn!("[toolbox] 加载预设失败：{e}");
+            log::warn!("[toolbox] 解析内嵌预设失败：{e}");
             Vec::new()
         }
     }
