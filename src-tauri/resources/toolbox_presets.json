@@ -1,135 +1,135 @@
 [
-  {
-    "id": "explorer",
-    "name": "资源管理器",
-    "icon": "📁",
-    "command": "explorer",
-    "enabled": true
-  },
-  {
-    "id": "calc",
-    "name": "计算器",
-    "icon": "🧮",
-    "command": "calc",
-    "enabled": true
-  },
-  {
-    "id": "notepad",
-    "name": "记事本",
-    "icon": "📝",
-    "command": "notepad",
-    "enabled": true
-  },
-  {
-    "id": "taskmgr",
-    "name": "任务管理器",
-    "icon": "🛠️",
-    "command": "taskmgr",
-    "enabled": true
-  },
-  {
-    "id": "lock",
-    "name": "锁定屏幕",
-    "icon": "🔒",
-    "command": "rundll32.exe user32.dll,LockWorkStation",
-    "enabled": true
-  },
-  {
-    "id": "shutdown-1h",
-    "name": "定时关机（1小时）",
-    "icon": "⏰",
-    "command": "shutdown /s /t 3600",
-    "enabled": true
-  },
-  {
-    "id": "cancel-shutdown",
-    "name": "取消关机",
-    "icon": "↩️",
-    "command": "shutdown /a",
-    "enabled": true
-  },
-  {
-    "id": "clean-temp",
-    "name": "清理临时文件",
-    "icon": "🧹",
-    "command": "powershell -NoProfile -Command \"Remove-Item -Recurse -Force $env:TEMP\\* -ErrorAction SilentlyContinue; Write-Output '临时文件已清理'\"",
-    "enabled": true
-  },
-  {
-    "id": "clean-memory",
-    "name": "清理内存",
-    "icon": "🧠",
-    "command": "powershell -NoProfile -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBUAHkAcABlAEQAZQBmAGkAbgBpAHQAaQBvAG4AIAAnAHUAcwBpAG4AZwAgAFMAeQBzAHQAZQBtADsAdQBzAGkAbgBnACAAUwB5AHMAdABlAG0ALgBSAHUAbgB0AGkAbQBlAC4ASQBuAHQAZQByAG8AcABTAGUAcgB2AGkAYwBlAHMAOwBwAHUAYgBsAGkAYwAgAGMAbABhAHMAcwAgAE0AewBbAEQAbABsAEkAbQBwAG8AcgB0ACgAIgBwAHMAYQBwAGkALgBkAGwAbAAiACkAXQBwAHUAYgBsAGkAYwAgAHMAdABhAHQAaQBjACAAZQB4AHQAZQByAG4AIABiAG8AbwBsACAARQBtAHAAdAB5AFcAbwByAGsAaQBuAGcAUwBlAHQAKABJAG4AdABQAHQAcgAgAGgAKQA7AFsARABsAGwASQBtAHAAbwByAHQAKAAiAGsAZQByAG4AZQBsADMAMgAuAGQAbABsACIAKQBdAHAAdQBiAGwAaQBjACAAcwB0AGEAdABpAGMAIABlAHgAdABlAHIAbgAgAGIAbwBvAGwAIABTAGUAdABTAHkAcwB0AGUAbQBGAGkAbABlAEMAYQBjAGgAZQBTAGkAegBlACgASQBuAHQAUAB0AHIAIABwACwAbABvAG4AZwAgAGEALABsAG8AbgBnACAAYgAsAGkAbgB0ACAAZgApADsAfQAnADsACgBHAGUAdAAtAFAAcgBvAGMAZQBzAHMAIAB8ACAARgBvAHIARQBhAGMAaAAtAE8AYgBqAGUAYwB0ACAAewAgAHQAcgB5ACAAewAgAFsATQBdADoAOgBFAG0AcAB0AHkAVwBvAHIAawBpAG4AZwBTAGUAdAAoACQAXwAuAEgAYQBuAGQAbABlACkAIAB9ACAAYwBhAHQAYwBoACAAewB9ACAAfQA7AAoAWwBHAEMAXQA6ADoAQwBvAGwAbABlAGMAdAAoACkAOwAKAHQAcgB5ACAAewAgAFsATQBdADoAOgBTAGUAdABTAHkAcwB0AGUAbQBGAGkAbABlAEMAYQBjAGgAZQBTAGkAegBlACgAWwBJAG4AdABQAHQAcgBdADoAOgBaAGUAcgBvACwAMAAsAC0AMQAsADAAKQAgAH0AIABjAGEAdABjAGgAIAB7AH0AOwAKAFcAcgBpAHQAZQAtAE8AdQB0AHAAdQB0ACAAJwBPAHAAdABpAG0AaQB6AGUAZAAnAA==",
-    "enabled": true
-  },
-  {
-    "id": "network",
-    "name": "网络设置",
-    "icon": "🌐",
-    "command": "control ncpa.cpl",
-    "enabled": true
-  },
-  {
-    "id": "empty-recycle-bin",
-    "name": "清空回收站",
-    "icon": "🗑️",
-    "command": "powershell -NoProfile -Command \"Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output 'Recycle bin cleared'\"",
-    "enabled": true
-  },
-  {
-    "id": "power-saver",
-    "name": "电源·省电",
-    "icon": "🔋",
-    "command": "powercfg /setactive a1841308-3541-4fab-bc81-f71556f20b4a",
-    "enabled": true
-  },
-  {
-    "id": "power-balanced",
-    "name": "电源·平衡",
-    "icon": "⚖️",
-    "command": "powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e",
-    "enabled": true
-  },
-  {
-    "id": "power-high",
-    "name": "电源·高性能",
-    "icon": "🚀",
-    "command": "powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
-    "enabled": true
-  },
-  {
-    "id": "open-cmd",
-    "name": "打开 CMD",
-    "icon": "💻",
-    "command": "start cmd",
-    "enabled": true
-  },
-  {
-    "id": "open-powershell",
-    "name": "打开 PowerShell",
-    "icon": "🖥️",
-    "command": "start powershell",
-    "enabled": true
-  },
-  {
-    "id": "port-list",
-    "name": "查看端口占用",
-    "icon": "🔌",
-    "command": "netstat -ano | findstr \"LISTENING\"",
-    "enabled": true
-  },
-  {
-    "id": "clipboard-history",
-    "name": "剪贴板历史",
-    "icon": "📋",
-    "command": "powershell -NoProfile -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBUAHkAcABlAEQAZQBmAGkAbgBpAHQAaQBvAG4AIAAnAHUAcwBpAG4AZwAgAFMAeQBzAHQAZQBtADsAdQBzAGkAbgBnACAAUwB5AHMAdABlAG0ALgBSAHUAbgB0AGkAbQBlAC4ASQBuAHQAZQByAG8AcABTAGUAcgB2AGkAYwBlAHMAOwBwAHUAYgBsAGkAYwAgAGMAbABhAHMAcwAgAEsAewBbAEQAbABsAEkAbQBwAG8AcgB0ACgAIgB1AHMAZQByADMAMgAuAGQAbABsACIAKQBdAHAAdQBiAGwAaQBjACAAcwB0AGEAdABpAGMAIABlAHgAdABlAHIAbgAgAHYAbwBpAGQAIABrAGUAeQBiAGQAXwBlAHYAZQBuAHQAKABiAHkAdABlACAAYgAsAGIAeQB0AGUAIABzACwAdQBpAG4AdAAgAGYALABVAEkAbgB0AFAAdAByACAAeAApADsAfQAnADsACgBbAEsAXQA6ADoAawBlAHkAYgBkAF8AZQB2AGUAbgB0ACgAMAB4ADUAQgAsADAALAAwACwAWwBVAEkAbgB0AFAAdAByAF0AOgA6AFoAZQByAG8AKQA7AAoAWwBLAF0AOgA6AGsAZQB5AGIAZABfAGUAdgBlAG4AdAAoADAAeAA1ADYALAAwACwAMAAsAFsAVQBJAG4AdABQAHQAcgBdADoAOgBaAGUAcgBvACkAOwAKAFsASwBdADoAOgBrAGUAeQBiAGQAXwBlAHYAZQBuAHQAKAAwAHgANQA2ACwAMAAsADIALABbAFUASQBuAHQAUAB0AHIAXQA6ADoAWgBlAHIAbwApADsACgBbAEsAXQA6ADoAawBlAHkAYgBkAF8AZQB2AGUAbgB0ACgAMAB4ADUAQgAsADAALAAyACwAWwBVAEkAbgB0AFAAdAByAF0AOgA6AFoAZQByAG8AKQA=",
-    "enabled": true
-  },
-  {
-    "id": "alarm",
-    "name": "小闹钟",
-    "icon": "⏱️",
-    "command": "start \"\" powershell -NoProfile -WindowStyle Hidden -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBBAHMAcwBlAG0AYgBsAHkATgBhAG0AZQAgAE0AaQBjAHIAbwBzAG8AZgB0AC4AVgBpAHMAdQBhAGwAQgBhAHMAaQBjADsACgBBAGQAZAAtAFQAeQBwAGUAIAAtAEEAcwBzAGUAbQBiAGwAeQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBXAGkAbgBkAG8AdwBzAC4ARgBvAHIAbQBzADsACgAkAG0AaQBuAHMAIAA9ACAAWwBNAGkAYwByAG8AcwBvAGYAdAAuAFYAaQBzAHUAYQBsAEIAYQBzAGkAYwAuAEkAbgB0AGUAcgBhAGMAdABpAG8AbgBdADoAOgBJAG4AcAB1AHQAQgBvAHgAKAAnAE0AaQBuAHUAdABlAHMAJwAsACAAJwBTAHUAegB1ACAAQQBsAGEAcgBtACcALAAgACcANQAnACkAOwAKACQAcwBlAGMAcwAgAD0AIABbAGkAbgB0AF0AJABtAGkAbgBzACAAKgAgADYAMAA7AAoAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBTAGUAYwBvAG4AZABzACAAJABzAGUAYwBzADsACgBbAFMAeQBzAHQAZQBtAC4AVwBpAG4AZABvAHcAcwAuAEYAbwByAG0AcwAuAE0AZQBzAHMAYQBnAGUAQgBvAHgAXQA6ADoAUwBoAG8AdwAoACIAJABtAGkAbgBzACAAbQBpAG4AIAB1AHAAIQAiACwAIAAnAFMAdQB6AHUAIABBAGwAYQByAG0AJwApAA==",
-    "enabled": true
-  }
+    {
+        "id":  "explorer",
+        "name":  "资源管理器",
+        "icon":  "📁",
+        "command":  "explorer",
+        "enabled":  true
+    },
+    {
+        "id":  "calc",
+        "name":  "计算器",
+        "icon":  "🧮",
+        "command":  "calc",
+        "enabled":  true
+    },
+    {
+        "id":  "notepad",
+        "name":  "记事本",
+        "icon":  "📝",
+        "command":  "notepad",
+        "enabled":  true
+    },
+    {
+        "id":  "taskmgr",
+        "name":  "任务管理器",
+        "icon":  "🛠️",
+        "command":  "taskmgr",
+        "enabled":  true
+    },
+    {
+        "id":  "lock",
+        "name":  "锁定屏幕",
+        "icon":  "🔒",
+        "command":  "rundll32.exe user32.dll,LockWorkStation",
+        "enabled":  true
+    },
+    {
+        "id":  "shutdown-1h",
+        "name":  "定时关机（1小时）",
+        "icon":  "⏰",
+        "command":  "shutdown /s /t 3600",
+        "enabled":  true
+    },
+    {
+        "id":  "cancel-shutdown",
+        "name":  "取消关机",
+        "icon":  "↩️",
+        "command":  "shutdown /a",
+        "enabled":  true
+    },
+    {
+        "id":  "clean-temp",
+        "name":  "清理临时文件",
+        "icon":  "🧹",
+        "command":  "powershell -NoProfile -Command \"Remove-Item -Recurse -Force $env:TEMP\\* -ErrorAction SilentlyContinue; Write-Output \u0027临时文件已清理\u0027\"",
+        "enabled":  true
+    },
+    {
+        "id":  "clean-memory",
+        "name":  "清理内存",
+        "icon":  "🧠",
+        "command":  "powershell -NoProfile -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBUAHkAcABlAEQAZQBmAGkAbgBpAHQAaQBvAG4AIAAnAHUAcwBpAG4AZwAgAFMAeQBzAHQAZQBtADsAdQBzAGkAbgBnACAAUwB5AHMAdABlAG0ALgBSAHUAbgB0AGkAbQBlAC4ASQBuAHQAZQByAG8AcABTAGUAcgB2AGkAYwBlAHMAOwBwAHUAYgBsAGkAYwAgAGMAbABhAHMAcwAgAE0AewBbAEQAbABsAEkAbQBwAG8AcgB0ACgAIgBwAHMAYQBwAGkALgBkAGwAbAAiACkAXQBwAHUAYgBsAGkAYwAgAHMAdABhAHQAaQBjACAAZQB4AHQAZQByAG4AIABiAG8AbwBsACAARQBtAHAAdAB5AFcAbwByAGsAaQBuAGcAUwBlAHQAKABJAG4AdABQAHQAcgAgAGgAKQA7AFsARABsAGwASQBtAHAAbwByAHQAKAAiAGsAZQByAG4AZQBsADMAMgAuAGQAbABsACIAKQBdAHAAdQBiAGwAaQBjACAAcwB0AGEAdABpAGMAIABlAHgAdABlAHIAbgAgAGIAbwBvAGwAIABTAGUAdABQAHIAbwBjAGUAcwBzAFcAbwByAGsAaQBuAGcAUwBlAHQAUwBpAHoAZQAoAEkAbgB0AFAAdAByACAAaAAsAGwAbwBuAGcAIABhACwAbABvAG4AZwAgAGIAKQA7AFsARABsAGwASQBtAHAAbwByAHQAKAAiAGsAZQByAG4AZQBsADMAMgAuAGQAbABsACIAKQBdAHAAdQBiAGwAaQBjACAAcwB0AGEAdABpAGMAIABlAHgAdABlAHIAbgAgAGIAbwBvAGwAIABTAGUAdABTAHkAcwB0AGUAbQBGAGkAbABlAEMAYQBjAGgAZQBTAGkAegBlACgASQBuAHQAUAB0AHIAIABhACwAbABvAG4AZwAgAGIALABsAG8AbgBnACAAYwAsAGkAbgB0ACAAZgApADsAfQAnADsACgBHAGUAdAAtAFAAcgBvAGMAZQBzAHMAIAB8ACAARgBvAHIARQBhAGMAaAAtAE8AYgBqAGUAYwB0ACAAewAgAHQAcgB5ACAAewAgAFsATQBdADoAOgBFAG0AcAB0AHkAVwBvAHIAawBpAG4AZwBTAGUAdAAoACQAXwAuAEgAYQBuAGQAbABlACkAIAB9ACAAYwBhAHQAYwBoACAAewB9ACAAfQA7AAoAdAByAHkAIAB7ACAAWwBNAF0AOgA6AFMAZQB0AFAAcgBvAGMAZQBzAHMAVwBvAHIAawBpAG4AZwBTAGUAdABTAGkAegBlACgAWwBTAHkAcwB0AGUAbQAuAEQAaQBhAGcAbgBvAHMAdABpAGMAcwAuAFAAcgBvAGMAZQBzAHMAXQA6ADoARwBlAHQAQwB1AHIAcgBlAG4AdABQAHIAbwBjAGUAcwBzACgAKQAuAEgAYQBuAGQAbABlACwALQAxACwALQAxACkAIAB9ACAAYwBhAHQAYwBoACAAewB9ADsACgB0AHIAeQAgAHsAIABbAE0AXQA6ADoAUwBlAHQAUwB5AHMAdABlAG0ARgBpAGwAZQBDAGEAYwBoAGUAUwBpAHoAZQAoAFsASQBuAHQAUAB0AHIAXQA6ADoAWgBlAHIAbwAsADAALAAwACwAMAApACAAfQAgAGMAYQB0AGMAaAAgAHsAfQA7AAoAWwBHAEMAXQA6ADoAQwBvAGwAbABlAGMAdAAoACkAOwBbAEcAQwBdADoAOgBXAGEAaQB0AEYAbwByAFAAZQBuAGQAaQBuAGcARgBpAG4AYQBsAGkAegBlAHIAcwAoACkAOwBbAEcAQwBdADoAOgBDAG8AbABsAGUAYwB0ACgAKQA7AAoAVwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIAAnAE0AZQBtAG8AcgB5ACAAbwBwAHQAaQBtAGkAegBlAGQAJwA=",
+        "enabled":  true
+    },
+    {
+        "id":  "network",
+        "name":  "网络设置",
+        "icon":  "🌐",
+        "command":  "control ncpa.cpl",
+        "enabled":  true
+    },
+    {
+        "id":  "empty-recycle-bin",
+        "name":  "清空回收站",
+        "icon":  "🗑️",
+        "command":  "powershell -NoProfile -Command \"Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output \u0027Recycle bin cleared\u0027\"",
+        "enabled":  true
+    },
+    {
+        "id":  "power-saver",
+        "name":  "电源·省电",
+        "icon":  "🔋",
+        "command":  "powercfg /setactive a1841308-3541-4fab-bc81-f71556f20b4a",
+        "enabled":  true
+    },
+    {
+        "id":  "power-balanced",
+        "name":  "电源·平衡",
+        "icon":  "⚖️",
+        "command":  "powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e",
+        "enabled":  true
+    },
+    {
+        "id":  "power-high",
+        "name":  "电源·高性能",
+        "icon":  "🚀",
+        "command":  "powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "enabled":  true
+    },
+    {
+        "id":  "open-cmd",
+        "name":  "打开 CMD",
+        "icon":  "💻",
+        "command":  "start cmd",
+        "enabled":  true
+    },
+    {
+        "id":  "open-powershell",
+        "name":  "打开 PowerShell",
+        "icon":  "🖥️",
+        "command":  "start powershell",
+        "enabled":  true
+    },
+    {
+        "id":  "port-list",
+        "name":  "查看端口占用",
+        "icon":  "🔌",
+        "command":  "netstat -ano | findstr \"LISTENING\"",
+        "enabled":  true
+    },
+    {
+        "id":  "clipboard-history",
+        "name":  "剪贴板历史",
+        "icon":  "📋",
+        "command":  "powershell -NoProfile -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBUAHkAcABlAEQAZQBmAGkAbgBpAHQAaQBvAG4AIAAnAHUAcwBpAG4AZwAgAFMAeQBzAHQAZQBtADsAdQBzAGkAbgBnACAAUwB5AHMAdABlAG0ALgBSAHUAbgB0AGkAbQBlAC4ASQBuAHQAZQByAG8AcABTAGUAcgB2AGkAYwBlAHMAOwBwAHUAYgBsAGkAYwAgAGMAbABhAHMAcwAgAEsAewBbAEQAbABsAEkAbQBwAG8AcgB0ACgAIgB1AHMAZQByADMAMgAuAGQAbABsACIAKQBdAHAAdQBiAGwAaQBjACAAcwB0AGEAdABpAGMAIABlAHgAdABlAHIAbgAgAHYAbwBpAGQAIABrAGUAeQBiAGQAXwBlAHYAZQBuAHQAKABiAHkAdABlACAAYgAsAGIAeQB0AGUAIABzACwAdQBpAG4AdAAgAGYALABVAEkAbgB0AFAAdAByACAAeAApADsAfQAnADsACgBbAEsAXQA6ADoAawBlAHkAYgBkAF8AZQB2AGUAbgB0ACgAMAB4ADUAQgAsADAALAAwACwAWwBVAEkAbgB0AFAAdAByAF0AOgA6AFoAZQByAG8AKQA7AAoAWwBLAF0AOgA6AGsAZQB5AGIAZABfAGUAdgBlAG4AdAAoADAAeAA1ADYALAAwACwAMAAsAFsAVQBJAG4AdABQAHQAcgBdADoAOgBaAGUAcgBvACkAOwAKAFsASwBdADoAOgBrAGUAeQBiAGQAXwBlAHYAZQBuAHQAKAAwAHgANQA2ACwAMAAsADIALABbAFUASQBuAHQAUAB0AHIAXQA6ADoAWgBlAHIAbwApADsACgBbAEsAXQA6ADoAawBlAHkAYgBkAF8AZQB2AGUAbgB0ACgAMAB4ADUAQgAsADAALAAyACwAWwBVAEkAbgB0AFAAdAByAF0AOgA6AFoAZQByAG8AKQA=",
+        "enabled":  true
+    },
+    {
+        "id":  "alarm",
+        "name":  "小闹钟",
+        "icon":  "⏱️",
+        "command":  "start \"\" powershell -NoProfile -WindowStyle Hidden -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBBAHMAcwBlAG0AYgBsAHkATgBhAG0AZQAgAE0AaQBjAHIAbwBzAG8AZgB0AC4AVgBpAHMAdQBhAGwAQgBhAHMAaQBjADsACgBBAGQAZAAtAFQAeQBwAGUAIAAtAEEAcwBzAGUAbQBiAGwAeQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBXAGkAbgBkAG8AdwBzAC4ARgBvAHIAbQBzADsACgAkAG0AaQBuAHMAIAA9ACAAWwBNAGkAYwByAG8AcwBvAGYAdAAuAFYAaQBzAHUAYQBsAEIAYQBzAGkAYwAuAEkAbgB0AGUAcgBhAGMAdABpAG8AbgBdADoAOgBJAG4AcAB1AHQAQgBvAHgAKAAnAE0AaQBuAHUAdABlAHMAJwAsACAAJwBTAHUAegB1ACAAQQBsAGEAcgBtACcALAAgACcANQAnACkAOwAKACQAcwBlAGMAcwAgAD0AIABbAGkAbgB0AF0AJABtAGkAbgBzACAAKgAgADYAMAA7AAoAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBTAGUAYwBvAG4AZABzACAAJABzAGUAYwBzADsACgBbAFMAeQBzAHQAZQBtAC4AVwBpAG4AZABvAHcAcwAuAEYAbwByAG0AcwAuAE0AZQBzAHMAYQBnAGUAQgBvAHgAXQA6ADoAUwBoAG8AdwAoACIAJABtAGkAbgBzACAAbQBpAG4AIAB1AHAAIQAiACwAIAAnAFMAdQB6AHUAIABBAGwAYQByAG0AJwApAA==",
+        "enabled":  true
+    }
 ]

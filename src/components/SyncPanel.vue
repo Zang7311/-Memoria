@@ -118,6 +118,19 @@ async function doSetPolicy(policy: 'newest' | 'local' | 'remote') {
       </span>
     </div>
 
+    <!-- 同步功能介绍 -->
+    <section class="card intro">
+      <div class="card-title">📖 同步功能简介</div>
+      <p class="hint">「同步」让多台设备上的铃·记忆体共享同一份记忆（对话历史与记忆集）。</p>
+      <ul class="intro-list">
+        <li>🖥️ <b>怎么用</b>：两台设备都装应用并<u>设置主密码</u> → 一台点「扫描设备」发现另一台（或手动输 IP）→ 选记忆集 → 点「开始同步」。</li>
+        <li>🔐 <b>前提</b>：双方都已设置并解锁主密码（记忆用 AES-256-GCM 加密传输）。</li>
+        <li>🔥 <b>端口</b>：UDP 54545（设备发现）+ TCP 54546（传输）。被防火墙/路由器隔离时请用「手动连接」。</li>
+        <li>⚔️ <b>冲突</b>：同一记忆在两台都改过时，按下方「冲突策略」解决（较新/保留本地/保留远程）。</li>
+        <li>➡️ <b>方向</b>：点「开始同步」＝ 从目标设备<u>拉取</u>记忆到本机；双向互通需两台各点一次。</li>
+      </ul>
+    </section>
+
     <!-- 连接模式切换 -->
     <section class="card">
       <div class="card-title">🔗 连接方式</div>
@@ -264,6 +277,15 @@ async function doSetPolicy(policy: 'newest' | 'local' | 'remote') {
 }
 .card-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
 .hint { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; line-height: 1.6; }
+.intro-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.9;
+}
+.intro-list li { margin-bottom: 2px; }
+.intro-list b { color: var(--text-main); }
 .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .label { font-size: 13px; color: var(--text-secondary); }
 .modes { display: flex; gap: 8px; margin-bottom: 10px; }

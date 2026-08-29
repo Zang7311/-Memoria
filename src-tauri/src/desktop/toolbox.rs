@@ -95,12 +95,29 @@ pub async fn execute(item: &ToolboxItem) -> Result<ExecuteToolboxResponse, AppEr
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let text = if !stdout.is_empty() { stdout } else { stderr };
-            Ok(ExecuteToolboxResponse {
-                success: output.status.success(),
-                output: if text.is_empty() { None } else { Some(text) },
-                error: None,
-            })
+            let success = output.status.success();
+            if success {
+                let text = if !stdout.is_empty() { stdout } else { stderr };
+                Ok(ExecuteToolboxResponse {
+                    success: true,
+                    output: if text.is_empty() { None } else { Some(text) },
+                    error: None,
+                })
+            } else {
+                // 失败时把原因放进 error（stderr 优先，否则 stdout，否则退出码），前端据此显示
+                let err = if !stderr.is_empty() {
+                    stderr
+                } else if !stdout.is_empty() {
+                    stdout
+                } else {
+                    format!("命令执行失败（退出码 {:?}）", output.status.code())
+                };
+                Ok(ExecuteToolboxResponse {
+                    success: false,
+                    output: None,
+                    error: Some(err),
+                })
+            }
         }
     }
 }
