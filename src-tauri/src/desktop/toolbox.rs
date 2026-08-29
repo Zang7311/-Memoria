@@ -74,11 +74,19 @@ pub fn delete_user_item(item_id: &str) -> Result<(), AppError> {
 }
 
 /// 异步执行工具命令（cmd /C），30 秒超时强制终止（kill_on_drop）
+/// Windows：隐藏控制台窗口（CREATE_NO_WINDOW），避免执行时弹出黑色终端；
+/// 命令输出仍通过 stdout 捕获并返回前端反馈。
 pub async fn execute(item: &ToolboxItem) -> Result<ExecuteToolboxResponse, AppError> {
     let mut cmd = tokio::process::Command::new("cmd");
     cmd.arg("/C").arg(&item.command);
     // 超时 drop 命令时强制杀死子进程，避免残留
     cmd.kill_on_drop(true);
+    // Windows 隐藏控制台窗口
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
 
     let result = tokio::time::timeout(Duration::from_secs(30), cmd.output()).await;
     match result {
