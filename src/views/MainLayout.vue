@@ -65,7 +65,7 @@ async function onPersonaChange(e: Event) {
         <!-- 顶部标题栏 -->
         <header class="top-bar">
           <div class="top-left">
-            <div class="title-avatar">🐾</div>
+            <div class="title-avatar">{{ setting.avatarSuzu || '铃' }}</div>
             <div class="title-info">
               <span class="title-name">铃</span>
               <StatusIndicator />
@@ -102,10 +102,10 @@ async function onPersonaChange(e: Event) {
               @change="onPersonaChange"
               title="一键切换人格（API 模式生效）"
             >
-              <option value="daily">🌸 日常</option>
-              <option value="chuunibyou">⚔️ 中二</option>
-              <option value="healing">🫂 治愈</option>
-              <option value="lewd">🔞 涩涩</option>
+              <option value="daily">日常</option>
+              <option value="chuunibyou">中二</option>
+              <option value="healing">治愈</option>
+              <option value="lewd">涩涩</option>
             </select>
             <span
               class="gear"

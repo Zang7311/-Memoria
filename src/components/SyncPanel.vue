@@ -120,30 +120,30 @@ async function doSetPolicy(policy: 'newest' | 'local' | 'remote') {
 
     <!-- 同步功能介绍 -->
     <section class="card intro">
-      <div class="card-title">📖 同步功能简介</div>
+      <div class="card-title">同步功能简介</div>
       <p class="hint">「同步」让多台设备上的铃·记忆体共享同一份记忆（对话历史与记忆集）。</p>
       <ul class="intro-list">
-        <li>🖥️ <b>怎么用</b>：两台设备都装应用并<u>设置主密码</u> → 一台点「扫描设备」发现另一台（或手动输 IP）→ 选记忆集 → 点「开始同步」。</li>
-        <li>🔐 <b>前提</b>：双方都已设置并解锁主密码（记忆用 AES-256-GCM 加密传输）。</li>
-        <li>🔥 <b>端口</b>：UDP 54545（设备发现）+ TCP 54546（传输）。被防火墙/路由器隔离时请用「手动连接」。</li>
-        <li>⚔️ <b>冲突</b>：同一记忆在两台都改过时，按下方「冲突策略」解决（较新/保留本地/保留远程）。</li>
-        <li>➡️ <b>方向</b>：点「开始同步」＝ 从目标设备<u>拉取</u>记忆到本机；双向互通需两台各点一次。</li>
+        <li><b>怎么用</b>：两台设备都装应用并<u>设置主密码</u> → 一台点「扫描设备」发现另一台（或手动输 IP）→ 选记忆集 → 点「开始同步」。</li>
+        <li><b>前提</b>：双方都已设置并解锁主密码（记忆用 AES-256-GCM 加密传输）。</li>
+        <li><b>端口</b>：UDP 54545（设备发现）+ TCP 54546（传输）。被防火墙/路由器隔离时请用「手动连接」。</li>
+        <li><b>冲突</b>：同一记忆在两台都改过时，按下方「冲突策略」解决（较新/保留本地/保留远程）。</li>
+        <li><b>方向</b>：点「开始同步」＝ 从目标设备<u>拉取</u>记忆到本机；双向互通需两台各点一次。</li>
       </ul>
     </section>
 
     <!-- 连接模式切换 -->
     <section class="card">
-      <div class="card-title">🔗 连接方式</div>
+      <div class="card-title">连接方式</div>
       <div class="modes">
-        <div class="mode" :class="{ sel: sync.connectionMode === 'auto' }" @click="switchMode('auto')">📡 自动发现</div>
-        <div class="mode" :class="{ sel: sync.connectionMode === 'manual' }" @click="switchMode('manual')">✋ 手动连接</div>
+        <div class="mode" :class="{ sel: sync.connectionMode === 'auto' }" @click="switchMode('auto')">自动发现</div>
+        <div class="mode" :class="{ sel: sync.connectionMode === 'manual' }" @click="switchMode('manual')">手动连接</div>
       </div>
       <p class="hint">UDP 广播可能被防火墙或 AP 隔离阻断，此时请切换「手动连接」直接输入目标 IP。</p>
     </section>
 
     <!-- 设备发现区 -->
     <section class="card">
-      <div class="card-title">📡 局域网设备</div>
+      <div class="card-title">局域网设备</div>
       <div class="row">
         <button class="btn primary" :disabled="sync.syncStatus === 'discovering' || sync.syncStatus === 'syncing'" @click="sync.discover()">
           {{ sync.syncStatus === 'discovering' ? '扫描中…' : '扫描设备' }}
@@ -176,7 +176,7 @@ async function doSetPolicy(policy: 'newest' | 'local' | 'remote') {
 
     <!-- 同步操作区 -->
     <section class="card">
-      <div class="card-title">🔄 同步记忆</div>
+      <div class="card-title">同步记忆</div>
       <div class="row">
         <span class="label">目标：</span>
         <span class="target-name">

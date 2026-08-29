@@ -6,8 +6,10 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { currentMonitor, getCurrentWindow, LogicalPosition, primaryMonitor } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { onMonitorTrigger } from '../utils/tauri'
+import { useSettingStore } from '../stores/settingStore'
 
 const win = getCurrentWindow()
+const setting = useSettingStore()
 
 const visible = ref(false)
 const message = ref('')
@@ -71,7 +73,7 @@ async function onClickBubble() {
     <transition name="fade">
       <div v-if="visible" class="bubble-card">
         <div class="bubble-head">
-          <span class="avatar">🐾</span>
+          <span class="avatar">{{ setting.avatarSuzu || '铃' }}</span>
           <span class="from">铃</span>
           <span class="ctx">{{ appName }}<template v-if="windowTitle"> · {{ windowTitle }}</template></span>
         </div>

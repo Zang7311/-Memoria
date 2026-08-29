@@ -4,9 +4,11 @@
 import { computed } from 'vue'
 import type { Message } from '../types'
 import { useChatStore } from '../stores/chatStore'
+import { useSettingStore } from '../stores/settingStore'
 
 const props = defineProps<{ message: Message }>()
 const chat = useChatStore()
+const setting = useSettingStore()
 
 // 是否正在流式输出（光标闪烁条件）
 const isStreaming = computed(() => chat.streamingId === props.message.id)
@@ -26,7 +28,7 @@ const isUser = computed(() => props.message.role === 'user')
 <template>
   <div class="bubble-row" :class="isUser ? 'row-user' : 'row-suzu'">
     <!-- 铃的头像（猫娘） -->
-    <div v-if="!isUser" class="avatar">🐾</div>
+    <div v-if="!isUser" class="avatar">{{ setting.avatarSuzu || '铃' }}</div>
 
     <div class="bubble" :class="isUser ? 'bubble-user' : 'bubble-suzu'">
       <span class="content">{{ message.content }}</span>

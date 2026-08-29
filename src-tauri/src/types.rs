@@ -512,6 +512,25 @@ pub struct AppConfig {
     /// 是否已设置过主密码（true 表示已设置；解锁状态 unlocked 是内存态，不落盘）
     #[serde(default)]
     pub has_master_password: bool,
+    /// —— 外观自定义（用户可自行调整，均选填，大版本开放给用户自定义）——
+    /// 主色 accent（十六进制，如 #ff7a94）
+    #[serde(default)]
+    pub accent_color: Option<String>,
+    /// 主界面背景色（十六进制）
+    #[serde(default)]
+    pub bg_color: Option<String>,
+    /// 背景图本地路径（可选，优先于背景色）
+    #[serde(default)]
+    pub bg_image: Option<String>,
+    /// 铃的头像（emoji / 文字 / 图片路径）
+    #[serde(default)]
+    pub avatar_suzu: Option<String>,
+    /// 用户头像（emoji / 文字 / 图片路径）
+    #[serde(default)]
+    pub avatar_user: Option<String>,
+    /// UI 圆角（px，0=无圆角）
+    #[serde(default)]
+    pub ui_radius: Option<u8>,
 }
 
 fn default_config_version() -> u32 {

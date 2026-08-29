@@ -110,7 +110,7 @@ onMounted(() => {
   <aside class="memory-panel" :class="{ expanded }">
     <!-- 面板头部 -->
     <div class="panel-header" @click="expanded = !expanded">
-      <span v-if="expanded" class="panel-title">📒 记忆</span>
+      <span v-if="expanded" class="panel-title">记忆</span>
       <span v-else class="collapsed-icon" title="展开记忆面板">📒</span>
       <span class="toggle-btn">{{ expanded ? '❯' : '❮' }}</span>
     </div>

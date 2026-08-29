@@ -53,7 +53,7 @@ async function handleSend() {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 8px 16px 22px;
   border-top: 1px solid var(--border, rgba(128, 128, 128, 0.2));
 }
 .input-area {
