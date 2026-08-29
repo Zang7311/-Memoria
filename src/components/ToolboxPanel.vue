@@ -3,10 +3,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
+import { useSettingStore } from '../stores/settingStore'
 import type { ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
 
 const desktop = useDesktopStore()
+const setting = useSettingStore()
 
 // 关闭工具箱（父组件监听后隐藏）
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -153,14 +155,14 @@ async function confirmDelete() {
         @click="runItem(item)"
         @contextmenu.prevent="requestDelete(item)"
       >
-        <span class="cell-icon">{{ item.icon }}</span>
+        <span v-if="setting.emojiMode !== 'off'" class="cell-icon">{{ item.icon }}</span>
         <span class="cell-name">{{ item.name }}</span>
         <span v-if="executingId === item.id" class="spinner">⏳</span>
       </div>
       <div v-if="desktop.toolboxLoading" class="cell loading-cell">加载中…</div>
     </div>
 
-    <div class="panel-footer">💡 清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</div>
+    <div class="panel-footer">清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</div>
 
     <!-- 输出弹窗：完整显示命令输出（端口/清理等），可滚动，无视觉盲区 -->
     <div v-if="showOutput" class="modal-mask" @click.self="showOutput = false">

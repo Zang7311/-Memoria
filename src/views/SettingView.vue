@@ -376,6 +376,12 @@ async function onAvatarFile(e: Event) {
     generalMsg.value = `选择失败：${err}`
   }
 }
+// —— Emoji 显示模式（默认关闭）——
+async function setEmojiMode(m: 'off' | 'partial' | 'all') {
+  setting.emojiMode = m
+  await setting.update({ emoji_mode: m })
+  generalMsg.value = `Emoji 显示已设为：${m === 'off' ? '关闭' : m === 'partial' ? '局部' : '全部'}`
+}
 </script>
 
 <template>
@@ -406,6 +412,12 @@ async function onAvatarFile(e: Event) {
             <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">极简文字</button>
             <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">iOS 扁平</button>
             <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">iOS 毛玻璃</button>
+          </div>
+          <div class="row theme-row">
+            <span class="label">Emoji</span>
+            <button class="btn ghost" :class="{ on: setting.emojiMode === 'off' }" @click="setEmojiMode('off')">关闭</button>
+            <button class="btn ghost" :class="{ on: setting.emojiMode === 'partial' }" @click="setEmojiMode('partial')">局部</button>
+            <button class="btn ghost" :class="{ on: setting.emojiMode === 'all' }" @click="setEmojiMode('all')">全部</button>
           </div>
           <div class="ui-custom">
             <div class="field">

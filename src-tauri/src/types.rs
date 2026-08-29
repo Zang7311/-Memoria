@@ -555,6 +555,9 @@ pub struct AppConfig {
     /// 是否始终以管理员身份运行（用户自选；开启后启动时自动提权，需弹 UAC）
     #[serde(default)]
     pub run_as_admin: bool,
+    /// Emoji 显示模式："off"(默认关闭)/"partial"(局部)/"all"(全部开启)
+    #[serde(default)]
+    pub emoji_mode: Option<String>,
 }
 
 /// 一套完整的外观自定义组合（用户命名保存，可一键切换）
