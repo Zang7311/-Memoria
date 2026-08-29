@@ -558,6 +558,9 @@ pub struct AppConfig {
     /// Emoji 显示模式："off"(默认关闭)/"partial"(局部)/"all"(全部开启)
     #[serde(default)]
     pub emoji_mode: Option<String>,
+    /// 是否允许 AI（铃）调用工具箱工具（默认关闭；开启后消息匹配工具意图时自动执行）
+    #[serde(default)]
+    pub ai_toolbox: bool,
 }
 
 /// 一套完整的外观自定义组合（用户命名保存，可一键切换）

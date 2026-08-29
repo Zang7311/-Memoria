@@ -343,6 +343,7 @@ async function savePreset() {
 // —— 软件内选择图片（背景图 / 头像）——
 const bgFileInput = ref<HTMLInputElement | null>(null)
 const avatarFileInput = ref<HTMLInputElement | null>(null)
+const userAvatarFileInput = ref<HTMLInputElement | null>(null)
 function fileToDataUrl(f: File): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader()
@@ -351,8 +352,9 @@ function fileToDataUrl(f: File): Promise<string> {
     r.readAsDataURL(f)
   })
 }
-function pickImage(kind: 'bg' | 'avatar') {
-  ;(kind === 'bg' ? bgFileInput.value : avatarFileInput.value)?.click()
+function pickImage(kind: 'bg' | 'avatar' | 'user') {
+  const el = kind === 'bg' ? bgFileInput.value : kind === 'avatar' ? avatarFileInput.value : userAvatarFileInput.value
+  el?.click()
 }
 async function onBgFile(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
@@ -376,11 +378,28 @@ async function onAvatarFile(e: Event) {
     generalMsg.value = `选择失败：${err}`
   }
 }
+async function onUserAvatarFile(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!f) return
+  try {
+    const path = await saveUiImage(await fileToDataUrl(f), 'user')
+    setting.avatarUser = path
+    generalMsg.value = '你的头像已选择，点击「应用自定义外观」生效'
+  } catch (err) {
+    generalMsg.value = `选择失败：${err}`
+  }
+}
 // —— Emoji 显示模式（默认关闭）——
 async function setEmojiMode(m: 'off' | 'partial' | 'all') {
   setting.emojiMode = m
   await setting.update({ emoji_mode: m })
   generalMsg.value = `Emoji 显示已设为：${m === 'off' ? '关闭' : m === 'partial' ? '局部' : '全部'}`
+}
+// —— AI 调用工具箱（默认关闭）——
+async function toggleAiToolbox() {
+  setting.aiToolbox = !setting.aiToolbox
+  await setting.update({ ai_toolbox: setting.aiToolbox })
+  generalMsg.value = setting.aiToolbox ? '✓ 已开启：铃可直接执行工具箱工具' : '已关闭：铃不调用工具箱'
 }
 </script>
 
@@ -452,7 +471,11 @@ async function setEmojiMode(m: 'off' | 'partial' | 'all') {
             </div>
             <div class="field">
               <label>你的头像（选填）</label>
-              <input v-model="setting.avatarUser" class="input" placeholder="（留空则不显示）" />
+              <div class="row">
+                <input v-model="setting.avatarUser" class="input" placeholder="（留空则不显示）" style="flex:1" />
+                <button class="btn ghost" @click="pickImage('user')">选头像图</button>
+              </div>
+              <input ref="userAvatarFileInput" type="file" accept="image/*" style="display:none" @change="onUserAvatarFile" />
             </div>
             <div class="field">
               <label>圆角：{{ setting.uiRadius ?? 12 }}px</label>
@@ -500,6 +523,11 @@ async function setEmojiMode(m: 'off' | 'partial' | 'all') {
             <span class="label">启动时始终以管理员运行（自动提权）</span>
           </label>
           <p class="hint">开启后每次启动自动提权（弹一次 UAC 确认），适合常需要管理员工具的深度用户；无需可关闭。</p>
+          <label class="switch-wrap" style="margin-top:10px">
+            <input type="checkbox" :checked="setting.aiToolbox" @change="toggleAiToolbox" class="switch" />
+            <span class="label">允许 AI 调用工具箱工具</span>
+          </label>
+          <p class="hint">开启后，铃可直接执行工具箱工具（如清理内存、ping、截图、查 IP 等），默认关闭。</p>
           <div v-if="adminState === false" class="row">
             <button class="btn primary" @click="requestAdmin">以管理员权限重启</button>
           </div>

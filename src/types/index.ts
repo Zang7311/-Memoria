@@ -226,6 +226,7 @@ export interface AppConfig {
   ui_themes?: UiThemePreset[] | null
   run_as_admin?: boolean
   emoji_mode?: string | null
+  ai_toolbox?: boolean
 }
 
 /** 一套完整的外观自定义组合（用户命名保存，可一键切换） */

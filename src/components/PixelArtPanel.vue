@@ -6,7 +6,7 @@ import { savePixelArt } from '../utils/tauri'
 const emit = defineEmits<{ close: [] }>()
 const SIZE = 32
 const canvas = ref<HTMLCanvasElement | null>(null)
-const colors = ['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff7a94', '#8a2be2', '#ff8800', '#808080']
+const colors = ['#000000', '#ffffff', '#ff0000', '#ff7700', '#ffff00', '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff', '#ff00ff', '#ff0088', '#ff7a94', '#ffd700', '#c0c0c0', '#a0a0a0', '#665544', '#553300', '#332200']
 const curColor = ref('#ff7a94')
 const msg = ref('')
 let drawing = false
@@ -75,6 +75,7 @@ onMounted(clear)
           :style="{ background: c }"
           @click="curColor = c"
         />
+        <input v-model="curColor" type="color" class="pp-color-custom" title="自定义颜色" />
       </div>
       <div class="pp-btns">
         <button class="btn ghost" @click="clear">清空</button>
@@ -120,6 +121,7 @@ onMounted(clear)
 .pp-colors { display: flex; gap: 6px; flex-wrap: wrap; max-width: 320px; }
 .pp-color { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(128, 128, 128, 0.4); cursor: pointer; }
 .pp-color.sel { border-color: var(--accent, #ff7a94); transform: scale(1.15); }
+.pp-color-custom { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(128, 128, 128, 0.4); cursor: pointer; padding: 0; background: transparent; }
 .pp-btns { display: flex; gap: 6px; }
 canvas {
   image-rendering: pixelated;
