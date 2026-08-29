@@ -278,7 +278,7 @@ async function confirmDelete() {
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 10px;
   flex: 1;
   overflow-y: auto;
   padding-right: 2px;
@@ -289,9 +289,10 @@ async function confirmDelete() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 10px 4px;
-  border-radius: 10px;
+  gap: 6px;
+  padding: 14px 6px;
+  min-height: 82px;
+  border-radius: 12px;
   background: var(--input-bg, #2a272b);
   cursor: pointer;
   transition: transform 0.12s ease, background 0.12s ease;
@@ -304,11 +305,11 @@ async function confirmDelete() {
 .cell.running { opacity: 0.6; }
 .cell.disabled { opacity: 0.4; }
 .cell-icon {
-  font-size: 22px;
+  font-size: 32px;
   line-height: 1;
 }
 .cell-name {
-  font-size: 11px;
+  font-size: 13px;
   text-align: center;
   word-break: break-all;
 }

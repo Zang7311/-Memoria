@@ -45,5 +45,6 @@ pub fn default_config() -> AppConfig {
         ui_themes: None,
         run_as_admin: false,
         emoji_mode: None,
+        ai_toolbox: false,
     }
 }

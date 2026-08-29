@@ -26,6 +26,8 @@ const time = computed(() => {
 const isUser = computed(() => props.message.role === 'user')
 // 铃的头像：图片路径则显示图片
 const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
+// 用户头像：图片路径则显示图片，否则 emoji/文字
+const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl(setting.avatarUser!) : null))
 </script>
 
 <template>
@@ -45,7 +47,10 @@ const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(set
       <div class="time">{{ time }}</div>
     </div>
 
-    <div v-if="isUser" class="avatar avatar-user">🧑</div>
+    <div v-if="isUser" class="avatar avatar-user">
+      <img v-if="userAvatarImg" :src="userAvatarImg" class="avatar-img" />
+      <template v-else>{{ setting.avatarUser || '🧑' }}</template>
+    </div>
   </div>
 </template>
 
