@@ -11,8 +11,10 @@ import {
 } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getMonitorRules, onMonitorTrigger, toggleMonitoring } from '../utils/tauri'
+import { useSettingStore } from '../stores/settingStore'
 
 const win = getCurrentWindow()
+const setting = useSettingStore()
 
 // —— 拖拽状态 ——
 const dragging = ref(false)
@@ -154,7 +156,7 @@ function menuExit() {
   >
     <!-- 猫娘圆球：呼吸动画 / 消息闪烁 -->
     <div class="ball" :class="{ breathing: !dragging && !hasMessage, flashing: hasMessage, dragging }">
-      <span class="ball-face">🐾</span>
+      <span class="ball-face">{{ setting.avatarSuzu || '铃' }}</span>
     </div>
 
     <!-- 右键菜单 -->

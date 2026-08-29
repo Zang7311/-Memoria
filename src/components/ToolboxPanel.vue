@@ -107,7 +107,7 @@ async function confirmDelete() {
 <template>
   <div class="toolbox-panel">
     <div class="panel-header">
-      <span class="panel-title">🧰 工具箱</span>
+      <span class="panel-title">工具箱</span>
       <div class="header-btns">
         <button class="add-btn" title="添加工具" @click="openAdd">＋</button>
         <button class="close-btn" title="关闭工具箱" @click="emit('close')">✕</button>

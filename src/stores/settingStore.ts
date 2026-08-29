@@ -20,6 +20,13 @@ export const useSettingStore = defineStore('setting', () => {
   const loaded = ref(false)
   const firstLaunch = ref(true)
   const theme = ref<'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass'>('dark')
+  // —— 外观自定义（用户可自行调整，持久化到 config.json）——
+  const accentColor = ref<string | null>(null)
+  const bgColor = ref<string | null>(null)
+  const bgImage = ref<string | null>(null)
+  const avatarSuzu = ref<string | null>(null)
+  const avatarUser = ref<string | null>(null)
+  const uiRadius = ref<number | null>(null)
   const contextLength = ref(10)
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
@@ -51,6 +58,12 @@ export const useSettingStore = defineStore('setting', () => {
   function applyConfig(c: AppConfig) {
     firstLaunch.value = c.first_launch
     theme.value = (c.theme as 'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass') || 'dark'
+    accentColor.value = c.accent_color ?? null
+    bgColor.value = c.bg_color ?? null
+    bgImage.value = c.bg_image ?? null
+    avatarSuzu.value = c.avatar_suzu ?? null
+    avatarUser.value = c.avatar_user ?? null
+    uiRadius.value = c.ui_radius ?? null
     contextLength.value = c.context_length
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
@@ -154,6 +167,7 @@ export const useSettingStore = defineStore('setting', () => {
   return {
     loaded, firstLaunch,
     theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiKeyPlain, apiModel, modelMode, depth,
+    accentColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,

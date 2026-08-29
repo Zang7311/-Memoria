@@ -211,6 +211,13 @@ export interface AppConfig {
   persona?: string
   master_password_salt?: string | null
   has_master_password: boolean
+  /** 外观自定义（用户可自行调整，均选填） */
+  accent_color?: string | null
+  bg_color?: string | null
+  bg_image?: string | null
+  avatar_suzu?: string | null
+  avatar_user?: string | null
+  ui_radius?: number | null
 }
 
 export interface GetConfigResponse {

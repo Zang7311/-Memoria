@@ -27,7 +27,6 @@ watch(
 <template>
   <div ref="scrollRef" class="chat-list">
     <div v-if="chat.messages.length === 0" class="empty-hint">
-      <span class="paw">🐾</span>
       <p>和铃说点什么吧～</p>
     </div>
     <template v-for="msg in chat.messages" :key="msg.id">

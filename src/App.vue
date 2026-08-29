@@ -11,6 +11,15 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const setting = useSettingStore()
 const theme = computed(() => setting.theme || 'dark')
+// 外观自定义：把用户自定值映射为 CSS 变量（覆盖主题色/背景/圆角，仅添加已设置的）
+const customStyle = computed<Record<string, string>>(() => {
+  const s: Record<string, string> = {}
+  if (setting.accentColor) s['--accent'] = setting.accentColor
+  if (setting.bgColor) s['--bg-main'] = setting.bgColor
+  if (setting.bgImage) s['--bg-image'] = `url("${setting.bgImage}")`
+  if (setting.uiRadius != null) s['--radius-ui'] = `${setting.uiRadius}px`
+  return s
+})
 
 // 当前窗口 label（Tauri 环境；非 Tauri 环境默认主窗口）
 const winLabel = ref('main')
@@ -43,7 +52,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-root" :class="theme">
+  <div class="app-root" :class="theme" :style="customStyle">
     <!-- 首次启动引导（仅主窗口） -->
     <OnboardingView v-if="winLabel === 'main' && firstLaunch && !onboarded" />
     <MainLayout v-else-if="winLabel === 'main'" />
@@ -231,6 +240,19 @@ onMounted(async () => {
 /* 毛玻璃需多彩背景才能体现模糊 → 主界面加柔和渐变 */
 .app-root.ios-glass { background: linear-gradient(160deg, #2e2e40 0%, #23233a 45%, #3a2440 100%); }
 .app-root.ios-glass .main-layout { background: transparent !important; }
+/* 用户自定义背景（图片优先，无图则用背景色） */
+.app-root .main-layout {
+  background-color: var(--bg-main, #1d1b1f);
+  background-image: var(--bg-image, none);
+  background-size: cover;
+  background-position: center;
+}
+/* 用户自定义圆角：未设置 --radius-ui 时该声明无效，自动回退各组件默认圆角 */
+.app-root .card, .app-root .btn, .app-root .bubble-user, .app-root .bubble-suzu,
+.app-root textarea, .app-root .input, .app-root .settings-panel,
+.app-root .session-tab, .app-root .mode {
+  border-radius: var(--radius-ui) !important;
+}
 
 html,
 body {

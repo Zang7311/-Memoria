@@ -92,7 +92,7 @@ async function finish() {
 <template>
   <div class="onboard">
     <div class="onboard-card">
-      <div class="logo">🐾 铃·记忆体</div>
+      <div class="logo">铃·记忆体</div>
       <div class="subtitle">你的桌面猫娘伴侣，初次见面～</div>
 
       <!-- 步骤指示器 -->

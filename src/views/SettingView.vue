@@ -302,6 +302,19 @@ async function savePersona() {
   })
   generalMsg.value = '✓ 个性化设置已保存'
 }
+
+// —— 外观自定义 ——
+async function saveUiCustom() {
+  await setting.update({
+    accent_color: setting.accentColor || null,
+    bg_color: setting.bgColor || null,
+    bg_image: setting.bgImage || null,
+    avatar_suzu: setting.avatarSuzu || null,
+    avatar_user: setting.avatarUser || null,
+    ui_radius: setting.uiRadius ?? null,
+  })
+  generalMsg.value = '✓ 外观自定义已保存'
+}
 </script>
 
 <template>
@@ -319,7 +332,7 @@ async function savePersona() {
       <!-- ============ 通用 ============ -->
       <div v-if="activeTab === 'general'">
         <section class="card">
-          <div class="card-title">🎨 外观</div>
+          <div class="card-title">外观</div>
           <div class="row">
             <span class="label">主题</span>
             <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">🌙 深色</button>
@@ -327,16 +340,49 @@ async function savePersona() {
           </div>
           <div class="row theme-row">
             <span class="label">风格</span>
-            <button class="btn ghost" :class="{ on: setting.theme === 'win10' }" @click="setting.setTheme('win10')">🪟 Win10</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'edge' }" @click="setting.setTheme('edge')">🌐 微软浏览器</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">⬛ 极简文字</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">🍏 iOS 扁平</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">🫧 iOS 毛玻璃</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'win10' }" @click="setting.setTheme('win10')">Win10</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'edge' }" @click="setting.setTheme('edge')">微软浏览器</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">极简文字</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">iOS 扁平</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">iOS 毛玻璃</button>
+          </div>
+          <div class="ui-custom">
+            <div class="field">
+              <label>主色</label>
+              <div class="row">
+                <input v-model="setting.accentColor" class="input" placeholder="#ff7a94" style="flex:1" />
+                <input type="color" v-model="setting.accentColor" class="color-swatch" />
+              </div>
+            </div>
+            <div class="field">
+              <label>背景色</label>
+              <div class="row">
+                <input v-model="setting.bgColor" class="input" placeholder="#1d1b1f" style="flex:1" />
+                <input type="color" v-model="setting.bgColor" class="color-swatch" />
+              </div>
+            </div>
+            <div class="field">
+              <label>背景图（本地图片路径，选填）</label>
+              <input v-model="setting.bgImage" class="input long" placeholder="C:\Users\...\bg.jpg" />
+            </div>
+            <div class="field">
+              <label>铃的头像（emoji / 文字 / 图片路径）</label>
+              <input v-model="setting.avatarSuzu" class="input" placeholder="铃" />
+            </div>
+            <div class="field">
+              <label>你的头像（选填）</label>
+              <input v-model="setting.avatarUser" class="input" placeholder="（留空则不显示）" />
+            </div>
+            <div class="field">
+              <label>圆角：{{ setting.uiRadius ?? 12 }}px</label>
+              <input v-model.number="setting.uiRadius" type="range" min="0" max="24" class="range" />
+            </div>
+            <button class="btn primary" @click="saveUiCustom">应用自定义外观</button>
           </div>
         </section>
 
         <section class="card">
-          <div class="card-title">🛡️ 管理员权限</div>
+          <div class="card-title">管理员权限</div>
           <p class="hint">
             当前状态：{{ adminState === null ? '检测中…' : adminState ? '✅ 已以管理员权限运行' : '普通权限（电源模式切换 / 深度清理内存等特殊工具需管理员）' }}
           </p>
@@ -346,7 +392,7 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">🚀 开机自启动</div>
+          <div class="card-title">开机自启动</div>
           <label class="switch-wrap">
             <input v-model="autostart" type="checkbox" class="switch" @change="toggleAutostart" />
             <span class="label">{{ autostart ? '已开启' : '已关闭' }}</span>
@@ -355,7 +401,7 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">⌨️ 全局快捷键</div>
+          <div class="card-title">全局快捷键</div>
           <div class="row">
             <input v-model="hotkey" class="input" placeholder="Ctrl+Alt+L" />
             <button class="btn primary" @click="saveHotkey">应用</button>
@@ -364,7 +410,7 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">🗂️ 数据路径</div>
+          <div class="card-title">数据路径</div>
           <div class="row">
             <input v-model="setting.dataPath" class="input long" placeholder="记忆存储路径" />
             <button class="btn primary" @click="saveDataPath">保存</button>
@@ -373,7 +419,7 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">💾 配置备份</div>
+          <div class="card-title">配置备份</div>
           <div class="row">
             <button class="btn ghost" @click="doExportConfig">导出配置 JSON</button>
             <button class="btn ghost" @click="doImportConfig">导入配置</button>
@@ -382,12 +428,12 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">🧹 重置</div>
+          <div class="card-title">重置</div>
           <button class="btn danger" @click="doReset">恢复默认设置</button>
         </section>
 
         <section class="card">
-          <div class="card-title">🧰 工具箱</div>
+          <div class="card-title">工具箱</div>
           <button class="btn primary" @click="showToolbox = !showToolbox">
             {{ showToolbox ? '收起工具箱' : '打开工具箱' }}
           </button>
@@ -398,7 +444,7 @@ async function savePersona() {
       <div v-else-if="activeTab === 'model'">
         <!-- 快速接入向导（3 步） -->
         <section class="card">
-          <div class="card-title">🚀 快速接入向导</div>
+          <div class="card-title">快速接入向导</div>
           <div class="steps">
             <span class="step" :class="{ on: modelMode !== 'script' }">① 选运行模式</span>
             <span class="arrow">→</span>
@@ -414,11 +460,11 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">🤖 运行模式</div>
+          <div class="card-title">运行模式</div>
           <div class="modes">
-            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">🧠 脚本</div>
-            <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">☁️ API</div>
-            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">💻 本地</div>
+            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">脚本</div>
+            <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">API</div>
+            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">本地</div>
           </div>
           <template v-if="modelMode === 'api'">
             <div class="field">
@@ -450,7 +496,7 @@ async function savePersona() {
 
         <!-- 一键本地部署 AI -->
         <section class="card">
-          <div class="card-title">🤖 一键本地部署 AI（Ollama）</div>
+          <div class="card-title">一键本地部署 AI（Ollama）</div>
           <p class="hint">
             {{ !ollamaChecked ? '检测中…' : ollama.installed ? `✅ Ollama 已安装（${ollama.models.length} 个模型）` : '❌ 未检测到 Ollama，需先安装' }}
             <button v-if="ollamaChecked" class="btn ghost" style="margin-left:8px;padding:2px 10px" @click="detectLocalAI">重新检测</button>
@@ -492,7 +538,7 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">🔐 API 密钥</div>
+          <div class="card-title">API 密钥</div>
           <p class="hint">
             主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️（密钥将明文存储，建议设置主密码加密）' }}
           </p>
@@ -534,7 +580,7 @@ async function savePersona() {
       <!-- ============ 记忆 ============ -->
       <div v-else-if="activeTab === 'memory'">
         <section class="card">
-          <div class="card-title">🧠 记忆存储</div>
+          <div class="card-title">记忆存储</div>
           <p class="hint">记忆文件保存在：{{ setting.dataPath }}</p>
           <p class="hint">记忆集管理与详情请使用主界面「记忆」面板（由 AI-4 实现）。</p>
           <div class="row">
@@ -552,7 +598,7 @@ async function savePersona() {
       <!-- ============ 个性化 ============ -->
       <div v-else-if="activeTab === 'persona'">
         <section class="card">
-          <div class="card-title">🎀 个性化</div>
+          <div class="card-title">个性化</div>
           <div class="field">
             <label>日语修饰词浓度（0-30）</label>
             <input v-model="mixRate" type="range" min="0" max="30" class="range" />
@@ -585,11 +631,11 @@ async function savePersona() {
       <!-- ============ 赞助 ============ -->
       <div v-else-if="activeTab === 'sponsor'">
         <section class="card">
-          <div class="card-title">💝 赞助</div>
+          <div class="card-title">赞助</div>
           <p class="hint">支持铃·记忆体开源项目。赞助渠道、目标进度、赞助者名单在此展示（预留）。</p>
           <div class="row">
-            <button class="btn primary" @click="openExternal('https://github.com/Zang7311')">🌐 访问 GitHub 主页</button>
-            <button class="btn ghost" @click="openExternal('https://github.com/Zang7311/-Memoria')">📦 项目仓库</button>
+            <button class="btn primary" @click="openExternal('https://github.com/Zang7311')">访问 GitHub 主页</button>
+            <button class="btn ghost" @click="openExternal('https://github.com/Zang7311/-Memoria')">项目仓库</button>
           </div>
         </section>
       </div>
@@ -661,6 +707,8 @@ async function savePersona() {
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
 .btn.on { border: 1px solid var(--accent); color: var(--accent); }
 .theme-row { flex-wrap: wrap; gap: 6px; }
+.ui-custom { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border, rgba(128,128,128,0.25)); }
+.color-swatch { width: 42px; height: 34px; padding: 0; border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 6px; background: transparent; cursor: pointer; }
 .btn.danger { background: rgba(217, 83, 79, 0.25); color: var(--danger, #ff6b6b); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .switch-wrap { display: flex; align-items: center; gap: 8px; }
