@@ -66,22 +66,22 @@ onMounted(clear)
   <div class="pixel-panel" @click.self="emit('close')">
     <div class="pp-head">
       <span class="pp-title">像素画板（32×32）</span>
-      <div class="pp-colors">
-        <button
-          v-for="c in colors"
-          :key="c"
-          class="pp-color"
-          :class="{ sel: c === curColor }"
-          :style="{ background: c }"
-          @click="curColor = c"
-        />
-        <input v-model="curColor" type="color" class="pp-color-custom" title="自定义颜色" />
-      </div>
       <div class="pp-btns">
         <button class="btn ghost" @click="clear">清空</button>
         <button class="btn primary" @click="save">保存 PNG</button>
         <button class="btn ghost" @click="emit('close')">关闭</button>
       </div>
+    </div>
+    <div class="pp-colors">
+      <button
+        v-for="c in colors"
+        :key="c"
+        class="pp-color"
+        :class="{ sel: c === curColor }"
+        :style="{ background: c }"
+        @click="curColor = c"
+      />
+      <input v-model="curColor" type="color" class="pp-color-custom" title="自定义颜色" />
     </div>
     <canvas
       ref="canvas"
@@ -111,14 +111,15 @@ onMounted(clear)
 }
 .pp-head {
   background: var(--bg-bar, rgba(34, 32, 36, 0.92));
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-radius: 12px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  width: 480px;
 }
 .pp-title { font-weight: 600; color: var(--text-main, #eee); white-space: nowrap; }
-.pp-colors { display: flex; gap: 6px; flex-wrap: wrap; max-width: 320px; }
+.pp-colors { display: flex; gap: 6px; flex-wrap: wrap; width: 480px; }
 .pp-color { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(128, 128, 128, 0.4); cursor: pointer; }
 .pp-color.sel { border-color: var(--accent, #ff7a94); transform: scale(1.15); }
 .pp-color-custom { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(128, 128, 128, 0.4); cursor: pointer; padding: 0; background: transparent; }
