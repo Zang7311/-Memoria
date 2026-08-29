@@ -33,6 +33,9 @@ pub struct Setting {
     pub api_base_url: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
+    /// API 模型名（默认 gpt-3.5-turbo，可配置 deepseek-chat 等）
+    #[serde(default = "default_api_model")]
+    pub api_model: String,
     pub model_mode: String,         // "script" | "api" | "local"
     pub depth: u8,                  // 1 | 2 | 3 | 4
     /// AI 自称（回复模板占位替换，默认「铃」；前端未传时为空则用默认）
@@ -50,6 +53,7 @@ impl Default for Setting {
             context_length: 10,
             api_base_url: None,
             api_key: None,
+            api_model: "gpt-3.5-turbo".to_string(),
             model_mode: "script".to_string(),
             depth: 2,
             self_name: None,
@@ -426,6 +430,9 @@ pub struct AppConfig {
     /// 加密存储的 API Key（AES-256-GCM，非明文）
     #[serde(default)]
     pub api_key_encrypted: Option<String>,
+    /// API 模型名（如 gpt-4o-mini / deepseek-chat），默认 gpt-3.5-turbo
+    #[serde(default = "default_api_model")]
+    pub api_model: String,
     /// "script" | "api" | "local"
     pub model_mode: String,
     /// 思考深度 1|2|3|4
@@ -472,6 +479,11 @@ pub struct AppConfig {
 
 fn default_config_version() -> u32 {
     1
+}
+
+/// 默认 API 模型名
+fn default_api_model() -> String {
+    "gpt-3.5-turbo".to_string()
 }
 
 /// 获取配置响应

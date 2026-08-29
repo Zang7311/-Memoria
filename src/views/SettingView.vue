@@ -40,6 +40,7 @@ const exportPath = ref('')
 // —— 模型/加密 ——
 const modelMode = ref<'script' | 'api' | 'local'>('script')
 const apiBaseUrl = ref('')
+const apiModel = ref('gpt-3.5-turbo')
 const apiKeyInput = ref('')
 const depth = ref(2)
 const masterPwd = ref('')
@@ -55,6 +56,7 @@ const userName = ref('主人')
 function syncFromStore() {
   modelMode.value = setting.modelMode
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
+  apiModel.value = setting.apiModel
   depth.value = setting.depth
   mixRate.value = setting.languageMixRate
   selfName.value = setting.selfName
@@ -126,6 +128,7 @@ async function saveModel() {
     await setting.update({
       model_mode: modelMode.value,
       api_base_url: apiBaseUrl.value.trim() || null,
+      api_model: apiModel.value.trim() || 'gpt-3.5-turbo',
       depth: depth.value,
     })
     generalMsg.value = '✓ 模型设置已保存'
@@ -264,6 +267,10 @@ async function savePersona() {
           <div v-if="modelMode === 'api'" class="field">
             <label>API 地址</label>
             <input v-model="apiBaseUrl" class="input long" placeholder="https://api.example.com/v1" />
+          </div>
+          <div v-if="modelMode === 'api'" class="field">
+            <label>模型名</label>
+            <input v-model="apiModel" class="input long" placeholder="gpt-3.5-turbo / deepseek-chat / qwen-plus…" />
           </div>
           <div class="field">
             <label>思考深度（1-4）</label>

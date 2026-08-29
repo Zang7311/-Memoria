@@ -43,9 +43,20 @@ async fn generate_and_emit(
     input: &str,
     depth: u8,
 ) -> Result<(), AppError> {
-    // 读取设置（当前阶段 settings 尚未持久化，用默认值 + 可选覆盖）
-    // 注意：设置由前端管理，这里先用默认 Setting；后续接入设置命令后替换。
-    let setting = Setting::default();
+    // 读取配置中心（AI-7 实现）：真实配置从 ~/.铃记忆体/config.json 加载，
+    // 不再使用硬编码默认值（修复 API 无法接入的问题）
+    let cfg = crate::config::store::get_config();
+    let setting = Setting {
+        theme: cfg.theme.clone(),
+        context_length: cfg.context_length,
+        api_base_url: cfg.api_base_url.clone(),
+        api_key: decrypt_api_key(&cfg)?,
+        api_model: cfg.api_model.clone(),
+        model_mode: cfg.model_mode.clone(),
+        depth: cfg.depth,
+        self_name: cfg.self_name.clone(),
+        user_name: cfg.user_name.clone(),
+    };
 
     // 加载上下文（脚本模式无需上下文）
     let index_path = memory::storage::default_index_path();
@@ -73,7 +84,7 @@ async fn generate_and_emit(
         "api" => {
             let base = setting.api_base_url.clone().unwrap_or_default();
             let key = setting.api_key.clone().unwrap_or_default();
-            engine::api::run_api(app, input, &memories, &base, &key, depth).await?
+            engine::api::run_api(app, input, &memories, &base, &key, &setting.api_model, depth).await?
         }
         "local" => {
             engine::local::run_local(app, input, &memories, depth).await?
@@ -100,5 +111,19 @@ fn context_max_tokens(depth: u8) -> usize {
         3 => 2048,
         4 => 4096,
         _ => 1024,
+    }
+}
+
+/// 从配置中心解密 API Key（AES-256-GCM，复用 AI-7 密钥体系）
+/// - 未配置密钥 → None（引擎会报「未配置 API Key」）
+/// - 已加密但未解锁 → 报 Locked（提示用户先解锁）
+fn decrypt_api_key(cfg: &crate::types::AppConfig) -> Result<Option<String>, AppError> {
+    match &cfg.api_key_encrypted {
+        None => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
+        Some(enc) => {
+            let key = crate::config::encryption::get_key()?;
+            Ok(Some(crate::config::encryption::decrypt_with_key(&key, enc)?))
+        }
     }
 }

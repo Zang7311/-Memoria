@@ -186,6 +186,8 @@ export interface AppConfig {
   api_base_url?: string | null
   /** 加密存储的 API Key（AES-256-GCM 密文，非明文） */
   api_key_encrypted?: string | null
+  /** API 模型名（如 gpt-4o-mini / deepseek-chat） */
+  api_model?: string
   model_mode: 'script' | 'api' | 'local' | string
   depth: number
   language_mix_rate: number

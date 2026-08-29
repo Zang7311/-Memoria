@@ -24,6 +24,8 @@ export const useSettingStore = defineStore('setting', () => {
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
   const apiKeyEncrypted = ref<string | null>(null)
+  /** API 模型名 */
+  const apiModel = ref('gpt-3.5-turbo')
   const modelMode = ref<'script' | 'api' | 'local'>('script')
   const depth = ref(2)
   const languageMixRate = ref(8)
@@ -48,6 +50,7 @@ export const useSettingStore = defineStore('setting', () => {
     contextLength.value = c.context_length
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
+    apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
     depth.value = c.depth
     languageMixRate.value = c.language_mix_rate
@@ -139,7 +142,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, apiBaseUrl, apiKeyEncrypted, modelMode, depth,
+    theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiModel, modelMode, depth,
     languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName,
     hasMasterPassword, unlocked,

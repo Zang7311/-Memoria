@@ -11,6 +11,7 @@ pub fn default_config() -> AppConfig {
         context_length: 10,
         api_base_url: None,
         api_key_encrypted: None,
+        api_model: "gpt-3.5-turbo".to_string(),
         model_mode: "script".to_string(),
         depth: 2,
         language_mix_rate: 8,

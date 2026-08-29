@@ -40,6 +40,7 @@ pub async fn run_api(
     context: &[Memory],
     api_base_url: &str,
     api_key: &str,
+    api_model: &str,
     depth: u8,
 ) -> Result<String, AppError> {
     if api_base_url.trim().is_empty() {
@@ -63,7 +64,7 @@ pub async fn run_api(
     messages.push(serde_json::json!({ "role": "user", "content": input }));
 
     let body = serde_json::json!({
-        "model": "gpt-3.5-turbo",
+        "model": api_model,
         "messages": messages,
         "stream": true,
         "temperature": temperature,
