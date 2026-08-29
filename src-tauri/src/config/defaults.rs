@@ -40,5 +40,8 @@ pub fn default_config() -> AppConfig {
         avatar_suzu: None,
         avatar_user: None,
         ui_radius: None,
+        bubble_user_color: None,
+        bubble_suzu_color: None,
+        ui_themes: None,
     }
 }

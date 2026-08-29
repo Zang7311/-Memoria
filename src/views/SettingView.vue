@@ -309,11 +309,26 @@ async function saveUiCustom() {
     accent_color: setting.accentColor || null,
     bg_color: setting.bgColor || null,
     bg_image: setting.bgImage || null,
+    bubble_user_color: setting.bubbleUserColor || null,
+    bubble_suzu_color: setting.bubbleSuzuColor || null,
     avatar_suzu: setting.avatarSuzu || null,
     avatar_user: setting.avatarUser || null,
     ui_radius: setting.uiRadius ?? null,
   })
   generalMsg.value = '✓ 外观自定义已保存'
+}
+
+// —— 自定义主题组合 ——
+const presetName = ref('')
+async function savePreset() {
+  const name = presetName.value.trim()
+  if (!name) {
+    generalMsg.value = '⚠️ 请先给这套风格起个名字'
+    return
+  }
+  await setting.saveThemePreset(name)
+  generalMsg.value = `✓ 已保存主题组合「${name}」，可一键切换`
+  presetName.value = ''
 }
 </script>
 
@@ -377,7 +392,35 @@ async function saveUiCustom() {
               <label>圆角：{{ setting.uiRadius ?? 12 }}px</label>
               <input v-model.number="setting.uiRadius" type="range" min="0" max="24" class="range" />
             </div>
+            <div class="field">
+              <label>你的气泡颜色</label>
+              <div class="row">
+                <input v-model="setting.bubbleUserColor" class="input" placeholder="#2d2d2d" style="flex:1" />
+                <input type="color" v-model="setting.bubbleUserColor" class="color-swatch" />
+              </div>
+            </div>
+            <div class="field">
+              <label>铃的气泡颜色</label>
+              <div class="row">
+                <input v-model="setting.bubbleSuzuColor" class="input" placeholder="#3a3438" style="flex:1" />
+                <input type="color" v-model="setting.bubbleSuzuColor" class="color-swatch" />
+              </div>
+            </div>
             <button class="btn primary" @click="saveUiCustom">应用自定义外观</button>
+            <div class="theme-presets">
+              <div class="row">
+                <input v-model="presetName" class="input" placeholder="给这套风格起个名字" style="flex:1" />
+                <button class="btn primary" @click="savePreset">保存组合</button>
+              </div>
+              <p class="hint">保存后一键切换你的专属风格，无需复制粘贴</p>
+              <div v-if="setting.uiThemes && setting.uiThemes.length" class="preset-list">
+                <div v-for="t in setting.uiThemes" :key="t.name" class="preset-item">
+                  <span class="preset-name">{{ t.name }}</span>
+                  <button class="btn ghost" @click="setting.switchThemePreset(t.name)">切换</button>
+                  <button class="btn ghost" @click="setting.deleteThemePreset(t.name)">删除</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -709,6 +752,10 @@ async function saveUiCustom() {
 .theme-row { flex-wrap: wrap; gap: 6px; }
 .ui-custom { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border, rgba(128,128,128,0.25)); }
 .color-swatch { width: 42px; height: 34px; padding: 0; border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 6px; background: transparent; cursor: pointer; }
+.theme-presets { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border, rgba(128,128,128,0.25)); display: flex; flex-direction: column; gap: 8px; }
+.preset-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.preset-item { display: flex; align-items: center; gap: 8px; background: rgba(128,128,128,0.1); padding: 6px 10px; border-radius: 8px; }
+.preset-name { flex: 1; font-size: 13px; color: var(--text-main); }
 .btn.danger { background: rgba(217, 83, 79, 0.25); color: var(--danger, #ff6b6b); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .switch-wrap { display: flex; align-items: center; gap: 8px; }

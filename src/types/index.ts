@@ -218,6 +218,21 @@ export interface AppConfig {
   avatar_suzu?: string | null
   avatar_user?: string | null
   ui_radius?: number | null
+  bubble_user_color?: string | null
+  bubble_suzu_color?: string | null
+  ui_themes?: UiThemePreset[] | null
+}
+
+/** 一套完整的外观自定义组合（用户命名保存，可一键切换） */
+export interface UiThemePreset {
+  name: string
+  accent_color: string
+  bg_color: string
+  bg_image?: string | null
+  bubble_user_color: string
+  bubble_suzu_color: string
+  ui_radius: number
+  avatar_suzu?: string | null
 }
 
 export interface GetConfigResponse {

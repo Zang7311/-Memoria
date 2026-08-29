@@ -531,6 +531,35 @@ pub struct AppConfig {
     /// UI 圆角（px，0=无圆角）
     #[serde(default)]
     pub ui_radius: Option<u8>,
+    /// 气泡-用户 背景色（十六进制）
+    #[serde(default)]
+    pub bubble_user_color: Option<String>,
+    /// 气泡-铃 背景色（十六进制或渐变）
+    #[serde(default)]
+    pub bubble_suzu_color: Option<String>,
+    /// 自定义主题组合（多套，用户可保存/切换，大版本核心功能）
+    #[serde(default)]
+    pub ui_themes: Option<Vec<UiThemePreset>>,
+}
+
+/// 一套完整的外观自定义组合（用户命名保存，可一键切换）
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct UiThemePreset {
+    pub name: String,
+    #[serde(default)]
+    pub accent_color: String,
+    #[serde(default)]
+    pub bg_color: String,
+    #[serde(default)]
+    pub bg_image: Option<String>,
+    #[serde(default)]
+    pub bubble_user_color: String,
+    #[serde(default)]
+    pub bubble_suzu_color: String,
+    #[serde(default)]
+    pub ui_radius: u8,
+    #[serde(default)]
+    pub avatar_suzu: Option<String>,
 }
 
 fn default_config_version() -> u32 {

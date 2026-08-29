@@ -3,7 +3,7 @@
 // 数据源统一走 IPC get_config / update_config，不直接操作文件。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { AppConfig, MasterPasswordStatus } from '../types'
+import type { AppConfig, MasterPasswordStatus, UiThemePreset } from '../types'
 import {
   exportConfig,
   getConfig,
@@ -27,6 +27,9 @@ export const useSettingStore = defineStore('setting', () => {
   const avatarSuzu = ref<string | null>(null)
   const avatarUser = ref<string | null>(null)
   const uiRadius = ref<number | null>(null)
+  const bubbleUserColor = ref<string | null>(null)
+  const bubbleSuzuColor = ref<string | null>(null)
+  const uiThemes = ref<UiThemePreset[] | null>(null)
   const contextLength = ref(10)
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
@@ -64,6 +67,9 @@ export const useSettingStore = defineStore('setting', () => {
     avatarSuzu.value = c.avatar_suzu ?? null
     avatarUser.value = c.avatar_user ?? null
     uiRadius.value = c.ui_radius ?? null
+    bubbleUserColor.value = c.bubble_user_color ?? null
+    bubbleSuzuColor.value = c.bubble_suzu_color ?? null
+    uiThemes.value = c.ui_themes ?? null
     contextLength.value = c.context_length
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
@@ -118,6 +124,60 @@ export const useSettingStore = defineStore('setting', () => {
     await update({ theme: t })
   }
 
+  /** 把组合值应用到当前字段（不写盘） */
+  function applyPreset(p: UiThemePreset) {
+    accentColor.value = p.accent_color || null
+    bgColor.value = p.bg_color || null
+    bgImage.value = p.bg_image ?? null
+    bubbleUserColor.value = p.bubble_user_color || null
+    bubbleSuzuColor.value = p.bubble_suzu_color || null
+    uiRadius.value = p.ui_radius ?? null
+    avatarSuzu.value = p.avatar_suzu ?? null
+  }
+
+  /** 把当前外观自定义另存为一套命名主题组合（同名覆盖） */
+  async function saveThemePreset(name: string): Promise<UiThemePreset> {
+    const preset: UiThemePreset = {
+      name,
+      accent_color: accentColor.value ?? '#ff7a94',
+      bg_color: bgColor.value ?? '#1d1b1f',
+      bg_image: bgImage.value,
+      bubble_user_color: bubbleUserColor.value ?? '#2d2d2d',
+      bubble_suzu_color: bubbleSuzuColor.value ?? '#3a3438',
+      ui_radius: uiRadius.value ?? 12,
+      avatar_suzu: avatarSuzu.value,
+    }
+    const themes = uiThemes.value ?? []
+    const idx = themes.findIndex((t) => t.name === name)
+    if (idx >= 0) themes[idx] = preset
+    else themes.push(preset)
+    uiThemes.value = themes
+    await update({ ui_themes: themes })
+    return preset
+  }
+
+  /** 一键切换到指定主题组合（加载并持久化） */
+  async function switchThemePreset(name: string) {
+    const p = (uiThemes.value ?? []).find((t) => t.name === name)
+    if (!p) return
+    applyPreset(p)
+    await update({
+      accent_color: p.accent_color || null,
+      bg_color: p.bg_color || null,
+      bg_image: p.bg_image ?? null,
+      bubble_user_color: p.bubble_user_color || null,
+      bubble_suzu_color: p.bubble_suzu_color || null,
+      ui_radius: p.ui_radius ?? null,
+      avatar_suzu: p.avatar_suzu ?? null,
+    })
+  }
+
+  /** 删除指定主题组合 */
+  async function deleteThemePreset(name: string) {
+    uiThemes.value = (uiThemes.value ?? []).filter((t) => t.name !== name)
+    await update({ ui_themes: uiThemes.value })
+  }
+
   /** 保存 API Key 明文（后端按主密码状态决定：已解锁→加密存储，未设置→明文存储） */
   async function saveApiKey(plain: string) {
     await update({ api_key: plain })
@@ -168,6 +228,8 @@ export const useSettingStore = defineStore('setting', () => {
     loaded, firstLaunch,
     theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiKeyPlain, apiModel, modelMode, depth,
     accentColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
+    bubbleUserColor, bubbleSuzuColor, uiThemes,
+    saveThemePreset, switchThemePreset, deleteThemePreset,
     languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
