@@ -44,5 +44,6 @@ pub fn default_config() -> AppConfig {
         bubble_suzu_color: None,
         ui_themes: None,
         run_as_admin: false,
+        emoji_mode: None,
     }
 }
