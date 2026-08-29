@@ -357,7 +357,8 @@ function pickImage(kind: 'bg' | 'avatar' | 'user') {
   el?.click()
 }
 async function onBgFile(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
   if (!f) return
   try {
     const path = await saveUiImage(await fileToDataUrl(f), 'bg')
@@ -365,10 +366,13 @@ async function onBgFile(e: Event) {
     generalMsg.value = '背景图已选择，点击「应用自定义外观」生效'
   } catch (err) {
     generalMsg.value = `选择失败：${err}`
+  } finally {
+    input.value = '' // 重置，允许下次选同一文件也触发
   }
 }
 async function onAvatarFile(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
   if (!f) return
   try {
     const path = await saveUiImage(await fileToDataUrl(f), 'avatar')
@@ -376,10 +380,13 @@ async function onAvatarFile(e: Event) {
     generalMsg.value = '头像已选择，点击「应用自定义外观」生效'
   } catch (err) {
     generalMsg.value = `选择失败：${err}`
+  } finally {
+    input.value = ''
   }
 }
 async function onUserAvatarFile(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
   if (!f) return
   try {
     const path = await saveUiImage(await fileToDataUrl(f), 'user')
@@ -387,6 +394,8 @@ async function onUserAvatarFile(e: Event) {
     generalMsg.value = '你的头像已选择，点击「应用自定义外观」生效'
   } catch (err) {
     generalMsg.value = `选择失败：${err}`
+  } finally {
+    input.value = ''
   }
 }
 // —— Emoji 显示模式（默认关闭）——
