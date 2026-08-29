@@ -156,9 +156,14 @@ async function onPersonaChange(e: Event) {
         <!-- 底部输入栏 -->
         <ChatInput />
 
-        <!-- 会话底部 token 统计（API 模式，脚本/本地无此事件故不显示） -->
-        <div v-if="chat.lastUsage" class="usage-bar" title="本次回复的 token 用量">
-          ⚡ 本次回复：输入 {{ chat.lastUsage.prompt_tokens }} · 输出 {{ chat.lastUsage.completion_tokens }} · 合计 {{ chat.lastUsage.total_tokens }} tokens
+        <!-- 会话底部 token 统计（收尾批次2；始终显示，API 回复后填充真实用量） -->
+        <div class="usage-bar" title="本次回复的 token 用量">
+          <template v-if="chat.lastUsage">
+            ⚡ 本次回复：输入 {{ chat.lastUsage.prompt_tokens }} · 输出 {{ chat.lastUsage.completion_tokens }} · 合计 {{ chat.lastUsage.total_tokens }} tokens
+          </template>
+          <template v-else>
+            ⚡ token 统计：等待 API 回复后显示（脚本/本地模式无 token 消耗）
+          </template>
         </div>
       </div>
 
