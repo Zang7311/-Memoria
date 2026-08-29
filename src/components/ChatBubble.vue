@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import type { Message } from '../types'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingStore } from '../stores/settingStore'
+import { assetUrl, isImagePath } from '../utils/tauri'
 
 const props = defineProps<{ message: Message }>()
 const chat = useChatStore()
@@ -23,12 +24,17 @@ const time = computed(() => {
   return `${h}:${m}`
 })
 const isUser = computed(() => props.message.role === 'user')
+// 铃的头像：图片路径则显示图片
+const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
 </script>
 
 <template>
   <div class="bubble-row" :class="isUser ? 'row-user' : 'row-suzu'">
     <!-- 铃的头像（猫娘） -->
-    <div v-if="!isUser" class="avatar">{{ setting.avatarSuzu || '铃' }}</div>
+    <div v-if="!isUser" class="avatar">
+      <img v-if="avatarImg" :src="avatarImg" class="avatar-img" />
+      <template v-else>{{ setting.avatarSuzu || '铃' }}</template>
+    </div>
 
     <div class="bubble" :class="isUser ? 'bubble-user' : 'bubble-suzu'">
       <span class="content">{{ message.content }}</span>
@@ -68,7 +74,9 @@ const isUser = computed(() => props.message.role === 'user')
   font-size: 18px;
   flex-shrink: 0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
 }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-user {
   background: var(--bubble-user-bg, #2d2d2d);
 }

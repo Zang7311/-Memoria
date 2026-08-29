@@ -147,6 +147,7 @@ pub fn run() {
             commands::toolbox_execute::save_toolbox_item,
             commands::toolbox_execute::delete_toolbox_item,
             commands::pixel_art::save_pixel_art,
+            commands::ui_image::save_ui_image,
             commands::tray::set_floating_ball_visibility,
             commands::hotkey::register_hotkey,
             commands::hotkey::unregister_hotkey,

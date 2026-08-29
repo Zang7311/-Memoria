@@ -8,7 +8,7 @@ import PluginManager from '../components/PluginManager.vue'
 import SyncPanel from '../components/SyncPanel.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
-import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, setAutostart, setOllamaModelsPath, testApiConnection } from '../utils/tauri'
+import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection } from '../utils/tauri'
 
 const setting = useSettingStore()
 
@@ -339,6 +339,43 @@ async function savePreset() {
   generalMsg.value = `✓ 已保存主题组合「${name}」，可一键切换`
   presetName.value = ''
 }
+
+// —— 软件内选择图片（背景图 / 头像）——
+const bgFileInput = ref<HTMLInputElement | null>(null)
+const avatarFileInput = ref<HTMLInputElement | null>(null)
+function fileToDataUrl(f: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader()
+    r.onload = () => res(r.result as string)
+    r.onerror = () => rej(new Error('读取图片失败'))
+    r.readAsDataURL(f)
+  })
+}
+function pickImage(kind: 'bg' | 'avatar') {
+  ;(kind === 'bg' ? bgFileInput.value : avatarFileInput.value)?.click()
+}
+async function onBgFile(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!f) return
+  try {
+    const path = await saveUiImage(await fileToDataUrl(f), 'bg')
+    setting.bgImage = path
+    generalMsg.value = '背景图已选择，点击「应用自定义外观」生效'
+  } catch (err) {
+    generalMsg.value = `选择失败：${err}`
+  }
+}
+async function onAvatarFile(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!f) return
+  try {
+    const path = await saveUiImage(await fileToDataUrl(f), 'avatar')
+    setting.avatarSuzu = path
+    generalMsg.value = '头像已选择，点击「应用自定义外观」生效'
+  } catch (err) {
+    generalMsg.value = `选择失败：${err}`
+  }
+}
 </script>
 
 <template>
@@ -386,12 +423,20 @@ async function savePreset() {
               </div>
             </div>
             <div class="field">
-              <label>背景图（本地图片路径，选填）</label>
-              <input v-model="setting.bgImage" class="input long" placeholder="C:\Users\...\bg.jpg" />
+              <label>背景图（选填）</label>
+              <div class="row">
+                <input v-model="setting.bgImage" class="input long" placeholder="C:\Users\...\bg.jpg" style="flex:1" />
+                <button class="btn ghost" @click="pickImage('bg')">选择图片</button>
+              </div>
+              <input ref="bgFileInput" type="file" accept="image/*" style="display:none" @change="onBgFile" />
             </div>
             <div class="field">
-              <label>铃的头像（emoji / 文字 / 图片路径）</label>
-              <input v-model="setting.avatarSuzu" class="input" placeholder="铃" />
+              <label>铃的头像（emoji / 文字 / 图片）</label>
+              <div class="row">
+                <input v-model="setting.avatarSuzu" class="input" placeholder="铃" style="flex:1" />
+                <button class="btn ghost" @click="pickImage('avatar')">选头像图</button>
+              </div>
+              <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="onAvatarFile" />
             </div>
             <div class="field">
               <label>你的头像（选填）</label>

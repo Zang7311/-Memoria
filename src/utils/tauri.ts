@@ -1,7 +1,7 @@
 // 《铃·记忆体》Tauri IPC 封装
 // 任务书 任务 7：封装 invoke 与 listen，供 ChatInput / useStreamRender 等统一调用
 // 后端命令与事件由 AI-3 实现；此处仅做前端封装，不写 Rust。
-import { invoke } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 /**
@@ -263,6 +263,22 @@ export function executeToolbox(item_id: string, input?: string): Promise<Execute
 /** 保存像素画 PNG（data URL）到桌面，返回保存路径 */
 export function savePixelArt(dataUrl: string): Promise<string> {
   return invoke('save_pixel_art', { dataUrl })
+}
+
+/** 保存 UI 图片（背景图/头像）到应用数据目录 ui_assets/，返回保存路径 */
+export function saveUiImage(dataUrl: string, prefix: string): Promise<string> {
+  return invoke('save_ui_image', { dataUrl, prefix })
+}
+
+/** 把本地文件路径转为 webview 可加载的 asset URL（背景图/头像图片用，解决本地路径无法显示） */
+export function assetUrl(path: string): string {
+  return convertFileSrc(path)
+}
+
+/** 判断字符串是否为本地图片路径（含路径分隔符或图片扩展名） */
+export function isImagePath(v?: string | null): boolean {
+  if (!v) return false
+  return v.includes('\\') || v.includes('/') || /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(v)
 }
 
 /** 新增/更新用户自定义工具箱条目 */

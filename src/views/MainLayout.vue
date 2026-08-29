@@ -12,6 +12,7 @@ import ToolboxPanel from '../components/ToolboxPanel.vue'
 import SettingView from './SettingView.vue'
 import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
+import { assetUrl, isImagePath } from '../utils/tauri'
 import { useSyncStore } from '../stores/syncStore'
 import { useChatStore } from '../stores/chatStore'
 
@@ -20,6 +21,8 @@ const desktop = useDesktopStore()
 const sync = useSyncStore()
 const chat = useChatStore()
 const theme = computed(() => setting.theme || 'dark')
+// 铃的头像：若是图片路径则显示图片（asset 协议加载），否则显示 emoji/文字
+const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
 
 // —— AI-5：插件管理面板开关 ——
 const showPlugins = ref(false)
@@ -65,7 +68,10 @@ async function onPersonaChange(e: Event) {
         <!-- 顶部标题栏 -->
         <header class="top-bar">
           <div class="top-left">
-            <div class="title-avatar">{{ setting.avatarSuzu || '铃' }}</div>
+            <div class="title-avatar">
+              <img v-if="avatarImg" :src="avatarImg" class="avatar-img" />
+              <template v-else>{{ setting.avatarSuzu || '铃' }}</template>
+            </div>
             <div class="title-info">
               <span class="title-name">铃</span>
               <StatusIndicator />
@@ -232,7 +238,9 @@ async function onPersonaChange(e: Event) {
   align-items: center;
   justify-content: center;
   font-size: 20px;
+  overflow: hidden;
 }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .title-info {
   display: flex;
   flex-direction: column;

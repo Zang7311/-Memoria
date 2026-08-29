@@ -2,14 +2,16 @@
      独立半透明气泡窗口：监听 monitor-trigger 事件 → 显示铃的回复
      显示 3 秒后自动隐藏；点击 → 恢复主窗口并聚焦 -->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { currentMonitor, getCurrentWindow, LogicalPosition, primaryMonitor } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { onMonitorTrigger } from '../utils/tauri'
+import { assetUrl, isImagePath, onMonitorTrigger } from '../utils/tauri'
 import { useSettingStore } from '../stores/settingStore'
 
 const win = getCurrentWindow()
 const setting = useSettingStore()
+// 铃的头像：图片路径则显示图片
+const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
 
 const visible = ref(false)
 const message = ref('')
@@ -73,7 +75,10 @@ async function onClickBubble() {
     <transition name="fade">
       <div v-if="visible" class="bubble-card">
         <div class="bubble-head">
-          <span class="avatar">{{ setting.avatarSuzu || '铃' }}</span>
+          <span class="avatar">
+            <img v-if="avatarImg" :src="avatarImg" class="avatar-img" />
+            <template v-else>{{ setting.avatarSuzu || '铃' }}</template>
+          </span>
           <span class="from">铃</span>
           <span class="ctx">{{ appName }}<template v-if="windowTitle"> · {{ windowTitle }}</template></span>
         </div>
@@ -119,7 +124,10 @@ async function onClickBubble() {
   align-items: center;
   justify-content: center;
   font-size: 13px;
+  overflow: hidden;
+  flex-shrink: 0;
 }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .from {
   font-weight: 600;
   font-size: 13px;
