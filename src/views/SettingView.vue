@@ -167,13 +167,22 @@ onMounted(async () => {
 
 // 以管理员权限重启
 async function requestAdmin() {
-  if (!confirm('将以管理员权限重启应用（会弹出 UAC 提示）。\n重启后可正常使用：电源模式切换、深度清理内存等特殊工具。')) return
+  if (!confirm('将以管理员权限重启应用（会弹出 UAC 提示）。重启后可正常使用：电源模式切换、深度清理内存等特殊工具。')) return
   try {
     await restartAsAdmin()
     alert('已请求管理员权限启动。请在弹出的 UAC 窗口点击「是」，然后关闭当前窗口，使用新的管理员窗口。')
   } catch (e) {
     alert(`启动失败：${e}`)
   }
+}
+
+// 切换「始终以管理员运行」（用户自选，持久化）
+async function toggleRunAsAdmin() {
+  setting.runAsAdmin = !setting.runAsAdmin
+  await setting.update({ run_as_admin: setting.runAsAdmin })
+  generalMsg.value = setting.runAsAdmin
+    ? '✓ 已开启：下次启动将以管理员身份运行（会弹一次 UAC 确认）'
+    : '已关闭：将以普通权限启动'
 }
 
 // —— 通用 ——
@@ -429,6 +438,11 @@ async function savePreset() {
           <p class="hint">
             当前状态：{{ adminState === null ? '检测中…' : adminState ? '✅ 已以管理员权限运行' : '普通权限（电源模式切换 / 深度清理内存等特殊工具需管理员）' }}
           </p>
+          <label class="switch-wrap">
+            <input type="checkbox" :checked="setting.runAsAdmin" @change="toggleRunAsAdmin" class="switch" />
+            <span class="label">启动时始终以管理员运行（自动提权）</span>
+          </label>
+          <p class="hint">开启后每次启动自动提权（弹一次 UAC 确认），适合常需要管理员工具的深度用户；无需可关闭。</p>
           <div v-if="adminState === false" class="row">
             <button class="btn primary" @click="requestAdmin">🔐 以管理员权限重启</button>
           </div>

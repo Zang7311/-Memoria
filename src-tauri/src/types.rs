@@ -540,6 +540,9 @@ pub struct AppConfig {
     /// 自定义主题组合（多套，用户可保存/切换，大版本核心功能）
     #[serde(default)]
     pub ui_themes: Option<Vec<UiThemePreset>>,
+    /// 是否始终以管理员身份运行（用户自选；开启后启动时自动提权，需弹 UAC）
+    #[serde(default)]
+    pub run_as_admin: bool,
 }
 
 /// 一套完整的外观自定义组合（用户命名保存，可一键切换）

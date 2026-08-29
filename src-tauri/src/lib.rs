@@ -38,6 +38,14 @@ pub fn run() {
             config::store::init(app.handle().clone());
             log::info!("[setup] 铃·记忆体 启动，配置与日志系统已就绪");
 
+            // 用户开启「始终以管理员运行」且当前非管理员 → 自动提权重启（弹一次 UAC）
+            if config::store::get_config().run_as_admin && !commands::admin::is_admin() {
+                log::info!("[setup] 「始终以管理员运行」已开启且当前为普通权限，自动提权重启…");
+                if commands::admin::restart_as_admin().is_ok() {
+                    std::process::exit(0);
+                }
+            }
+
             // —— AI-8 同步模块初始化 + TCP 监听 + 网络监测 ——
             sync::init();
             sync::spawn_listener(app.handle().clone());

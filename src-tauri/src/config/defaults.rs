@@ -43,5 +43,6 @@ pub fn default_config() -> AppConfig {
         bubble_user_color: None,
         bubble_suzu_color: None,
         ui_themes: None,
+        run_as_admin: false,
     }
 }
