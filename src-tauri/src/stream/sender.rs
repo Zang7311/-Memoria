@@ -21,3 +21,9 @@ pub fn send_error(app: &AppHandle, error: &str) -> Result<(), AppError> {
     app.emit("chat_error", error)?;
     Ok(())
 }
+
+/// 推送 token 用量（API 模式流式结束前；脚本/本地模式不发此事件）
+pub fn send_usage(app: &AppHandle, usage: &crate::types::Usage) -> Result<(), AppError> {
+    app.emit("chat_usage", usage)?;
+    Ok(())
+}

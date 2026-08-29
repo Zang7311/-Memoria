@@ -13,10 +13,12 @@ import SettingView from './SettingView.vue'
 import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useSyncStore } from '../stores/syncStore'
+import { useChatStore } from '../stores/chatStore'
 
 const setting = useSettingStore()
 const desktop = useDesktopStore()
 const sync = useSyncStore()
+const chat = useChatStore()
 const theme = computed(() => (setting.theme === 'dark' ? 'dark' : 'light'))
 
 // —— AI-5：插件管理面板开关 ——
@@ -31,7 +33,15 @@ onMounted(() => {
   desktop.loadMonitorRules().catch(() => {})
   // AI-8：初始化同步 Store（网络状态监听 + 设备缓存）
   sync.init().catch(() => {})
+  // 收尾批次3：加载多会话（无会话则自动新建）
+  chat.init().catch(() => {})
 })
+
+async function onDeleteSession(id: string) {
+  if (confirm('删除该会话？此操作不可恢复。')) {
+    await chat.deleteSession(id).catch(() => {})
+  }
+}
 
 async function toggleFloatingBall() {
   await desktop.setFloatingBallVisibility(!desktop.floatingBallVisible)
@@ -39,6 +49,12 @@ async function toggleFloatingBall() {
 
 function openSettings() {
   showSettings.value = true
+}
+
+// 一键切换人格（持久化到配置，API 模式通过 system prompt 生效）
+async function onPersonaChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  await setting.update({ persona: v }).catch(() => {})
 }
 </script>
 
@@ -79,6 +95,18 @@ function openSettings() {
                 sync.syncStatus === 'error' ? '❌' : '🔁'
               }}
             </span>
+            <!-- 一键换人格（API 模式生效） -->
+            <select
+              class="persona-select"
+              :value="setting.persona"
+              @change="onPersonaChange"
+              title="一键切换人格（API 模式生效）"
+            >
+              <option value="daily">🌸 日常</option>
+              <option value="chuunibyou">⚔️ 中二</option>
+              <option value="healing">🫂 治愈</option>
+              <option value="lewd">🔞 涩涩</option>
+            </select>
             <span
               class="gear"
               :class="{ active: desktop.floatingBallVisible }"
@@ -106,11 +134,32 @@ function openSettings() {
           </div>
         </header>
 
+        <!-- 多会话标签栏（收尾批次3） -->
+        <div class="session-tabs">
+          <div
+            v-for="s in chat.sessions"
+            :key="s.id"
+            class="session-tab"
+            :class="{ active: s.id === chat.activeSessionId }"
+            :title="s.title"
+            @click="chat.switchSession(s.id)"
+          >
+            <span class="s-title">{{ s.title }}</span>
+            <span class="s-del" title="删除会话" @click.stop="onDeleteSession(s.id)">✕</span>
+          </div>
+          <button class="new-session" title="新建会话" @click="chat.createSession()">＋</button>
+        </div>
+
         <!-- 中间对话流 -->
         <ChatList />
 
         <!-- 底部输入栏 -->
         <ChatInput />
+
+        <!-- 会话底部 token 统计（API 模式，脚本/本地无此事件故不显示） -->
+        <div v-if="chat.lastUsage" class="usage-bar" title="本次回复的 token 用量">
+          ⚡ 本次回复：输入 {{ chat.lastUsage.prompt_tokens }} · 输出 {{ chat.lastUsage.completion_tokens }} · 合计 {{ chat.lastUsage.total_tokens }} tokens
+        </div>
       </div>
 
       <!-- 右侧记忆面板（AI-4） -->
@@ -229,6 +278,59 @@ function openSettings() {
   transform: rotate(30deg);
   color: #ff8fab;
 }
+.persona-select {
+  background: transparent;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  color: var(--text-main, #222);
+  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 96px;
+}
+/* 多会话标签栏 */
+.session-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+  background: var(--bg-bar, rgba(255, 255, 255, 0.4));
+  flex-shrink: 0;
+}
+.session-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--text-secondary, #999);
+  white-space: nowrap;
+  max-width: 160px;
+}
+.session-tab.active {
+  background: var(--accent, #ff7a94);
+  color: #fff;
+}
+.s-title { overflow: hidden; text-overflow: ellipsis; }
+.s-del { opacity: 0.6; font-size: 10px; padding-left: 2px; }
+.s-del:hover { opacity: 1; }
+.new-session {
+  border: 1px dashed var(--border, rgba(128, 128, 128, 0.4));
+  background: transparent;
+  color: var(--text-secondary, #999);
+  border-radius: 8px;
+  width: 24px;
+  height: 22px;
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.new-session:hover { color: var(--accent, #ff7a94); border-color: var(--accent, #ff7a94); }
 /* 设置页遮罩 */
 .settings-overlay {
   position: fixed;
@@ -265,5 +367,14 @@ function openSettings() {
 }
 .close-btn:hover {
   background: rgba(255, 107, 107, 0.35);
+}
+.usage-bar {
+  padding: 4px 16px;
+  font-size: 11px;
+  color: var(--text-secondary, #999);
+  border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.2));
+  text-align: right;
+  background: var(--bg-bar, rgba(255, 255, 255, 0.5));
+  user-select: none;
 }
 </style>

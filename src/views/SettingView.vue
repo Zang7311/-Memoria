@@ -8,7 +8,7 @@ import PluginManager from '../components/PluginManager.vue'
 import SyncPanel from '../components/SyncPanel.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
-import { getAutostart, registerHotkey, setAutostart } from '../utils/tauri'
+import { getAutostart, openUrl, registerHotkey, setAutostart, testApiConnection } from '../utils/tauri'
 
 const setting = useSettingStore()
 
@@ -47,6 +47,25 @@ const masterPwd = ref('')
 const masterPwd2 = ref('')
 const unlockPwd = ref('')
 const cryptoMsg = ref('')
+const testMsg = ref('')
+const testing = ref(false)
+
+// 常见 OpenAI 兼容模型预设（可下拉选择，也可手填自定义）
+const MODEL_PRESETS = [
+  'deepseek-chat',
+  'deepseek-reasoner',
+  'qwen-plus',
+  'qwen-max',
+  'qwen-turbo',
+  'gpt-4o-mini',
+  'gpt-4o',
+  'gpt-3.5-turbo',
+  'moonshot-v1-8k',
+  'moonshot-v1-32k',
+  'glm-4',
+  'glm-4-plus',
+  'kimi-latest',
+]
 
 // —— 个性化 ——
 const mixRate = ref(8)
@@ -140,10 +159,30 @@ async function saveApiKey() {
   try {
     await setting.saveApiKey(apiKeyInput.value)
     apiKeyInput.value = ''
-    generalMsg.value = '✓ API 密钥已加密保存'
+    generalMsg.value = setting.unlocked ? '✓ API 密钥已加密保存' : '✓ API 密钥已保存（明文，建议设置主密码加密）'
   } catch (e) {
     generalMsg.value = `✗ ${e}`
   }
+}
+async function testConnection() {
+  if (!apiBaseUrl.value.trim()) {
+    testMsg.value = '⚠️ 请先填写 API 地址'
+    return
+  }
+  testing.value = true
+  testMsg.value = '⏳ 正在测试连接…'
+  try {
+    const res = await testApiConnection(apiBaseUrl.value.trim(), apiKeyInput.value.trim())
+    testMsg.value = res.success ? `✅ ${res.message}` : `⚠️ ${res.message}`
+  } catch (e) {
+    testMsg.value = `✗ 测试失败：${e}`
+  } finally {
+    testing.value = false
+  }
+}
+// 打开外部链接（复用后端 open_url，用系统默认浏览器）
+function openExternal(url: string) {
+  openUrl(url).catch((e) => alert(`打开链接失败：${e}`))
 }
 // —— 主密码 ——
 async function doSetupMaster() {
@@ -257,6 +296,23 @@ async function savePersona() {
 
       <!-- ============ 模型 ============ -->
       <div v-else-if="activeTab === 'model'">
+        <!-- 快速接入向导（3 步） -->
+        <section class="card">
+          <div class="card-title">🚀 快速接入向导</div>
+          <div class="steps">
+            <span class="step" :class="{ on: modelMode !== 'script' }">① 选运行模式</span>
+            <span class="arrow">→</span>
+            <span class="step" :class="{ on: modelMode === 'api' && !!apiBaseUrl }">② 填地址与模型</span>
+            <span class="arrow">→</span>
+            <span class="step" :class="{ on: testMsg.includes('✅') }">③ 测试连接</span>
+          </div>
+          <p class="hint">
+            {{ modelMode === 'script' ? '当前：脚本模式（开箱即用，预设回复库，无需联网）' :
+               modelMode === 'api' ? '当前：API 模式（接入 OpenAI 兼容大模型，如 DeepSeek / Qwen / GPT）' :
+               '当前：本地模式（需自行安装 Ollama 并下载模型）' }}
+          </p>
+        </section>
+
         <section class="card">
           <div class="card-title">🤖 运行模式</div>
           <div class="modes">
@@ -264,14 +320,26 @@ async function savePersona() {
             <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">☁️ API</div>
             <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">💻 本地</div>
           </div>
-          <div v-if="modelMode === 'api'" class="field">
-            <label>API 地址</label>
-            <input v-model="apiBaseUrl" class="input long" placeholder="https://api.example.com/v1" />
-          </div>
-          <div v-if="modelMode === 'api'" class="field">
-            <label>模型名</label>
-            <input v-model="apiModel" class="input long" placeholder="gpt-3.5-turbo / deepseek-chat / qwen-plus…" />
-          </div>
+          <template v-if="modelMode === 'api'">
+            <div class="field">
+              <label>API 地址（OpenAI 兼容，带/不带 /v1 均可）</label>
+              <input v-model="apiBaseUrl" class="input long" placeholder="https://api.deepseek.com" />
+            </div>
+            <div class="field">
+              <label>模型名（可选预设，也可手填）</label>
+              <input v-model="apiModel" class="input long" list="model-presets" placeholder="deepseek-chat / qwen-plus / gpt-4o-mini…" />
+              <datalist id="model-presets">
+                <option v-for="m in MODEL_PRESETS" :key="m" :value="m" />
+              </datalist>
+            </div>
+            <div class="row">
+              <button class="btn ghost" :disabled="testing" @click="testConnection">
+                {{ testing ? '⏳ 测试中…' : '🔌 测试连接' }}
+              </button>
+              <button class="btn ghost" @click="openExternal('https://platform.deepseek.com')">🔑 获取 DeepSeek API Key</button>
+            </div>
+            <div v-if="testMsg" class="msg">{{ testMsg }}</div>
+          </template>
           <div class="field">
             <label>思考深度（1-4）</label>
             <input v-model="depth" type="range" min="1" max="4" step="1" class="range" />
@@ -281,15 +349,15 @@ async function savePersona() {
         </section>
 
         <section class="card">
-          <div class="card-title">🔐 API 密钥（加密存储）</div>
+          <div class="card-title">🔐 API 密钥</div>
           <p class="hint">
-            主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️' }}
+            主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️（密钥将明文存储，建议设置主密码加密）' }}
           </p>
           <div class="field">
-            <label>新密钥（明文仅本地输入，保存时 AES-256-GCM 加密）</label>
+            <label>{{ setting.unlocked ? '新密钥（AES-256-GCM 加密存储）' : '新密钥（当前明文存储，不设主密码也可用）' }}</label>
             <div class="row">
               <input v-model="apiKeyInput" type="password" class="input long" placeholder="sk-..." />
-              <button class="btn primary" @click="saveApiKey" :disabled="!setting.unlocked">加密保存</button>
+              <button class="btn primary" @click="saveApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
             </div>
           </div>
 
@@ -376,6 +444,10 @@ async function savePersona() {
         <section class="card">
           <div class="card-title">💝 赞助</div>
           <p class="hint">支持铃·记忆体开源项目。赞助渠道、目标进度、赞助者名单在此展示（预留）。</p>
+          <div class="row">
+            <button class="btn primary" @click="openExternal('https://github.com/Zang7311')">🌐 访问 GitHub 主页</button>
+            <button class="btn ghost" @click="openExternal('https://github.com/Zang7311/-Memoria')">📦 项目仓库</button>
+          </div>
         </section>
       </div>
 
@@ -429,6 +501,10 @@ async function savePersona() {
 .input.long { flex: 1; min-width: 220px; }
 .range { accent-color: var(--accent, #ff7a94); }
 .modes { display: flex; gap: 8px; margin-bottom: 12px; }
+.steps { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.step { font-size: 12px; padding: 3px 9px; border-radius: 12px; background: rgba(128, 128, 128, 0.14); color: var(--text-secondary); }
+.step.on { background: var(--accent, #ff7a94); color: #fff; }
+.arrow { color: var(--text-secondary); font-size: 12px; }
 .mode {
   padding: 8px 16px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border);
   font-size: 13px; background: transparent;

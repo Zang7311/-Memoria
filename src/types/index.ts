@@ -186,6 +186,8 @@ export interface AppConfig {
   api_base_url?: string | null
   /** 加密存储的 API Key（AES-256-GCM 密文，非明文） */
   api_key_encrypted?: string | null
+  /** 明文存储的 API Key（未设置主密码时使用；设置后自动转为加密） */
+  api_key_plain?: string | null
   /** API 模型名（如 gpt-4o-mini / deepseek-chat） */
   api_model?: string
   model_mode: 'script' | 'api' | 'local' | string
@@ -205,12 +207,44 @@ export interface AppConfig {
   enabled_plugins: string[]
   self_name?: string | null
   user_name?: string | null
+  /** 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩） */
+  persona?: string
   master_password_salt?: string | null
   has_master_password: boolean
 }
 
 export interface GetConfigResponse {
   config: AppConfig
+}
+
+/** 测试 API 连接响应 */
+export interface TestConnectionResponse {
+  success: boolean
+  message: string
+}
+
+/** Token 用量（API 模式流式统计，会话底部显示） */
+export interface ChatUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
+// ==================== 多会话管理（收尾工程师批次3） ====================
+
+/** 会话元信息（会话标签/历史列表展示） */
+export interface SessionMeta {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+/** 一个会话（元信息 + 完整消息流） */
+export interface Session {
+  meta: SessionMeta
+  messages: Message[]
 }
 
 /** 更新配置请求（增量，null 表示清除字段） */

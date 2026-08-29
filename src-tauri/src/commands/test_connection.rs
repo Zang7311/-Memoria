@@ -9,7 +9,7 @@ pub async fn test_api_connection(
     base_url: String,
     api_key: String,
 ) -> Result<TestConnectionResponse, AppError> {
-    let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    let url = format!("{}/models", crate::utils::normalize_v1_url(&base_url));
 
     let client = reqwest::Client::new();
     let resp = client

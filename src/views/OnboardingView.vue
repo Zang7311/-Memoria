@@ -70,6 +70,7 @@ async function finish() {
       language_mix_rate: STYLES[style.value].mix,
       self_name: STYLES[style.value].self,
       user_name: STYLES[style.value].user,
+      persona: style.value,
     }
     if (modelMode.value === 'api') {
       updates.api_base_url = apiBaseUrl.value.trim() || null

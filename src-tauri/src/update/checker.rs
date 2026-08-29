@@ -10,7 +10,7 @@ use serde::Deserialize;
 use std::sync::Mutex;
 
 /// GitHub 仓库（发布页路径，部署时改成实际用户名）
-pub const GITHUB_REPO: &str = "zang7311/铃-记忆体";
+pub const GITHUB_REPO: &str = "Zang7311/-Memoria";
 /// 更新检查间隔（小时）
 pub const UPDATE_INTERVAL_HOURS: i64 = 24;
 

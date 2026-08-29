@@ -56,6 +56,7 @@ async fn generate_and_emit(
         depth: cfg.depth,
         self_name: cfg.self_name.clone(),
         user_name: cfg.user_name.clone(),
+        persona: cfg.persona.clone(),
     };
 
     // 加载上下文（脚本模式无需上下文）
@@ -84,7 +85,7 @@ async fn generate_and_emit(
         "api" => {
             let base = setting.api_base_url.clone().unwrap_or_default();
             let key = setting.api_key.clone().unwrap_or_default();
-            engine::api::run_api(app, input, &memories, &base, &key, &setting.api_model, depth).await?
+            engine::api::run_api(app, input, &memories, &base, &key, &setting.api_model, depth, &setting.persona).await?
         }
         "local" => {
             engine::local::run_local(app, input, &memories, depth).await?
@@ -118,12 +119,18 @@ fn context_max_tokens(depth: u8) -> usize {
 /// - 未配置密钥 → None（引擎会报「未配置 API Key」）
 /// - 已加密但未解锁 → 报 Locked（提示用户先解锁）
 fn decrypt_api_key(cfg: &crate::types::AppConfig) -> Result<Option<String>, AppError> {
-    match &cfg.api_key_encrypted {
-        None => Ok(None),
-        Some(s) if s.is_empty() => Ok(None),
-        Some(enc) => {
+    // 优先读取加密存储（需已解锁）
+    if let Some(enc) = &cfg.api_key_encrypted {
+        if !enc.is_empty() {
             let key = crate::config::encryption::get_key()?;
-            Ok(Some(crate::config::encryption::decrypt_with_key(&key, enc)?))
+            return Ok(Some(crate::config::encryption::decrypt_with_key(&key, enc)?));
         }
     }
+    // 回退明文存储（未设置主密码时保存的场景）
+    if let Some(plain) = &cfg.api_key_plain {
+        if !plain.is_empty() {
+            return Ok(Some(plain.clone()));
+        }
+    }
+    Ok(None)
 }

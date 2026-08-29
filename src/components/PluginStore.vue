@@ -3,6 +3,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { usePluginStore } from '../stores/pluginStore'
+import { openUrl } from '../utils/tauri'
 
 const store = usePluginStore()
 const installing = ref<string>('')
@@ -49,6 +50,11 @@ async function onInstall(item: (typeof marketItems)[number]) {
 
 // 预留：真实市场接口
 // const onInstallRemote = async () => { await store.install(gitUrl) }
+
+// 打开外部链接（跳转 Hermes 官方技能目录）
+function openExternal(url: string) {
+  openUrl(url).catch((e) => alert(`打开链接失败：${e}`))
+}
 </script>
 
 <template>
@@ -72,6 +78,7 @@ async function onInstall(item: (typeof marketItems)[number]) {
       </button>
     </div>
     <p class="store-tip">💡 概念验证：在线插件市场服务将在后续版本接入，当前列表为示例。</p>
+    <button class="more-btn" @click="openExternal('https://hermes-agent.nousresearch.com/docs/reference/skills-catalog')">🔗 浏览 Hermes 技能目录</button>
   </div>
 </template>
 
@@ -128,5 +135,17 @@ async function onInstall(item: (typeof marketItems)[number]) {
   font-size: 11px;
   opacity: 0.6;
   text-align: center;
+}
+.more-btn {
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.4));
+  background: transparent;
+  color: var(--accent, #ff7a94);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.more-btn:hover {
+  background: rgba(255, 182, 193, 0.12);
 }
 </style>

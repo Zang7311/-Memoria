@@ -11,6 +11,7 @@ pub fn default_config() -> AppConfig {
         context_length: 10,
         api_base_url: None,
         api_key_encrypted: None,
+        api_key_plain: None,
         api_model: "gpt-3.5-turbo".to_string(),
         model_mode: "script".to_string(),
         depth: 2,
@@ -30,6 +31,7 @@ pub fn default_config() -> AppConfig {
         enabled_plugins: Vec::new(),
         self_name: Some("铃".to_string()),
         user_name: Some("主人".to_string()),
+        persona: "daily".to_string(),
         master_password_salt: None,
         has_master_password: false,
     }
