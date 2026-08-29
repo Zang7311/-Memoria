@@ -155,7 +155,7 @@ async function confirmDelete() {
 .toolbox-panel {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  bottom: 100px;
   width: 300px;
   background: var(--bg-bar, rgba(30, 28, 32, 0.92));
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
