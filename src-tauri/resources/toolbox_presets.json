@@ -68,5 +68,68 @@
     "icon": "🌐",
     "command": "control ncpa.cpl",
     "enabled": true
+  },
+  {
+    "id": "empty-recycle-bin",
+    "name": "清空回收站",
+    "icon": "🗑️",
+    "command": "powershell -NoProfile -Command \"Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output 'Recycle bin cleared'\"",
+    "enabled": true
+  },
+  {
+    "id": "power-saver",
+    "name": "电源·省电",
+    "icon": "🔋",
+    "command": "powercfg /setactive a1841308-3541-4fab-bc81-f71556f20b4a",
+    "enabled": true
+  },
+  {
+    "id": "power-balanced",
+    "name": "电源·平衡",
+    "icon": "⚖️",
+    "command": "powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e",
+    "enabled": true
+  },
+  {
+    "id": "power-high",
+    "name": "电源·高性能",
+    "icon": "🚀",
+    "command": "powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+    "enabled": true
+  },
+  {
+    "id": "open-cmd",
+    "name": "打开 CMD",
+    "icon": "💻",
+    "command": "start cmd",
+    "enabled": true
+  },
+  {
+    "id": "open-powershell",
+    "name": "打开 PowerShell",
+    "icon": "🖥️",
+    "command": "start powershell",
+    "enabled": true
+  },
+  {
+    "id": "port-list",
+    "name": "查看端口占用",
+    "icon": "🔌",
+    "command": "netstat -ano | findstr \"LISTENING\"",
+    "enabled": true
+  },
+  {
+    "id": "clipboard-history",
+    "name": "剪贴板历史",
+    "icon": "📋",
+    "command": "powershell -NoProfile -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBUAHkAcABlAEQAZQBmAGkAbgBpAHQAaQBvAG4AIAAnAHUAcwBpAG4AZwAgAFMAeQBzAHQAZQBtADsAdQBzAGkAbgBnACAAUwB5AHMAdABlAG0ALgBSAHUAbgB0AGkAbQBlAC4ASQBuAHQAZQByAG8AcABTAGUAcgB2AGkAYwBlAHMAOwBwAHUAYgBsAGkAYwAgAGMAbABhAHMAcwAgAEsAewBbAEQAbABsAEkAbQBwAG8AcgB0ACgAIgB1AHMAZQByADMAMgAuAGQAbABsACIAKQBdAHAAdQBiAGwAaQBjACAAcwB0AGEAdABpAGMAIABlAHgAdABlAHIAbgAgAHYAbwBpAGQAIABrAGUAeQBiAGQAXwBlAHYAZQBuAHQAKABiAHkAdABlACAAYgAsAGIAeQB0AGUAIABzACwAdQBpAG4AdAAgAGYALABVAEkAbgB0AFAAdAByACAAeAApADsAfQAnADsACgBbAEsAXQA6ADoAawBlAHkAYgBkAF8AZQB2AGUAbgB0ACgAMAB4ADUAQgAsADAALAAwACwAWwBVAEkAbgB0AFAAdAByAF0AOgA6AFoAZQByAG8AKQA7AAoAWwBLAF0AOgA6AGsAZQB5AGIAZABfAGUAdgBlAG4AdAAoADAAeAA1ADYALAAwACwAMAAsAFsAVQBJAG4AdABQAHQAcgBdADoAOgBaAGUAcgBvACkAOwAKAFsASwBdADoAOgBrAGUAeQBiAGQAXwBlAHYAZQBuAHQAKAAwAHgANQA2ACwAMAAsADIALABbAFUASQBuAHQAUAB0AHIAXQA6ADoAWgBlAHIAbwApADsACgBbAEsAXQA6ADoAawBlAHkAYgBkAF8AZQB2AGUAbgB0ACgAMAB4ADUAQgAsADAALAAyACwAWwBVAEkAbgB0AFAAdAByAF0AOgA6AFoAZQByAG8AKQA=",
+    "enabled": true
+  },
+  {
+    "id": "alarm",
+    "name": "小闹钟",
+    "icon": "⏱️",
+    "command": "start \"\" powershell -NoProfile -WindowStyle Hidden -EncodedCommand QQBkAGQALQBUAHkAcABlACAALQBBAHMAcwBlAG0AYgBsAHkATgBhAG0AZQAgAE0AaQBjAHIAbwBzAG8AZgB0AC4AVgBpAHMAdQBhAGwAQgBhAHMAaQBjADsACgBBAGQAZAAtAFQAeQBwAGUAIAAtAEEAcwBzAGUAbQBiAGwAeQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBXAGkAbgBkAG8AdwBzAC4ARgBvAHIAbQBzADsACgAkAG0AaQBuAHMAIAA9ACAAWwBNAGkAYwByAG8AcwBvAGYAdAAuAFYAaQBzAHUAYQBsAEIAYQBzAGkAYwAuAEkAbgB0AGUAcgBhAGMAdABpAG8AbgBdADoAOgBJAG4AcAB1AHQAQgBvAHgAKAAnAE0AaQBuAHUAdABlAHMAJwAsACAAJwBTAHUAegB1ACAAQQBsAGEAcgBtACcALAAgACcANQAnACkAOwAKACQAcwBlAGMAcwAgAD0AIABbAGkAbgB0AF0AJABtAGkAbgBzACAAKgAgADYAMAA7AAoAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBTAGUAYwBvAG4AZABzACAAJABzAGUAYwBzADsACgBbAFMAeQBzAHQAZQBtAC4AVwBpAG4AZABvAHcAcwAuAEYAbwByAG0AcwAuAE0AZQBzAHMAYQBnAGUAQgBvAHgAXQA6ADoAUwBoAG8AdwAoACIAJABtAGkAbgBzACAAbQBpAG4AIAB1AHAAIQAiACwAIAAnAFMAdQB6AHUAIABBAGwAYQByAG0AJwApAA==",
+    "enabled": true
   }
 ]
