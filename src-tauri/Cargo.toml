@@ -1,6 +1,6 @@
 [package]
 name = "mem"
-version = "0.3.0"
+version = "0.4.0"
 description = "铃·记忆体"
 authors = ["you"]
 edition = "2021"
@@ -56,3 +56,10 @@ rand = "0.8"
 base64 = "0.22"
 # 诊断包导出（zip 压缩）
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# ==================== moon10 二维码生成与识别 ====================
+# 纯 Rust 方案：qrcode(生成矩阵) + image(0.25, PNG渲染/图片解码) + rqrr(解码)，无系统依赖，离线可用
+# 坑：rqrr 全系依赖 image 0.25，故 image 必须用 0.25 统一；qrcode 禁用其 image feature(会拉0.24冲突)，
+#     生成时用 qrcode 矩阵 + image 0.25 手动渲染 PNG
+qrcode = { version = "0.14", default-features = false }
+image = "0.25"
+rqrr = "0.7"

@@ -217,9 +217,12 @@ export function addTerminalCommand(name: string, command: string, description: s
 
 // ==================== AI-6 桌面交互 IPC 封装 ====================
 import type {
+  ExecuteQuickCommandResponse,
   ExecuteToolboxResponse,
   GetMonitorRulesResponse,
+  ListQuickCommandsResponse,
   MonitorTriggerEvent,
+  QuickCommand,
   ScreenMonitorRule,
   ToolboxItem,
   WindowInfo,
@@ -260,6 +263,43 @@ export function executeToolbox(item_id: string, input?: string): Promise<Execute
   return invoke('execute_toolbox', { request: { item_id, input: input ?? null } })
 }
 
+// ==================== AI-9 快捷指令 IPC 封装 ====================
+
+/** 列出所有快捷指令 */
+export function listQuickCommands(): Promise<ListQuickCommandsResponse> {
+  return invoke('list_quick_commands')
+}
+
+/** 新增/更新一条快捷指令 */
+export function saveQuickCommand(command: QuickCommand): Promise<void> {
+  return invoke('save_quick_command', { request: { command } })
+}
+
+/** 删除一条快捷指令 */
+export function deleteQuickCommand(command_id: string): Promise<void> {
+  return invoke('delete_quick_command', { request: { command_id } })
+}
+
+/** 按顺序执行一条快捷指令的全部动作 */
+export function executeQuickCommand(command_id: string): Promise<ExecuteQuickCommandResponse> {
+  return invoke('execute_quick_command', { request: { command_id } })
+}
+
+/** 切换系统电源计划（mode: balanced | high | power-saver） */
+export function setPowerMode(mode: string): Promise<string> {
+  return invoke('set_power_mode', { mode })
+}
+
+/** 设置系统主音量（0-100） */
+export function setVolume(level: number): Promise<string> {
+  return invoke('set_volume', { level })
+}
+
+/** 启动音乐（path 为空则打开用户音乐目录） */
+export function playMusic(path?: string | null): Promise<string> {
+  return invoke('play_music', { path: path ?? null })
+}
+
 /** 保存像素画 PNG（data URL）到桌面，返回保存路径 */
 export function savePixelArt(dataUrl: string): Promise<string> {
   return invoke('save_pixel_art', { dataUrl })
@@ -268,6 +308,23 @@ export function savePixelArt(dataUrl: string): Promise<string> {
 /** 保存 UI 图片（背景图/头像）到应用数据目录 ui_assets/，返回保存路径 */
 export function saveUiImage(dataUrl: string, prefix: string): Promise<string> {
   return invoke('save_ui_image', { dataUrl, prefix })
+}
+
+// ==================== moon10 二维码生成与识别 ====================
+
+/** 生成二维码 PNG 保存到桌面，返回保存路径（text→图片） */
+export function generateQrcode(text: string, size?: number): Promise<string> {
+  return invoke('generate_qrcode', { text, size: size ?? null })
+}
+
+/** 识别图片中的二维码，返回解码出的文本内容（图片路径→文本） */
+export function decodeQrcode(imagePath: string): Promise<string> {
+  return invoke('decode_qrcode', { imagePath })
+}
+
+/** OCR 识别图片文字（moon11）：返回 { engine, text, success }，优先 Windows OCR，失败自动降级 Tesseract */
+export function ocrImage(imagePath: string): Promise<{ engine: string; text: string; success: boolean }> {
+  return invoke('ocr_image', { imagePath })
 }
 
 /** 把本地文件路径转为 webview 可加载的 asset URL（背景图/头像图片用，解决本地路径无法显示） */

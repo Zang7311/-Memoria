@@ -5,6 +5,7 @@ import { onMounted, ref } from 'vue'
 import DiagnosticView from '../components/DiagnosticView.vue'
 import MonitorSettings from '../components/MonitorSettings.vue'
 import PluginManager from '../components/PluginManager.vue'
+import QuickCommandPanel from '../components/QuickCommandPanel.vue'
 import SyncPanel from '../components/SyncPanel.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
@@ -19,6 +20,7 @@ const tabs = [
   { key: 'monitor', label: '监测', icon: '👁️' },
   { key: 'persona', label: '个性化', icon: '🎀' },
   { key: 'plugin', label: '插件', icon: '🧩' },
+  { key: 'quick', label: '指令', icon: '⚡' },
   { key: 'sync', label: '同步', icon: '🔄' },
   { key: 'sponsor', label: '赞助', icon: '💝' },
   { key: 'diag', label: '诊断', icon: '🩺' },
@@ -777,6 +779,11 @@ async function toggleAiToolbox() {
       <!-- ============ 同步 ============ -->
       <div v-else-if="activeTab === 'sync'">
         <SyncPanel />
+      </div>
+
+      <!-- ============ 快捷指令（AI-9） ============ -->
+      <div v-else-if="activeTab === 'quick'">
+        <QuickCommandPanel />
       </div>
 
       <!-- ============ 赞助 ============ -->

@@ -166,6 +166,39 @@ export interface GetMonitorRulesResponse {
   available: boolean
 }
 
+// ==================== AI-9 快捷指令系统 ====================
+
+/** 快捷指令中的单步动作 */
+export interface QuickCommandStep {
+  /** 动作标识：volume / music / power-balanced / power-high / power-saver 或工具箱工具 id */
+  tool: string
+  /** 该步可选输入（音量数值 / 音乐文件路径） */
+  input?: string | null
+}
+
+/** 一条快捷指令 */
+export interface QuickCommand {
+  id: string
+  /** 指令名，如「晚安模式」 */
+  name: string
+  steps: QuickCommandStep[]
+  /** 执行完后铃说的话 */
+  say?: string | null
+}
+
+/** 列出快捷指令响应 */
+export interface ListQuickCommandsResponse {
+  commands: QuickCommand[]
+}
+
+/** 执行快捷指令响应 */
+export interface ExecuteQuickCommandResponse {
+  success: boolean
+  results: string[]
+  say?: string | null
+  error?: string | null
+}
+
 /** 执行工具箱命令响应 */
 export interface ExecuteToolboxResponse {
   success: boolean
@@ -229,6 +262,8 @@ export interface AppConfig {
   run_as_admin?: boolean
   emoji_mode?: string | null
   ai_toolbox?: boolean
+  /** —— AI-9 快捷指令列表 —— */
+  quick_commands?: QuickCommand[]
 }
 
 /** 一套完整的外观自定义组合（用户命名保存，可一键切换） */

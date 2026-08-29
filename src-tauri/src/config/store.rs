@@ -21,8 +21,12 @@ static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 /// 初始化配置中心（lib.rs setup 时调用一次）
 /// - 无配置文件 → 写默认配置
 /// - 有配置文件 → 迁移后加载
+/// - moon12：启动时先做旧版数据目录迁移（旧配置→新配置，配置就绪后旧记忆→新记忆）
 pub fn init(app: AppHandle) {
     *APP.lock().unwrap() = Some(app.clone());
+
+    // moon12 ①：旧版配置迁移（仅当新配置不存在时复制，不覆盖用户数据）
+    migration::migrate_legacy_config();
 
     let cfg = if !config::config_path().exists() {
         let d = default_config();
@@ -38,6 +42,10 @@ pub fn init(app: AppHandle) {
         }
     };
     *CONFIG.lock().unwrap() = Some(cfg);
+
+    // moon12 ②：配置就绪后迁移旧记忆（依赖 data_path；幂等，只复制不覆盖）
+    migration::migrate_legacy_memory(&app);
+
     // 通知前端初始配置就绪
     let _ = app.emit("config-changed", ());
 }
