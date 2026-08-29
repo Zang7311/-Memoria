@@ -1,0 +1,16 @@
+{
+  "name": "hello_hermes",
+  "version": "1.0.0",
+  "author": "Hermes 社区",
+  "description": "Hermes 兼容层示例插件：验证 Hermes 插件（config.json + main.js）可被《铃》加载并注册技能",
+  "main": "main.js",
+  "skills": [
+    {
+      "name": "hermes_hello",
+      "description": "Hermes 兼容示例：向指定对象问好",
+      "parameters": [
+        { "name": "who", "type": "string", "required": false, "description": "向谁问好（默认：世界）" }
+      ]
+    }
+  ]
+}

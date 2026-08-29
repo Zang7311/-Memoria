@@ -1,0 +1,43 @@
+{
+  "name": "文本工具箱",
+  "version": "0.1.0",
+  "author": "铃·记忆体 官方",
+  "description": "文本处理小工具：Base64 编码/解码、字数统计、大小写转换（纯 JS 实现，无需任何权限）",
+  "main": "index.js",
+  "skills": [
+    {
+      "name": "base64_encode",
+      "description": "将文本编码为 Base64（支持中文）",
+      "parameters": [
+        { "name": "text", "type": "string", "required": true, "description": "要编码的文本" }
+      ],
+      "action": "js:base64_encode"
+    },
+    {
+      "name": "base64_decode",
+      "description": "将 Base64 字符串解码为原文",
+      "parameters": [
+        { "name": "text", "type": "string", "required": true, "description": "Base64 字符串" }
+      ],
+      "action": "js:base64_decode"
+    },
+    {
+      "name": "count_words",
+      "description": "统计文本中中文字数、英文单词数与总字符数",
+      "parameters": [
+        { "name": "text", "type": "string", "required": true, "description": "要统计的文本" }
+      ],
+      "action": "js:count_words"
+    },
+    {
+      "name": "to_upper",
+      "description": "将文本转换为大写",
+      "parameters": [
+        { "name": "text", "type": "string", "required": true, "description": "文本" }
+      ],
+      "action": "js:to_upper"
+    }
+  ],
+  "permissions": [],
+  "hermes_compatible": false
+}

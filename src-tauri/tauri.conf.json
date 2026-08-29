@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "铃·记忆体",
+  "version": "0.1.0",
+  "identifier": "com.zang-服务器.mem",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "铃·记忆体",
+        "width": 1200,
+        "height": 720,
+        "minWidth": 1200,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "resources/plugins/file_search/manifest.json": "plugins/file_search/manifest.json",
+      "resources/plugins/file_search/index.js": "plugins/file_search/index.js",
+      "resources/plugins/text_tools/manifest.json": "plugins/text_tools/manifest.json",
+      "resources/plugins/text_tools/index.js": "plugins/text_tools/index.js",
+      "resources/plugins/file_viewer/manifest.json": "plugins/file_viewer/manifest.json",
+      "resources/plugins/file_viewer/index.js": "plugins/file_viewer/index.js",
+      "resources/hermes_plugins/hello_hermes/config.json": "hermes_plugins/hello_hermes/config.json",
+      "resources/hermes_plugins/hello_hermes/main.js": "hermes_plugins/hello_hermes/main.js"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

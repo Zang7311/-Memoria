@@ -1,0 +1,65 @@
+[
+  {
+    "id": "explorer",
+    "name": "资源管理器",
+    "icon": "📁",
+    "command": "explorer",
+    "enabled": true
+  },
+  {
+    "id": "calc",
+    "name": "计算器",
+    "icon": "🧮",
+    "command": "calc",
+    "enabled": true
+  },
+  {
+    "id": "notepad",
+    "name": "记事本",
+    "icon": "📝",
+    "command": "notepad",
+    "enabled": true
+  },
+  {
+    "id": "taskmgr",
+    "name": "任务管理器",
+    "icon": "🛠️",
+    "command": "taskmgr",
+    "enabled": true
+  },
+  {
+    "id": "lock",
+    "name": "锁定屏幕",
+    "icon": "🔒",
+    "command": "rundll32.exe user32.dll,LockWorkStation",
+    "enabled": true
+  },
+  {
+    "id": "shutdown-1h",
+    "name": "定时关机（1小时）",
+    "icon": "⏰",
+    "command": "shutdown /s /t 3600",
+    "enabled": true
+  },
+  {
+    "id": "cancel-shutdown",
+    "name": "取消关机",
+    "icon": "↩️",
+    "command": "shutdown /a",
+    "enabled": true
+  },
+  {
+    "id": "clean-temp",
+    "name": "清理临时文件",
+    "icon": "🧹",
+    "command": "powershell -NoProfile -Command \"Remove-Item -Recurse -Force $env:TEMP\\* -ErrorAction SilentlyContinue; Write-Output '临时文件已清理'\"",
+    "enabled": true
+  },
+  {
+    "id": "network",
+    "name": "网络设置",
+    "icon": "🌐",
+    "command": "control ncpa.cpl",
+    "enabled": true
+  }
+]

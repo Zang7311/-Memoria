@@ -1,0 +1,439 @@
+<!-- 《铃·记忆体》设置页（AI-7 4.1）完整实现：9 个标签页
+     通用 / 模型 / 记忆 / 监测 / 个性化 / 插件 / 同步 / 赞助 / 诊断 -->
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import DiagnosticView from '../components/DiagnosticView.vue'
+import MonitorSettings from '../components/MonitorSettings.vue'
+import PluginManager from '../components/PluginManager.vue'
+import SyncPanel from '../components/SyncPanel.vue'
+import ToolboxPanel from '../components/ToolboxPanel.vue'
+import { useSettingStore } from '../stores/settingStore'
+import { getAutostart, registerHotkey, setAutostart } from '../utils/tauri'
+
+const setting = useSettingStore()
+
+const tabs = [
+  { key: 'general', label: '通用', icon: '🛠️' },
+  { key: 'model', label: '模型', icon: '🤖' },
+  { key: 'memory', label: '记忆', icon: '🧠' },
+  { key: 'monitor', label: '监测', icon: '👁️' },
+  { key: 'persona', label: '个性化', icon: '🎀' },
+  { key: 'plugin', label: '插件', icon: '🧩' },
+  { key: 'sync', label: '同步', icon: '🔄' },
+  { key: 'sponsor', label: '赞助', icon: '💝' },
+  { key: 'diag', label: '诊断', icon: '🩺' },
+]
+const activeTab = ref('general')
+
+// —— 快捷键（AI-6 复用）——
+const hotkey = ref('Ctrl+Alt+L')
+const hotkeyMsg = ref('')
+// —— 自启动 ——
+const autostart = ref(false)
+const autostartMsg = ref('')
+// —— 工具箱悬浮窗 ——
+const showToolbox = ref(false)
+// —— 通用反馈 ——
+const generalMsg = ref('')
+const exportPath = ref('')
+
+// —— 模型/加密 ——
+const modelMode = ref<'script' | 'api' | 'local'>('script')
+const apiBaseUrl = ref('')
+const apiKeyInput = ref('')
+const depth = ref(2)
+const masterPwd = ref('')
+const masterPwd2 = ref('')
+const unlockPwd = ref('')
+const cryptoMsg = ref('')
+
+// —— 个性化 ——
+const mixRate = ref(8)
+const selfName = ref('铃')
+const userName = ref('主人')
+
+function syncFromStore() {
+  modelMode.value = setting.modelMode
+  apiBaseUrl.value = setting.apiBaseUrl ?? ''
+  depth.value = setting.depth
+  mixRate.value = setting.languageMixRate
+  selfName.value = setting.selfName
+  userName.value = setting.userName
+  hotkey.value = setting.hotkey
+}
+
+onMounted(async () => {
+  if (!setting.loaded) await setting.loadConfig()
+  syncFromStore()
+  autostart.value = setting.autostart
+  try {
+    const res = await getAutostart()
+    autostart.value = res.enabled
+  } catch { /* 忽略 */ }
+})
+
+// —— 通用 ——
+async function toggleAutostart() {
+  try {
+    await setAutostart(autostart.value)
+    await setting.update({ autostart: autostart.value })
+    autostartMsg.value = autostart.value ? '✓ 已开启开机自启动' : '✓ 已关闭开机自启动'
+  } catch (e) {
+    autostartMsg.value = `✗ ${e}`
+  }
+  setTimeout(() => (autostartMsg.value = ''), 4000)
+}
+async function saveHotkey() {
+  hotkeyMsg.value = ''
+  try {
+    const res = await registerHotkey(hotkey.value)
+    await setting.update({ hotkey: hotkey.value })
+    hotkeyMsg.value = res.registered ? `✓ 快捷键已生效：${res.accelerator}` : '✗ 注册失败'
+  } catch (e) {
+    hotkeyMsg.value = `✗ ${e}`
+  }
+  setTimeout(() => (hotkeyMsg.value = ''), 4000)
+}
+async function doReset() {
+  if (!confirm('确定恢复所有设置为默认值吗？（保留主密码与已加密密钥）')) return
+  await setting.resetAll()
+  syncFromStore()
+  generalMsg.value = '✓ 已重置为默认设置'
+}
+async function doExportConfig() {
+  const res = await setting.exportToFile()
+  exportPath.value = res.success ? `✓ 已导出：${res.path}` : `✗ ${res.error}`
+}
+async function doImportConfig() {
+  const p = prompt('请输入要导入的 JSON 配置文件完整路径：')
+  if (!p) return
+  try {
+    await setting.importFromFile(p)
+    syncFromStore()
+    generalMsg.value = `✓ 已从 ${p} 导入`
+  } catch (e) {
+    generalMsg.value = `✗ 导入失败：${e}`
+  }
+}
+async function saveDataPath() {
+  await setting.update({ data_path: setting.dataPath })
+  generalMsg.value = '✓ 数据路径已更新（记忆将保存到新路径）'
+}
+
+// —— 模型 ——
+async function saveModel() {
+  try {
+    await setting.update({
+      model_mode: modelMode.value,
+      api_base_url: apiBaseUrl.value.trim() || null,
+      depth: depth.value,
+    })
+    generalMsg.value = '✓ 模型设置已保存'
+  } catch (e) {
+    generalMsg.value = `✗ ${e}`
+  }
+}
+async function saveApiKey() {
+  try {
+    await setting.saveApiKey(apiKeyInput.value)
+    apiKeyInput.value = ''
+    generalMsg.value = '✓ API 密钥已加密保存'
+  } catch (e) {
+    generalMsg.value = `✗ ${e}`
+  }
+}
+// —— 主密码 ——
+async function doSetupMaster() {
+  if (!masterPwd.value) return
+  if (masterPwd.value !== masterPwd2.value) {
+    cryptoMsg.value = '✗ 两次输入不一致'
+    return
+  }
+  try {
+    await setting.setupMasterPassword(masterPwd.value)
+    masterPwd.value = ''
+    masterPwd2.value = ''
+    cryptoMsg.value = '✓ 主密码已设置并解锁'
+  } catch (e) {
+    cryptoMsg.value = `✗ ${e}`
+  }
+}
+async function doUnlock() {
+  try {
+    await setting.unlockVault(unlockPwd.value)
+    unlockPwd.value = ''
+    cryptoMsg.value = '✓ 已解锁'
+  } catch (e) {
+    cryptoMsg.value = `✗ ${e}`
+  }
+}
+
+// —— 个性化 ——
+async function savePersona() {
+  await setting.update({
+    language_mix_rate: mixRate.value,
+    self_name: selfName.value,
+    user_name: userName.value,
+  })
+  generalMsg.value = '✓ 个性化设置已保存'
+}
+</script>
+
+<template>
+  <div class="setting-view">
+    <h3 class="page-title">⚙️ 设置</h3>
+
+    <!-- 标签导航 -->
+    <div class="tabs">
+      <div v-for="t in tabs" :key="t.key" class="tab" :class="{ active: activeTab === t.key }" @click="activeTab = t.key">
+        <span class="tab-icon">{{ t.icon }}</span>{{ t.label }}
+      </div>
+    </div>
+
+    <div class="tab-content">
+      <!-- ============ 通用 ============ -->
+      <div v-if="activeTab === 'general'">
+        <section class="card">
+          <div class="card-title">🎨 外观</div>
+          <div class="row">
+            <span class="label">主题</span>
+            <button class="btn ghost" @click="setting.toggleTheme()">
+              {{ setting.theme === 'dark' ? '🌙 深色（点击切换亮色）' : '☀️ 亮色（点击切换深色）' }}
+            </button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">🚀 开机自启动</div>
+          <label class="switch-wrap">
+            <input v-model="autostart" type="checkbox" class="switch" @change="toggleAutostart" />
+            <span class="label">{{ autostart ? '已开启' : '已关闭' }}</span>
+          </label>
+          <div v-if="autostartMsg" class="msg">{{ autostartMsg }}</div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">⌨️ 全局快捷键</div>
+          <div class="row">
+            <input v-model="hotkey" class="input" placeholder="Ctrl+Alt+L" />
+            <button class="btn primary" @click="saveHotkey">应用</button>
+          </div>
+          <div v-if="hotkeyMsg" class="msg">{{ hotkeyMsg }}</div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">🗂️ 数据路径</div>
+          <div class="row">
+            <input v-model="setting.dataPath" class="input long" placeholder="记忆存储路径" />
+            <button class="btn primary" @click="saveDataPath">保存</button>
+          </div>
+          <p class="hint">当前：{{ setting.dataPath || '（未设置，默认文档/铃记忆体）' }}</p>
+        </section>
+
+        <section class="card">
+          <div class="card-title">💾 配置备份</div>
+          <div class="row">
+            <button class="btn ghost" @click="doExportConfig">导出配置 JSON</button>
+            <button class="btn ghost" @click="doImportConfig">导入配置</button>
+          </div>
+          <div v-if="exportPath" class="msg">{{ exportPath }}</div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">🧹 重置</div>
+          <button class="btn danger" @click="doReset">恢复默认设置</button>
+        </section>
+
+        <section class="card">
+          <div class="card-title">🧰 工具箱</div>
+          <button class="btn primary" @click="showToolbox = !showToolbox">
+            {{ showToolbox ? '收起工具箱' : '打开工具箱' }}
+          </button>
+        </section>
+      </div>
+
+      <!-- ============ 模型 ============ -->
+      <div v-else-if="activeTab === 'model'">
+        <section class="card">
+          <div class="card-title">🤖 运行模式</div>
+          <div class="modes">
+            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">🧠 脚本</div>
+            <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">☁️ API</div>
+            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">💻 本地</div>
+          </div>
+          <div v-if="modelMode === 'api'" class="field">
+            <label>API 地址</label>
+            <input v-model="apiBaseUrl" class="input long" placeholder="https://api.example.com/v1" />
+          </div>
+          <div class="field">
+            <label>思考深度（1-4）</label>
+            <input v-model="depth" type="range" min="1" max="4" step="1" class="range" />
+            <span class="label">当前：{{ depth }}</span>
+          </div>
+          <button class="btn primary" @click="saveModel">保存模型设置</button>
+        </section>
+
+        <section class="card">
+          <div class="card-title">🔐 API 密钥（加密存储）</div>
+          <p class="hint">
+            主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️' }}
+          </p>
+          <div class="field">
+            <label>新密钥（明文仅本地输入，保存时 AES-256-GCM 加密）</label>
+            <div class="row">
+              <input v-model="apiKeyInput" type="password" class="input long" placeholder="sk-..." />
+              <button class="btn primary" @click="saveApiKey" :disabled="!setting.unlocked">加密保存</button>
+            </div>
+          </div>
+
+          <div class="field" style="margin-top: 12px">
+            <label>主密码</label>
+            <template v-if="!setting.hasMasterPassword">
+              <div class="row">
+                <input v-model="masterPwd" type="password" class="input" placeholder="设置主密码" />
+                <input v-model="masterPwd2" type="password" class="input" placeholder="确认主密码" />
+                <button class="btn primary" @click="doSetupMaster">设置</button>
+              </div>
+            </template>
+            <template v-else-if="!setting.unlocked">
+              <div class="row">
+                <input v-model="unlockPwd" type="password" class="input" placeholder="输入主密码解锁" />
+                <button class="btn primary" @click="doUnlock">解锁</button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="row">
+                <input v-model="masterPwd" type="password" class="input" placeholder="新主密码（修改）" />
+                <input v-model="masterPwd2" type="password" class="input" placeholder="确认新主密码" />
+                <button class="btn ghost" @click="doSetupMaster">修改</button>
+              </div>
+            </template>
+          </div>
+          <div v-if="cryptoMsg" class="msg">{{ cryptoMsg }}</div>
+        </section>
+      </div>
+
+      <!-- ============ 记忆 ============ -->
+      <div v-else-if="activeTab === 'memory'">
+        <section class="card">
+          <div class="card-title">🧠 记忆存储</div>
+          <p class="hint">记忆文件保存在：{{ setting.dataPath }}</p>
+          <p class="hint">记忆集管理与详情请使用主界面「记忆」面板（由 AI-4 实现）。</p>
+          <div class="row">
+            <button class="btn ghost" @click="doExportConfig">导出记忆配置</button>
+            <button class="btn ghost" @click="doImportConfig">导入记忆配置</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============ 监测 ============ -->
+      <div v-else-if="activeTab === 'monitor'">
+        <MonitorSettings />
+      </div>
+
+      <!-- ============ 个性化 ============ -->
+      <div v-else-if="activeTab === 'persona'">
+        <section class="card">
+          <div class="card-title">🎀 个性化</div>
+          <div class="field">
+            <label>日语修饰词浓度（0-30）</label>
+            <input v-model="mixRate" type="range" min="0" max="30" class="range" />
+            <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>自称</label>
+              <input v-model="selfName" class="input" />
+            </div>
+            <div class="field">
+              <label>对您的称呼</label>
+              <input v-model="userName" class="input" />
+            </div>
+          </div>
+          <button class="btn primary" @click="savePersona">保存个性化</button>
+        </section>
+      </div>
+
+      <!-- ============ 插件 ============ -->
+      <div v-else-if="activeTab === 'plugin'">
+        <PluginManager />
+      </div>
+
+      <!-- ============ 同步 ============ -->
+      <div v-else-if="activeTab === 'sync'">
+        <SyncPanel />
+      </div>
+
+      <!-- ============ 赞助 ============ -->
+      <div v-else-if="activeTab === 'sponsor'">
+        <section class="card">
+          <div class="card-title">💝 赞助</div>
+          <p class="hint">支持铃·记忆体开源项目。赞助渠道、目标进度、赞助者名单在此展示（预留）。</p>
+        </section>
+      </div>
+
+      <!-- ============ 诊断 ============ -->
+      <div v-else-if="activeTab === 'diag'">
+        <DiagnosticView />
+      </div>
+    </div>
+
+    <div v-if="generalMsg" class="msg global">{{ generalMsg }}</div>
+
+    <!-- 工具箱悬浮窗（AI-6） -->
+    <ToolboxPanel v-if="showToolbox" />
+  </div>
+</template>
+
+<style scoped>
+.setting-view {
+  padding: 20px 24px;
+  max-width: 820px;
+  color: var(--text-main, #eee6e7);
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+.page-title { margin: 0 0 16px; font-size: 18px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.tab {
+  padding: 7px 13px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  background: rgba(128, 128, 128, 0.12); color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.tab.active { background: var(--accent, #ff7a94); color: #fff; }
+.tab-icon { margin-right: 3px; }
+.tab-content { display: flex; flex-direction: column; gap: 4px; }
+.card {
+  background: var(--bg-bar, rgba(34, 32, 36, 0.85));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 14px; padding: 16px; margin-bottom: 12px;
+}
+.card-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+.hint { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; line-height: 1.6; }
+.row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.label { font-size: 13px; color: var(--text-secondary); }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.field label { font-size: 12px; color: var(--text-secondary); }
+.input {
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--input-bg); color: var(--text-main); font-size: 13px;
+}
+.input.long { flex: 1; min-width: 220px; }
+.range { accent-color: var(--accent, #ff7a94); }
+.modes { display: flex; gap: 8px; margin-bottom: 12px; }
+.mode {
+  padding: 8px 16px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border);
+  font-size: 13px; background: transparent;
+}
+.mode.sel { border-color: var(--accent); background: var(--accent); color: #fff; }
+.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; }
+.btn.primary { background: var(--accent, #ff7a94); color: #fff; }
+.btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
+.btn.danger { background: rgba(217, 83, 79, 0.25); color: var(--danger, #ff6b6b); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.switch-wrap { display: flex; align-items: center; gap: 8px; }
+.switch { width: 40px; height: 20px; accent-color: var(--accent, #ff7a94); }
+.msg { font-size: 12px; margin-top: 6px; color: var(--accent, #ff7a94); }
+.msg.global { margin-top: 12px; }
+</style>

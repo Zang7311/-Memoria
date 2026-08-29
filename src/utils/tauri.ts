@@ -1,0 +1,368 @@
+// 《铃·记忆体》Tauri IPC 封装
+// 任务书 任务 7：封装 invoke 与 listen，供 ChatInput / useStreamRender 等统一调用
+// 后端命令与事件由 AI-3 实现；此处仅做前端封装，不写 Rust。
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+
+/**
+ * 发送一条用户消息（后台 AI-3 负责生成回复）
+ * 对应 Rust 侧 send_message 命令，参数 content + depth
+ */
+export async function sendMessage(content: string, depth: number): Promise<void> {
+  return await invoke('send_message', { content, depth })
+}
+
+/**
+ * 监听流式回复片段（每次 2~5 个字）
+ * 返回取消监听函数
+ */
+export function onChatChunk(callback: (chunk: string) => void): Promise<UnlistenFn> {
+  return listen<string>('chat_chunk', (event) => callback(event.payload))
+}
+
+/**
+ * 监听流式结束信号
+ */
+export function onChatEnd(callback: () => void): Promise<UnlistenFn> {
+  return listen('chat_end', callback)
+}
+
+/**
+ * 监听流式错误信号
+ */
+export function onChatError(callback: (error: string) => void): Promise<UnlistenFn> {
+  return listen<string>('chat_error', (event) => callback(event.payload))
+}
+
+// 兼容旧环境的 greet（保留，供测试通道使用）
+import type { Message } from '../types'
+export function greet(name: string): Promise<string> {
+  return invoke<string>('greet', { name })
+}
+
+// —— 类型提示：避免未使用告警 ——
+export type { Message }
+
+// ==================== AI-4 记忆 IPC 封装 ====================
+import type {
+  DeleteMemoryResponse,
+  GetMemoriesRequest,
+  GetMemoriesResponse,
+  Memory,
+} from '../types'
+
+/** 获取记忆列表（支持分页/搜索/记忆集） */
+export function getMemories(req: GetMemoriesRequest = {}): Promise<GetMemoriesResponse> {
+  return invoke('get_memories', { req })
+}
+
+/** 删除单条记忆 */
+export function deleteMemory(memory_id: string, set_name?: string): Promise<DeleteMemoryResponse> {
+  return invoke('delete_memory', { req: { memory_id, set_name } })
+}
+
+/** 切换记忆集，返回当前集名称 */
+export function switchMemorySet(set_name: string): Promise<string> {
+  return invoke('switch_memory_set', { req: { set_name } })
+}
+
+/** 创建新记忆集，返回新集名称 */
+export function createMemorySet(set_name: string): Promise<string> {
+  return invoke('create_memory_set', { req: { set_name } })
+}
+
+/** 列出所有记忆集 */
+export function listMemorySets(): Promise<string[]> {
+  return invoke('list_memory_sets')
+}
+
+/** 标记记忆为重要（⭐） */
+export function markMemoryImportant(memory_id: string, set_name?: string): Promise<Memory> {
+  return invoke('mark_memory_important', { memoryId: memory_id, setName: set_name })
+}
+
+// ==================== AI-5 插件 IPC 封装 ====================
+import type {
+  ExecuteSkillRequest,
+  ExecuteSkillResponse,
+  ListPluginsResponse,
+  Plugin,
+} from '../types'
+
+/** 列出所有已安装插件 */
+export function listPlugins(): Promise<ListPluginsResponse> {
+  return invoke('list_plugins')
+}
+
+/** 安装插件（source：本地目录路径 或 Git URL） */
+export function installPlugin(source: string): Promise<Plugin> {
+  return invoke('install_plugin', { req: { source } })
+}
+
+/** 卸载插件 */
+export function uninstallPlugin(plugin_id: string): Promise<void> {
+  return invoke('uninstall_plugin', { req: { plugin_id } })
+}
+
+/** 启用插件 */
+export function enablePlugin(plugin_id: string): Promise<Plugin> {
+  return invoke('enable_plugin', { req: { plugin_id } })
+}
+
+/** 禁用插件 */
+export function disablePlugin(plugin_id: string): Promise<Plugin> {
+  return invoke('disable_plugin', { req: { plugin_id } })
+}
+
+/** 执行插件技能（自然语言触发入口） */
+export function executeSkill(req: ExecuteSkillRequest): Promise<ExecuteSkillResponse> {
+  return invoke('execute_skill', { req })
+}
+
+/** 授予/收回插件权限 */
+export function setPluginPermission(plugin_id: string, permission: string, allow: boolean): Promise<Plugin> {
+  return invoke('set_plugin_permission', { req: { plugin_id, permission, allow } })
+}
+
+/** 添加自定义终端命令 */
+export function addTerminalCommand(name: string, command: string, description: string): Promise<Plugin> {
+  return invoke('add_terminal_command', { req: { name, command, description } })
+}
+
+// ==================== AI-6 桌面交互 IPC 封装 ====================
+import type {
+  ExecuteToolboxResponse,
+  GetMonitorRulesResponse,
+  MonitorTriggerEvent,
+  ScreenMonitorRule,
+  ToolboxItem,
+  WindowInfo,
+} from '../types'
+
+/** 获取当前前台窗口信息 */
+export function getWindowInfo(): Promise<{ info: WindowInfo }> {
+  return invoke('get_window_info')
+}
+
+/** 获取监测状态 + 规则列表 */
+export function getMonitorRules(): Promise<GetMonitorRulesResponse> {
+  return invoke('get_monitor_rules')
+}
+
+/** 更新（或新增）单条监测规则 */
+export function updateMonitorRule(rule: ScreenMonitorRule): Promise<void> {
+  return invoke('update_monitor_rule', { request: { rule } })
+}
+
+/** 删除单条监测规则 */
+export function deleteMonitorRule(rule_id: string): Promise<void> {
+  return invoke('delete_monitor_rule', { request: { rule_id } })
+}
+
+/** 启用/禁用屏幕监测（可附带调整轮询频率），返回最终是否启用 */
+export function toggleMonitoring(enabled: boolean, interval_seconds?: number): Promise<boolean> {
+  return invoke('toggle_monitoring', { request: { enabled, interval_seconds } })
+}
+
+/** 列出工具箱条目（预设 + 用户自定义） */
+export function listToolboxItems(): Promise<{ items: ToolboxItem[] }> {
+  return invoke('list_toolbox_items')
+}
+
+/** 执行工具箱命令 */
+export function executeToolbox(item_id: string): Promise<ExecuteToolboxResponse> {
+  return invoke('execute_toolbox', { request: { item_id } })
+}
+
+/** 新增/更新用户自定义工具箱条目 */
+export function saveToolboxItem(item: ToolboxItem): Promise<void> {
+  return invoke('save_toolbox_item', { request: { item } })
+}
+
+/** 删除用户自定义工具箱条目 */
+export function deleteToolboxItem(item_id: string): Promise<void> {
+  return invoke('delete_toolbox_item', { request: { item_id } })
+}
+
+/** 显示/隐藏悬浮球 */
+export function setFloatingBallVisibility(visible: boolean): Promise<void> {
+  return invoke('set_floating_ball_visibility', { request: { visible } })
+}
+
+/** 注册全局快捷键（如 Ctrl+Alt+L） */
+export function registerHotkey(accelerator: string): Promise<{ registered: boolean; accelerator: string }> {
+  return invoke('register_hotkey', { request: { accelerator } })
+}
+
+/** 注销全部全局快捷键 */
+export function unregisterHotkey(): Promise<void> {
+  return invoke('unregister_hotkey')
+}
+
+/** 设置开机自启动 */
+export function setAutostart(enabled: boolean): Promise<void> {
+  return invoke('set_autostart', { request: { enabled } })
+}
+
+/** 查询开机自启动状态 */
+export function getAutostart(): Promise<{ enabled: boolean }> {
+  return invoke('get_autostart')
+}
+
+/** 监听屏幕监测触发事件（气泡弹窗内容） */
+export function onMonitorTrigger(callback: (payload: MonitorTriggerEvent) => void): Promise<UnlistenFn> {
+  return listen<MonitorTriggerEvent>('monitor-trigger', (event) => callback(event.payload))
+}
+
+/** 监听屏幕监测不可用事件 */
+export function onMonitorUnavailable(callback: (message: string) => void): Promise<UnlistenFn> {
+  return listen<string>('monitor-unavailable', (event) => callback(event.payload))
+}
+
+// ==================== AI-7 配置与诊断 IPC 封装 ====================
+import type {
+  ExportConfigResponse,
+  ExportDiagnosticRequest,
+  ExportDiagnosticResponse,
+  GetConfigResponse,
+  GetLogsRequest,
+  GetLogsResponse,
+  MasterPasswordStatus,
+  SystemInfoResponse,
+} from '../types'
+
+/** 获取完整配置 */
+export function getConfig(): Promise<GetConfigResponse> {
+  return invoke('get_config')
+}
+
+/** 增量更新配置（null 清除字段）；返回更新后完整配置 */
+export function updateConfig(updates: Record<string, unknown>): Promise<GetConfigResponse> {
+  return invoke('update_config', { request: { updates } })
+}
+
+/** 导出配置为 JSON 文件 */
+export function exportConfig(): Promise<ExportConfigResponse> {
+  return invoke('export_config')
+}
+
+/** 从 JSON 文件导入配置 */
+export function importConfig(path: string): Promise<GetConfigResponse> {
+  return invoke('import_config', { request: { path } })
+}
+
+/** 重置所有配置为默认值（保留主密码与已加密 API Key） */
+export function resetConfig(): Promise<GetConfigResponse> {
+  return invoke('reset_config')
+}
+
+/** 获取日志（级别过滤 + 关键词 + 分页） */
+export function getLogs(req: GetLogsRequest = {}): Promise<GetLogsResponse> {
+  return invoke('get_logs', { request: req })
+}
+
+/** 清空日志 */
+export function clearLogs(): Promise<void> {
+  return invoke('clear_logs')
+}
+
+/** 导出诊断包（脱敏配置 + 日志 + 系统信息 → zip） */
+export function exportDiagnostic(req: ExportDiagnosticRequest): Promise<ExportDiagnosticResponse> {
+  return invoke('export_diagnostic', { request: req })
+}
+
+/** 获取系统信息 */
+export function getSystemInfo(): Promise<SystemInfoResponse> {
+  return invoke('get_system_info')
+}
+
+/** 设置主密码（首次引导/修改） */
+export function setMasterPassword(password: string): Promise<void> {
+  return invoke('set_master_password', { request: { password } })
+}
+
+/** 解锁（输入主密码恢复密钥） */
+export function unlock(password: string): Promise<boolean> {
+  return invoke('unlock', { request: { password } })
+}
+
+/** 查询主密码状态（是否设置过 + 是否已解锁） */
+export function masterPasswordStatus(): Promise<MasterPasswordStatus> {
+  return invoke('master_password_status')
+}
+
+/** 监听配置变更事件 */
+export function onConfigChanged(callback: () => void): Promise<UnlistenFn> {
+  return listen('config-changed', () => callback())
+}
+
+// ==================== AI-8 网络与同步 IPC 封装 ====================
+import type {
+  CheckUpdateResponse,
+  DiscoverDevicesResponse,
+  GetNetworkStatusResponse,
+  NetworkStatusEvent,
+  StartSyncResponse,
+  SyncProgressEvent,
+  SyncStatus,
+} from '../types'
+
+/** 扫描局域网设备（UDP 广播，timeout 秒） */
+export function discoverDevices(timeout_secs?: number): Promise<DiscoverDevicesResponse> {
+  return invoke('discover_devices', { timeoutSecs: timeout_secs ?? 3 })
+}
+
+/** 手动添加设备（UDP 被阻断时的备选） */
+export function addManualDevice(ip: string, port?: number): Promise<DiscoverDevicesResponse> {
+  return invoke('add_manual_device', { ip, port: port ?? 54546 })
+}
+
+/** 获取当前设备列表（缓存，不扫描） */
+export function getSyncDevices(): Promise<DiscoverDevicesResponse> {
+  return invoke('get_sync_devices')
+}
+
+/** 发起同步（从目标设备拉取记忆集） */
+export function startSync(req: {
+  target_device: string
+  set_name: string
+  manual_ip?: string | null
+  manual_port?: number | null
+}): Promise<StartSyncResponse> {
+  return invoke('start_sync', { request: req })
+}
+
+/** 获取同步状态与历史 */
+export function getSyncStatus(): Promise<SyncStatus> {
+  return invoke('get_sync_status')
+}
+
+/** 设置同步主密码（与 AI-7 共享同一体系） */
+export function setSyncPassword(password: string): Promise<void> {
+  return invoke('set_sync_password', { request: { password } })
+}
+
+/** 设置冲突解决策略 */
+export function setConflictPolicy(policy: 'newest' | 'local' | 'remote'): Promise<void> {
+  return invoke('set_conflict_policy', { policy })
+}
+
+/** 检查更新（force 强制重新检查） */
+export function checkUpdate(force?: boolean): Promise<CheckUpdateResponse> {
+  return invoke('check_update', { force: force ?? false })
+}
+
+/** 获取网络状态 */
+export function getNetworkStatus(): Promise<GetNetworkStatusResponse> {
+  return invoke('get_network_status')
+}
+
+/** 监听同步进度事件 */
+export function onSyncProgress(callback: (payload: SyncProgressEvent) => void): Promise<UnlistenFn> {
+  return listen<SyncProgressEvent>('sync-progress', (event) => callback(event.payload))
+}
+
+/** 监听网络状态变化事件 */
+export function onNetworkStatusChanged(callback: (payload: NetworkStatusEvent) => void): Promise<UnlistenFn> {
+  return listen<NetworkStatusEvent>('network-status-changed', (event) => callback(event.payload))
+}

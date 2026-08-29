@@ -1,0 +1,58 @@
+[package]
+name = "mem"
+version = "0.1.0"
+description = "铃·记忆体"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "mem_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# AI-6：tray-icon 启用系统托盘，image-png 启用 PNG 图标解码（悬浮球/托盘图标）
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# —— AI-3 新增依赖 ——
+reqwest = { version = "0.11", features = ["json", "stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+log = { version = "0.4", features = ["std"] }
+anyhow = "1.0"
+thiserror = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+boa_engine = "0.20"
+# ==================== AI-6 桌面交互与系统集成 ====================
+# 全局快捷键（官方插件，Tauri 2）
+tauri-plugin-global-shortcut = "2"
+# Windows 系统调用：前台窗口检测（winuser/processthreadsapi/psapi）、注册表（winreg）
+winapi = { version = "0.3", features = [
+    "winuser", "processthreadsapi", "psapi", "libloaderapi",
+    "winnt", "handleapi", "errhandlingapi", "minwindef", "windef", "winbase"
+] }
+winreg = "0.52"
+# ==================== AI-7 配置与诊断 ====================
+# 系统信息采集（CPU/内存/磁盘/OS）
+sysinfo = "0.30"
+# API Key 加密：AES-256-GCM
+aes-gcm = "0.10"
+# 密钥派生：PBKDF2-SHA256（100000 次迭代，与 AI-8 共享同一体系）
+pbkdf2 = "0.12"
+sha2 = "0.10"
+# 随机盐/随机 nonce
+rand = "0.8"
+# 密文 base64 编码
+base64 = "0.22"
+# 诊断包导出（zip 压缩）
+zip = { version = "2", default-features = false, features = ["deflate"] }

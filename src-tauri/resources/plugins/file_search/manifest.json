@@ -1,0 +1,20 @@
+{
+  "name": "文件检索（基础版）",
+  "version": "0.1.0",
+  "author": "铃·记忆体 官方",
+  "description": "按文件名关键词递归搜索文件（示例插件，展示完整 manifest + index.js 结构）",
+  "main": "index.js",
+  "skills": [
+    {
+      "name": "file_search",
+      "description": "搜索文件名包含指定关键词的文件（如：帮我找一下昨天的文件）",
+      "parameters": [
+        { "name": "keyword", "type": "string", "required": true, "description": "搜索关键词" },
+        { "name": "dir", "type": "string", "required": false, "description": "搜索目录（默认用户主目录）" }
+      ],
+      "action": "js:file_search"
+    }
+  ],
+  "permissions": ["file.read"],
+  "hermes_compatible": false
+}

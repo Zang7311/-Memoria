@@ -1,0 +1,19 @@
+{
+  "name": "文件查看器",
+  "version": "0.1.0",
+  "author": "铃·记忆体 官方",
+  "description": "读取本地文本文件内容（演示沙箱白名单 file.read_text，单文件限制 512KB）",
+  "main": "index.js",
+  "skills": [
+    {
+      "name": "read_file",
+      "description": "读取指定文本文件的内容（返回前 200 字预览）",
+      "parameters": [
+        { "name": "path", "type": "file", "required": true, "description": "文件完整路径" }
+      ],
+      "action": "js:read_file"
+    }
+  ],
+  "permissions": ["file.read"],
+  "hermes_compatible": false
+}
