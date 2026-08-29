@@ -7,6 +7,9 @@ import type { ToolboxItem } from '../types'
 
 const desktop = useDesktopStore()
 
+// 关闭工具箱（父组件监听后隐藏）
+const emit = defineEmits<{ (e: 'close'): void }>()
+
 const executingId = ref<string | null>(null)
 const feedback = ref<{ ok: boolean; text: string } | null>(null)
 // —— 输出弹窗（执行有输出的工具时弹出完整内容，避免视觉盲区）——
@@ -29,6 +32,13 @@ onMounted(() => {
 
 async function runItem(item: ToolboxItem) {
   if (executingId.value) return
+  // WiFi 密码工具：提前声明（仅解自己的 + 不上传）
+  if (item.id === 'wifi-pwd') {
+    const ok = confirm(
+      '⚠️ WiFi 密码查看声明：\n\n· 仅查看本机已保存的 WiFi 密码（你自己的网络）\n· 所有处理均在本机完成，不会上传任何数据\n\n是否继续？'
+    )
+    if (!ok) return
+  }
   executingId.value = item.id
   feedback.value = null
   const result = await desktop.executeToolboxItem(item.id)
@@ -98,7 +108,10 @@ async function confirmDelete() {
   <div class="toolbox-panel">
     <div class="panel-header">
       <span class="panel-title">🧰 工具箱</span>
-      <button class="add-btn" title="添加工具" @click="openAdd">＋</button>
+      <div class="header-btns">
+        <button class="add-btn" title="添加工具" @click="openAdd">＋</button>
+        <button class="close-btn" title="关闭工具箱" @click="emit('close')">✕</button>
+      </div>
     </div>
 
     <!-- 执行反馈 -->
@@ -179,6 +192,9 @@ async function confirmDelete() {
   right: 16px;
   bottom: 100px;
   width: 300px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-bar, rgba(30, 28, 32, 0.92));
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 14px;
@@ -193,7 +209,9 @@ async function confirmDelete() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+  flex-shrink: 0;
 }
+.header-btns { display: flex; gap: 6px; }
 .panel-title {
   font-weight: 600;
   font-size: 14px;
@@ -208,6 +226,18 @@ async function confirmDelete() {
   font-size: 16px;
   cursor: pointer;
 }
+.close-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(128, 128, 128, 0.2);
+  color: var(--text-main, #eee6e7);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.close-btn:hover { background: rgba(255, 107, 107, 0.35); color: #ff8b8b; }
 .feedback {
   margin-bottom: 8px;
   padding: 6px 10px;
@@ -223,6 +253,10 @@ async function confirmDelete() {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
+  min-height: 0;
 }
 .cell {
   display: flex;

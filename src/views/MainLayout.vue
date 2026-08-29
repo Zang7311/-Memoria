@@ -174,7 +174,7 @@ async function onPersonaChange(e: Event) {
       <PluginManager v-if="showPlugins" />
 
       <!-- 工具箱悬浮面板（AI-6） -->
-      <ToolboxPanel v-if="showToolbox" />
+      <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
 
       <!-- 设置页遮罩（AI-6） -->
       <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
