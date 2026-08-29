@@ -39,9 +39,16 @@ async function runItem(item: ToolboxItem) {
     )
     if (!ok) return
   }
+  // 需要输入参数的工具：先弹输入框
+  let input: string | undefined
+  if (item.needs_input) {
+    const v = window.prompt(item.input_label || `请输入「${item.name}」所需参数：`, item.input_placeholder || '')
+    if (v === null) return // 用户取消
+    input = v
+  }
   executingId.value = item.id
   feedback.value = null
-  const result = await desktop.executeToolboxItem(item.id)
+  const result = await desktop.executeToolboxItem(item.id, input)
   executingId.value = null
   if (result?.error) {
     feedback.value = { ok: false, text: result.error }

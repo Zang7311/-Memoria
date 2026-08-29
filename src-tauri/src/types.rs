@@ -328,6 +328,15 @@ pub struct ToolboxItem {
     pub command: String,            // 要执行的终端命令
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// 是否需要输入参数（点击先弹输入框）
+    #[serde(default)]
+    pub needs_input: bool,
+    /// 输入框标签提示
+    #[serde(default)]
+    pub input_label: Option<String>,
+    /// 输入框占位符
+    #[serde(default)]
+    pub input_placeholder: Option<String>,
 }
 
 /// 获取前台窗口信息响应
@@ -369,6 +378,9 @@ pub struct SetMonitoringRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteToolboxRequest {
     pub item_id: String,
+    /// 需要输入参数的工具：用户输入值（对应命令里的 {input} 占位符）
+    #[serde(default)]
+    pub input: Option<String>,
 }
 
 /// 执行工具箱命令响应

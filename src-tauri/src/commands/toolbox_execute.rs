@@ -33,7 +33,7 @@ pub async fn execute_toolbox(
     request: ExecuteToolboxRequest,
 ) -> Result<ExecuteToolboxResponse, AppError> {
     match toolbox::find_item(&resource_dir(&app), &request.item_id) {
-        Some(item) => toolbox::execute(&item).await,
+        Some(item) => toolbox::execute(&item, request.input).await,
         None => Err(AppError::ToolboxError(format!(
             "工具箱条目不存在：{}",
             request.item_id

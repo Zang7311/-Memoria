@@ -53,9 +53,9 @@ export const useDesktopStore = defineStore('desktop', () => {
   }
 
   /** 执行工具箱命令，返回执行结果（null 表示失败） */
-  async function executeToolboxItem(id: string): Promise<{ output?: string; error?: string } | null> {
+  async function executeToolboxItem(id: string, input?: string): Promise<{ output?: string; error?: string } | null> {
     try {
-      const res = await executeToolbox(id)
+      const res = await executeToolbox(id, input)
       if (!res.success) {
         return { error: res.error || '命令执行失败' }
       }
