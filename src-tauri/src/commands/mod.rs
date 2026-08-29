@@ -48,3 +48,9 @@ pub mod open_url;
 pub mod session;
 pub mod admin;
 pub mod local_ai;
+// —— AI-9 快捷指令系统 ——
+pub mod quick_command;
+// —— moon10 二维码生成与识别 ——
+pub mod qrcode;
+// —— moon11 OCR 文字识别 ——
+pub mod ocr;

@@ -9,8 +9,9 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
+import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { sendMessage, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
-import type { ChatUsage } from '../types'
+import type { ChatUsage, QuickCommand } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
@@ -20,6 +21,7 @@ export function useStreamRender() {
   const chat = useChatStore()
   const setting = useSettingStore()
   const desktop = useDesktopStore()
+  const quickCmd = useQuickCommandStore()
   const unlisteners = ref<UnlistenFn[]>([])
   // 当前正在流式的消息 id
   let activeId: string | null = null
@@ -43,6 +45,22 @@ export function useStreamRender() {
     const ip = t.match(/查(?:询)?ip\s+([\d.]+)/)
     if (ip) return { id: 'ip-lookup', input: ip[1] }
     return null
+  }
+
+  // —— AI-9 快捷指令：危险操作清单（与 QuickCommandPanel 保持一致）——
+  const DANGEROUS_QC_TOOLS = new Set(['shutdown-1h', 'lock', 'shred', 'bsod', 'empty-recycle-bin', 'cancel-shutdown'])
+
+  // —— AI-9 快捷指令：按指令名匹配（名称长的优先，避免「晚安」误命中「晚安模式」）——
+  async function matchQuickCommand(content: string): Promise<QuickCommand | null> {
+    if (quickCmd.commands.length === 0) {
+      try {
+        await quickCmd.load()
+      } catch {
+        return null
+      }
+    }
+    const sorted = [...quickCmd.commands].sort((a, b) => b.name.length - a.name.length)
+    return sorted.find((c) => c.name && content.includes(c.name)) ?? null
   }
 
   function makeId() {
@@ -120,6 +138,34 @@ export function useStreamRender() {
         handleChunk(out)
       } catch (e) {
         handleChunk(`执行工具箱「${intent.id}」出错：${e}`)
+      }
+      handleEnd()
+      return
+    }
+
+    // —— AI-9 快捷指令触发：消息包含已存指令 name 时，按顺序执行 steps 并最终让铃说 say ——
+    const matchedQc = await matchQuickCommand(content)
+    if (matchedQc) {
+      const dangerous = matchedQc.steps.filter((s) => DANGEROUS_QC_TOOLS.has(s.tool)).map((s) => s.tool)
+      if (dangerous.length > 0) {
+        const ok = confirm(`「${matchedQc.name}」包含危险操作（${dangerous.join('、')}），可能影响系统或无法恢复，是否继续？`)
+        if (!ok) {
+          handleChunk(`已取消执行「${matchedQc.name}」`)
+          handleEnd()
+          return
+        }
+      }
+      try {
+        const res = await quickCmd.execute(matchedQc.id)
+        if (!res) {
+          handleChunk(`执行「${matchedQc.name}」失败`)
+        } else {
+          const lines = res.results.length ? res.results.join('\n') : ''
+          const text = [lines, res.say].filter(Boolean).join('\n')
+          handleChunk(text || `已执行「${matchedQc.name}」`)
+        }
+      } catch (e) {
+        handleChunk(`执行「${matchedQc.name}」出错：${e}`)
       }
       handleEnd()
       return

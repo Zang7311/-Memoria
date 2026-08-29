@@ -46,5 +46,7 @@ pub fn default_config() -> AppConfig {
         run_as_admin: false,
         emoji_mode: None,
         ai_toolbox: false,
+        // —— AI-9 快捷指令（默认空，用户自行创建）——
+        quick_commands: Vec::new(),
     }
 }

@@ -4,7 +4,7 @@
 import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useSettingStore } from '../stores/settingStore'
-import { checkDependency, openUrl } from '../utils/tauri'
+import { assetUrl, checkDependency, decodeQrcode, generateQrcode, ocrImage, openUrl } from '../utils/tauri'
 import type { ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
@@ -28,6 +28,8 @@ const depGuide = ref<{ id?: string; name: string; hint: string; install: string;
 const showOutput = ref(false)
 const outputContent = ref('')
 const outputTitle = ref('执行输出')
+// —— moon10：二维码预览图片 URL（生成成功后展示）——
+const qrImageUrl = ref<string | null>(null)
 
 // —— 添加弹窗 ——
 const showEditor = ref(false)
@@ -96,6 +98,71 @@ async function runItem(item: ToolboxItem) {
   // 正则测试器：前端交互组件
   if (item.id === 'regex') {
     showRegex.value = true
+    return
+  }
+  // 二维码生成：调用 Rust 命令，弹窗展示图片预览 + 保存路径
+  if (item.id === 'qrcode-gen') {
+    const v = window.prompt(item.input_label || '请输入要生成二维码的内容：', item.input_placeholder || '')
+    if (v === null) return
+    executingId.value = item.id
+    feedback.value = null
+    qrImageUrl.value = null
+    try {
+      const path = await generateQrcode(v)
+      feedback.value = { ok: true, text: '✓ 二维码已生成' }
+      outputTitle.value = '📱 二维码生成成功'
+      outputContent.value = `已保存到：\n${path}`
+      qrImageUrl.value = assetUrl(path)
+      showOutput.value = true
+    } catch (e) {
+      outputTitle.value = '✗ 二维码生成失败'
+      outputContent.value = String(e)
+      showOutput.value = true
+    } finally {
+      executingId.value = null
+    }
+    return
+  }
+  // 二维码识别：输入图片路径，返回解码内容
+  if (item.id === 'qrcode-decode') {
+    const v = window.prompt(item.input_label || '请输入包含二维码的图片完整路径：', item.input_placeholder || '')
+    if (v === null) return
+    executingId.value = item.id
+    feedback.value = null
+    try {
+      const content = await decodeQrcode(v)
+      feedback.value = { ok: true, text: '✓ 二维码识别成功' }
+      outputTitle.value = '✅ 二维码识别结果'
+      outputContent.value = content
+      showOutput.value = true
+    } catch (e) {
+      outputTitle.value = '✗ 二维码识别失败'
+      outputContent.value = String(e)
+      showOutput.value = true
+    } finally {
+      executingId.value = null
+    }
+    return
+  }
+  // OCR 文字识别（moon11）：优先 Windows OCR，失败自动降级 Tesseract
+  if (item.id === 'ocr') {
+    const v = window.prompt(item.input_label || '请输入要识别的图片完整路径：', item.input_placeholder || '')
+    if (v === null) return
+    executingId.value = item.id
+    feedback.value = null
+    try {
+      const r = await ocrImage(v)
+      feedback.value = { ok: true, text: '✓ 识别成功' }
+      outputTitle.value = r.engine === 'tesseract' ? '🔤 Tesseract OCR 识别结果' : '👁️ Windows OCR 识别结果'
+      outputContent.value = r.text
+      showOutput.value = true
+    } catch (e) {
+      outputTitle.value = '✗ OCR 识别失败'
+      outputContent.value = String(e)
+      showOutput.value = true
+    } finally {
+      executingId.value = null
+    }
     return
   }
   // 需要输入参数的工具：先弹输入框
@@ -232,6 +299,7 @@ async function confirmDelete() {
     <div v-if="showOutput" class="modal-mask" @click.self="showOutput = false">
       <div class="modal output-modal">
         <div class="modal-title">{{ outputTitle }}</div>
+        <img v-if="qrImageUrl && outputTitle.includes('二维码生成')" :src="qrImageUrl" class="qr-preview" alt="二维码预览" />
         <pre class="output-pre">{{ outputContent }}</pre>
         <div class="modal-actions">
           <button class="btn confirm" @click="showOutput = false">关闭</button>
@@ -430,6 +498,16 @@ async function confirmDelete() {
 }
 .modal.small { width: 240px; }
 .output-modal { width: 560px; max-width: 90vw; }
+.qr-preview {
+  display: block;
+  margin: 0 auto 12px;
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  image-rendering: pixelated;
+  background: #fff;
+}
 .output-pre {
   margin: 0 0 12px;
   padding: 10px;

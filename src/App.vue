@@ -9,6 +9,7 @@ import OnboardingView from './views/OnboardingView.vue'
 import { useSettingStore } from './stores/settingStore'
 import { assetUrl } from './utils/tauri'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { listen } from '@tauri-apps/api/event'
 
 const setting = useSettingStore()
 const theme = computed(() => setting.theme || 'dark')
@@ -29,6 +30,8 @@ const winLabel = ref('main')
 // 首次启动引导状态（仅主窗口）
 const firstLaunch = ref(false)
 const onboarded = ref(false)
+// moon12：旧版数据迁移完成提示（一次性横幅，5 秒自动消失）
+const legacyMigrated = ref('')
 
 onMounted(async () => {
   try {
@@ -44,6 +47,11 @@ onMounted(async () => {
     } catch {
       firstLaunch.value = false
     }
+    // moon12：监听旧版数据迁移完成事件，提示用户
+    listen<string>('legacy-migrated', (event) => {
+      legacyMigrated.value = `已从旧版本迁移数据：${event.payload}`
+      setTimeout(() => (legacyMigrated.value = ''), 5000)
+    }).catch(() => { /* 非 Tauri 环境忽略 */ })
   }
   // 引导完成后：进入主界面
   window.addEventListener('onboarding-done', () => {
@@ -56,6 +64,10 @@ onMounted(async () => {
 
 <template>
   <div class="app-root" :class="theme" :style="customStyle">
+    <!-- moon12：旧版数据迁移完成提示条 -->
+    <Transition name="fade">
+      <div v-if="legacyMigrated" class="legacy-migrated-bar">{{ legacyMigrated }}</div>
+    </Transition>
     <!-- 首次启动引导（仅主窗口） -->
     <OnboardingView v-if="winLabel === 'main' && firstLaunch && !onboarded" />
     <MainLayout v-else-if="winLabel === 'main'" />
@@ -69,6 +81,29 @@ onMounted(async () => {
   height: 100vh;
   width: 100vw;
   background: var(--bg-main, #f6f6f6);
+}
+/* moon12：旧版数据迁移完成提示条 */
+.legacy-migrated-bar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  max-width: 80%;
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: rgba(40, 167, 69, 0.92);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
 

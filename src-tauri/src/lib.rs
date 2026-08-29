@@ -194,6 +194,19 @@ pub fn run() {
             commands::local_ai::pull_model,
             commands::local_ai::detect_gpu_vram,
             commands::local_ai::set_ollama_models_path,
+            // —— AI-9 快捷指令系统 ——
+            commands::quick_command::list_quick_commands,
+            commands::quick_command::save_quick_command,
+            commands::quick_command::delete_quick_command,
+            commands::quick_command::execute_quick_command,
+            commands::quick_command::set_power_mode,
+            commands::quick_command::set_volume,
+            commands::quick_command::play_music,
+            // —— moon10 二维码生成与识别 ——
+            commands::qrcode::generate_qrcode,
+            commands::qrcode::decode_qrcode,
+            // —— moon11 OCR 文字识别 ——
+            commands::ocr::ocr_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

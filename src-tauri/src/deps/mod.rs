@@ -68,6 +68,18 @@ fn check_qemu() -> DepStatus {
     }
 }
 
+fn check_tesseract() -> DepStatus {
+    let installed = bin_exists("tesseract");
+    DepStatus {
+        id: "tesseract".into(),
+        installed,
+        name: "Tesseract OCR（备用文字识别）".into(),
+        required: false,
+        install: "PowerShell 管理员运行：winget install UB-Mannheim.TesseractOCR".into(),
+        url: Some("https://github.com/UB-Mannheim/tesseract/wiki".into()),
+    }
+}
+
 /// 统一检查入口：返回依赖状态（是否安装 / 安装方法 / 下载页）
 /// 前端工具只声明依赖 id，由这里决定怎么检测、怎么引导。
 #[tauri::command]
@@ -76,6 +88,7 @@ pub fn check_dependency(id: String) -> Result<DepStatus, String> {
         "ffmpeg" => Ok(check_ffmpeg()),
         "ollama" => Ok(check_ollama()),
         "qemu" => Ok(check_qemu()),
+        "tesseract" => Ok(check_tesseract()),
         other => Err(format!("未知依赖：{other}")),
     }
 }

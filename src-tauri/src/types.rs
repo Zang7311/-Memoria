@@ -561,6 +561,9 @@ pub struct AppConfig {
     /// 是否允许 AI（铃）调用工具箱工具（默认关闭；开启后消息匹配工具意图时自动执行）
     #[serde(default)]
     pub ai_toolbox: bool,
+    /// —— AI-9 快捷指令（用户自定义组合指令，如「晚安模式」）——
+    #[serde(default)]
+    pub quick_commands: Vec<QuickCommand>,
 }
 
 /// 一套完整的外观自定义组合（用户命名保存，可一键切换）
@@ -921,4 +924,69 @@ pub enum ConflictPolicy {
     Local,
     /// 始终保留远程
     Remote,
+}
+
+// ==================== AI-9 快捷指令系统 ====================
+// 一条快捷指令按顺序执行一串动作（如设电源→清临时文件→音量→音乐→铃说晚安）。
+// 持久化于 config.json（走 config::store 增量 merge），与前端 src/types/index.ts 对应。
+
+/// 快捷指令中的单步动作
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct QuickCommandStep {
+    /// 动作标识：可为系统工具（volume / music / power-balanced / power-high / power-saver）
+    /// 或任意工具箱工具 id（如 clean-temp，复用工具箱执行逻辑）
+    pub tool: String,
+    /// 该步的可选输入（如音量数值 0-100 / 音乐文件路径）
+    #[serde(default)]
+    pub input: Option<String>,
+}
+
+/// 一条快捷指令
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuickCommand {
+    pub id: String,
+    /// 指令名，如「晚安模式」——聊天里说该名字即可触发
+    pub name: String,
+    /// 按顺序执行的动作列表
+    pub steps: Vec<QuickCommandStep>,
+    /// 全部动作执行完后铃要说的话（可选）
+    #[serde(default)]
+    pub say: Option<String>,
+}
+
+/// 列出所有快捷指令（响应）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListQuickCommandsResponse {
+    pub commands: Vec<QuickCommand>,
+}
+
+/// 新增/更新一条快捷指令（请求）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveQuickCommandRequest {
+    pub command: QuickCommand,
+}
+
+/// 删除一条快捷指令（请求）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteQuickCommandRequest {
+    pub command_id: String,
+}
+
+/// 执行一条快捷指令（请求）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteQuickCommandRequest {
+    pub command_id: String,
+}
+
+/// 执行一条快捷指令（响应）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteQuickCommandResponse {
+    pub success: bool,
+    /// 每一步的执行结果说明（与 steps 一一对应）
+    pub results: Vec<String>,
+    /// 全部执行完后铃要说的话
+    #[serde(default)]
+    pub say: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
