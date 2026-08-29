@@ -19,7 +19,7 @@ export const useSettingStore = defineStore('setting', () => {
   // —— 配置状态（与 AppConfig 对应，snake_case）——
   const loaded = ref(false)
   const firstLaunch = ref(true)
-  const theme = ref<'light' | 'dark'>('dark')
+  const theme = ref<'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass'>('dark')
   const contextLength = ref(10)
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
@@ -50,7 +50,7 @@ export const useSettingStore = defineStore('setting', () => {
   // —— 从后端同步完整配置到本地 ——
   function applyConfig(c: AppConfig) {
     firstLaunch.value = c.first_launch
-    theme.value = (c.theme as 'light' | 'dark') || 'dark'
+    theme.value = (c.theme as 'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass') || 'dark'
     contextLength.value = c.context_length
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
@@ -97,6 +97,12 @@ export const useSettingStore = defineStore('setting', () => {
   async function toggleTheme() {
     const next = theme.value === 'dark' ? 'light' : 'dark'
     await update({ theme: next })
+  }
+
+  /** 设置指定主题（暗/亮 + 5 套 UI 风格：win10/edge/minimal/ios-flat/ios-glass） */
+  async function setTheme(t: 'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass') {
+    theme.value = t
+    await update({ theme: t })
   }
 
   /** 保存 API Key 明文（后端按主密码状态决定：已解锁→加密存储，未设置→明文存储） */
@@ -151,7 +157,7 @@ export const useSettingStore = defineStore('setting', () => {
     languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
-    applyConfig, loadConfig, update, toggleTheme, saveApiKey, resetAll,
+    applyConfig, loadConfig, update, toggleTheme, setTheme, saveApiKey, resetAll,
     exportToFile, importFromFile, setupMasterPassword, unlockVault, refreshMasterStatus,
   }
 })
