@@ -115,7 +115,7 @@
         "id":  "port-list",
         "name":  "查看端口占用",
         "icon":  "🔌",
-        "command":  "netstat -ano | findstr \"LISTENING\"",
+        "command":  "netstat -ano | findstr LISTENING",
         "enabled":  true
     },
     {

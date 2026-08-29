@@ -78,14 +78,19 @@ pub fn delete_user_item(item_id: &str) -> Result<(), AppError> {
 /// 命令输出仍通过 stdout 捕获并返回前端反馈。
 pub async fn execute(item: &ToolboxItem) -> Result<ExecuteToolboxResponse, AppError> {
     let mut cmd = tokio::process::Command::new("cmd");
-    cmd.arg("/C").arg(&item.command);
+    cmd.arg("/C");
     // 超时 drop 命令时强制杀死子进程，避免残留
     cmd.kill_on_drop(true);
-    // Windows 隐藏控制台窗口
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW 隐藏控制台
+        // raw_arg 原样传命令，避免 .arg() 对含空格/引号的命令自动加引号导致 cmd 解析失败
+        cmd.raw_arg(&item.command);
+    }
+    #[cfg(not(windows))]
+    {
+        cmd.arg(&item.command);
     }
 
     let result = tokio::time::timeout(Duration::from_secs(30), cmd.output()).await;
