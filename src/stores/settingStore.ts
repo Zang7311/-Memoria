@@ -24,6 +24,8 @@ export const useSettingStore = defineStore('setting', () => {
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
   const apiKeyEncrypted = ref<string | null>(null)
+  /** 明文存储的 API Key（未设置主密码时使用） */
+  const apiKeyPlain = ref<string | null>(null)
   /** API 模型名 */
   const apiModel = ref('gpt-3.5-turbo')
   const modelMode = ref<'script' | 'api' | 'local'>('script')
@@ -39,6 +41,8 @@ export const useSettingStore = defineStore('setting', () => {
   const pluginEnabled = ref(true)
   const selfName = ref('铃')
   const userName = ref('主人')
+  // 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩）
+  const persona = ref('daily')
   // —— 主密码状态 ——
   const hasMasterPassword = ref(false)
   const unlocked = ref(false)
@@ -50,6 +54,7 @@ export const useSettingStore = defineStore('setting', () => {
     contextLength.value = c.context_length
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
+    apiKeyPlain.value = c.api_key_plain ?? null
     apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
     depth.value = c.depth
@@ -64,6 +69,7 @@ export const useSettingStore = defineStore('setting', () => {
     pluginEnabled.value = c.plugin_enabled
     selfName.value = c.self_name ?? '铃'
     userName.value = c.user_name ?? '主人'
+    persona.value = c.persona ?? 'daily'
     hasMasterPassword.value = c.has_master_password
     loaded.value = true
   }
@@ -93,9 +99,8 @@ export const useSettingStore = defineStore('setting', () => {
     await update({ theme: next })
   }
 
-  /** 保存 API Key 明文（后端加密存储） */
+  /** 保存 API Key 明文（后端按主密码状态决定：已解锁→加密存储，未设置→明文存储） */
   async function saveApiKey(plain: string) {
-    if (!unlocked.value) throw new Error('请先设置/输入主密码解锁')
     await update({ api_key: plain })
   }
 
@@ -142,9 +147,9 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiModel, modelMode, depth,
+    theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiKeyPlain, apiModel, modelMode, depth,
     languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
-    monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName,
+    monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
     applyConfig, loadConfig, update, toggleTheme, saveApiKey, resetAll,
     exportToFile, importFromFile, setupMasterPassword, unlockVault, refreshMasterStatus,

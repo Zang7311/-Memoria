@@ -13,8 +13,14 @@ use std::path::PathBuf;
 pub const DEFAULT_SET: &str = "default";
 
 /// 获取记忆根目录（所有记忆集的父目录）
-/// 默认集即根目录下的 index.json（与 AI-3 完全一致）
+/// 优先使用配置中心的自定义数据路径（设置页「数据路径」可改，收尾工程师修正：真正生效）；
+/// 未设置时回退 %APPDATA%/ling-memoria/memory。
 pub fn root_dir() -> PathBuf {
+    let cfg = crate::config::store::get_config();
+    let custom = cfg.data_path.trim();
+    if !custom.is_empty() {
+        return PathBuf::from(custom);
+    }
     let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(base).join("ling-memoria").join("memory")
 }

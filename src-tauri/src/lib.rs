@@ -9,6 +9,7 @@ mod error;
 mod logs;
 mod memory;
 mod network;
+mod sessions;
 // AI-5：插件模块与类型公开（供集成测试/下游引用）
 pub mod plugin;
 mod stream;
@@ -165,6 +166,14 @@ pub fn run() {
             commands::sync_status::get_sync_devices,
             commands::update_check::check_update,
             commands::network_status::get_network_status,
+            commands::open_url::open_url,
+            // —— 收尾工程师批次3：多会话 ——
+            commands::session::session_list,
+            commands::session::session_create,
+            commands::session::session_load,
+            commands::session::session_save,
+            commands::session::session_rename,
+            commands::session::session_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

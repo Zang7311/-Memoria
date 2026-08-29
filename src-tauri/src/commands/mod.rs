@@ -41,3 +41,6 @@ pub mod sync_discover;
 pub mod sync_start;
 pub mod sync_status;
 pub mod update_check;
+// —— 收尾工程师 ——
+pub mod open_url;
+pub mod session;

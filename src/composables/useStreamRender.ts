@@ -7,7 +7,8 @@
 // 设置环境变量 VITE_USE_MOCK=0（或后端就绪后）即走真实 Tauri 事件。
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chatStore'
-import { sendMessage, onChatChunk, onChatEnd, onChatError } from '../utils/tauri'
+import { sendMessage, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
+import type { ChatUsage } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
@@ -32,17 +33,29 @@ export function useStreamRender() {
   function handleEnd() {
     if (activeId) chat.finishStream(activeId)
     activeId = null
+    // 流式结束后把当前会话保存到后端（多会话持久化）
+    chat.saveCurrentSession().catch(() => {})
   }
 
   // —— 处理错误 ——
   function handleError(_error: string) {
     if (activeId) chat.errorStream(activeId)
     activeId = null
+    chat.saveCurrentSession().catch(() => {})
+  }
+
+  // —— 处理 token 用量（API 模式流式结束）——
+  function handleUsage(u: ChatUsage) {
+    chat.setUsage(u)
   }
 
   // 发送一条消息：追加用户消息 -> 创建空的铃回复 -> 触发后端/ mock 流式
   async function send(content: string, depth = 2) {
     if (chat.isLoading) return
+    // 确保有活跃会话（多会话模式下首次发送前自动建一个）
+    if (!chat.activeSessionId) {
+      await chat.createSession()
+    }
     const userMsg = {
       id: makeId(),
       role: 'user' as const,
@@ -103,7 +116,7 @@ export function useStreamRender() {
 
   onMounted(() => {
     if (!USE_MOCK) {
-      Promise.all([onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError)]).then(
+      Promise.all([onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError), onChatUsage(handleUsage)]).then(
         (fns) => (unlisteners.value = fns)
       )
     }

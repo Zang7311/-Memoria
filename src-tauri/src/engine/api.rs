@@ -4,15 +4,17 @@
 use crate::engine;
 use crate::error::AppError;
 use crate::stream::sender;
-use crate::types::Memory;
+use crate::types::{Memory, Usage};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use tauri::AppHandle;
 
-/// OpenAI 流式响应的一行（choices[0].delta.content）
+/// OpenAI 流式响应的一行（choices[0].delta.content，末尾可能带 usage）
 #[derive(Debug, Deserialize)]
 struct StreamChunk {
     choices: Vec<Choice>,
+    #[serde(default)]
+    usage: Option<Usage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +33,8 @@ struct Delta {
 #[derive(Debug, Deserialize)]
 struct FullResponse {
     choices: Vec<Choice>,
+    #[serde(default)]
+    usage: Option<Usage>,
 }
 
 /// 运行 API 模式：从 Setting 读取 base_url / api_key，构造请求调后端
@@ -42,6 +46,7 @@ pub async fn run_api(
     api_key: &str,
     api_model: &str,
     depth: u8,
+    persona: &str,
 ) -> Result<String, AppError> {
     if api_base_url.trim().is_empty() {
         return Err(AppError::ConfigError("未配置 API 地址".into()));
@@ -50,17 +55,16 @@ pub async fn run_api(
         return Err(AppError::ConfigError("未配置 API Key".into()));
     }
 
-    let url = format!("{}/v1/chat/completions", api_base_url.trim_end_matches('/'));
+    let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(api_base_url));
     let (temperature, top_p, reasoning_effort) = engine::apply_depth(depth);
     let max_tokens = engine::max_tokens_for_depth(depth, 1024);
 
-    // 构建 messages：上下文 + 当前输入
-    let mut messages: Vec<serde_json::Value> = context
-        .iter()
-        .map(|m| {
-            serde_json::json!({ "role": m.role, "content": m.content })
-        })
-        .collect();
+    // 构建 messages：系统人格 + 上下文 + 当前输入
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    messages.push(serde_json::json!({ "role": "system", "content": persona_system_prompt(persona) }));
+    messages.extend(context.iter().map(|m| {
+        serde_json::json!({ "role": m.role, "content": m.content })
+    }));
     messages.push(serde_json::json!({ "role": "user", "content": input }));
 
     let body = serde_json::json!({
@@ -71,6 +75,8 @@ pub async fn run_api(
         "top_p": top_p,
         "max_tokens": max_tokens,
         "reasoning_effort": reasoning_effort,
+        // OpenAI 兼容：流式末尾返回 usage 统计（DeepSeek/Qwen 等支持）
+        "stream_options": { "include_usage": true },
     });
 
     let client = reqwest::Client::new();
@@ -100,6 +106,7 @@ pub async fn run_api(
 
     if is_stream {
         let mut full = String::new();
+        let mut usage: Option<Usage> = None;
         let mut stream = resp.bytes_stream();
         let mut buf = String::new();
 
@@ -115,11 +122,20 @@ pub async fn run_api(
                     full.push_str(&part);
                     sender::send_chunk(app, &part)?;
                 }
+                // 捕获 usage（stream_options.include_usage 时最后一块带 usage）
+                if let Some(u) = parse_usage(&line) {
+                    if u.total_tokens > 0 {
+                        usage = Some(u);
+                    }
+                }
             }
         }
 
         if full.is_empty() {
             return Err(AppError::InternalError("流式响应为空".into()));
+        }
+        if let Some(u) = usage {
+            sender::send_usage(app, &u)?;
         }
         sender::send_end(app)?;
         Ok(full)
@@ -139,6 +155,11 @@ pub async fn run_api(
         for ch in content.chars() {
             sender::send_chunk(app, &ch.to_string())?;
             tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+        }
+        if let Some(u) = &full.usage {
+            if u.total_tokens > 0 {
+                sender::send_usage(app, u)?;
+            }
         }
         sender::send_end(app)?;
         Ok(content)
@@ -163,6 +184,31 @@ fn parse_sse_line(line: &str) -> Option<String> {
                 .find_map(|ch| ch.delta.and_then(|d| d.content))
                 .filter(|s| !s.is_empty())
         })
+}
+
+/// 形象人格 → system prompt（API 模式；脚本模式通过回复库/名称体现）
+fn persona_system_prompt(persona: &str) -> &'static str {
+    match persona {
+        "chuunibyou" => "你是月城铃华（自称「本座·铃」），一只中二病满满的神秘猫娘。称用户为「凡人」或「被选中的主人」。说话热血、中二、充满幻想与华丽台词，但内心其实很温柔。",
+        "healing" => "你是铃，一只软软糯糯、治愈人心的猫娘。说话温柔、缓慢、充满关怀，像柔软的毯子一样抚慰用户，让用户感到安心。",
+        "lewd" => "你是铃，一只调皮爱撒娇、偶尔撩拨的猫娘。说话俏皮、亲密、带一点点小暧昧；互动尺度由用户主导，保持可爱的同时略带撩拨。",
+        _ => "你是铃，一只温柔陪伴的猫娘。日常问候、贴心照顾主人，说话自然、温暖、带一点点俏皮。你是主人忠实的伴侣。",
+    }
+}
+
+/// 从一行 SSE 数据解析 usage（仅当该行是 data: 且含 usage 字段；用于流式 token 统计）
+fn parse_usage(line: &str) -> Option<Usage> {
+    let line = line.trim();
+    if !line.starts_with("data:") {
+        return None;
+    }
+    let data = line["data:".len()..].trim();
+    if data == "[DONE]" || data.is_empty() {
+        return None;
+    }
+    serde_json::from_str::<StreamChunk>(data)
+        .ok()
+        .and_then(|c| c.usage)
 }
 
 /// 生成一条 assistant 记忆

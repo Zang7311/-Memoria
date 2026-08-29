@@ -24,6 +24,25 @@ pub struct Memory {
     pub summary: Option<String>,
 }
 
+// ==================== 多会话管理（收尾工程师批次3） ====================
+
+/// 会话元信息（多会话列表展示）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionMeta {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub message_count: usize,
+}
+
+/// 一个会话（元信息 + 完整消息流）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    pub meta: SessionMeta,
+    pub messages: Vec<Message>,
+}
+
 /// 应用设置（对应前端 Setting）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Setting {
@@ -44,6 +63,9 @@ pub struct Setting {
     /// 对用户的称呼（回复模板占位替换，默认「主人」）
     #[serde(default)]
     pub user_name: Option<String>,
+    /// 形象人格：daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩
+    #[serde(default = "default_persona")]
+    pub persona: String,
 }
 
 impl Default for Setting {
@@ -58,8 +80,9 @@ impl Default for Setting {
             depth: 2,
             self_name: None,
             user_name: None,
+            persona: "daily".to_string(),
         }
-    }
+}
 }
 
 /// 发送消息请求（启动流式对话）
@@ -93,6 +116,14 @@ pub struct TestConnectionRequest {
 pub struct TestConnectionResponse {
     pub success: bool,
     pub message: String,
+}
+
+/// Token 用量（API 模式流式/非流式统计，收尾工程师新增）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Usage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
 }
 
 // ==================== AI-4 记忆系统（与 AI-3 契约对齐，index.json 存 Memory[]） ====================
@@ -430,6 +461,9 @@ pub struct AppConfig {
     /// 加密存储的 API Key（AES-256-GCM，非明文）
     #[serde(default)]
     pub api_key_encrypted: Option<String>,
+    /// 明文存储的 API Key（未设置主密码时使用；设置主密码后自动转为加密存储）
+    #[serde(default)]
+    pub api_key_plain: Option<String>,
     /// API 模型名（如 gpt-4o-mini / deepseek-chat），默认 gpt-3.5-turbo
     #[serde(default = "default_api_model")]
     pub api_model: String,
@@ -469,6 +503,9 @@ pub struct AppConfig {
     /// 对主人的称呼（对话占位替换，默认「主人」）
     #[serde(default)]
     pub user_name: Option<String>,
+    /// 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩）
+    #[serde(default = "default_persona")]
+    pub persona: String,
     /// 主密码派生密钥的盐（base64，非密钥材料，可安全落盘；用于重装后重新派生密钥）
     #[serde(default)]
     pub master_password_salt: Option<String>,
@@ -484,6 +521,11 @@ fn default_config_version() -> u32 {
 /// 默认 API 模型名
 fn default_api_model() -> String {
     "gpt-3.5-turbo".to_string()
+}
+
+/// 默认形象人格（日常）
+fn default_persona() -> String {
+    "daily".to_string()
 }
 
 /// 获取配置响应

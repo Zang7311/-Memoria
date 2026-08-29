@@ -34,10 +34,66 @@ export function onChatError(callback: (error: string) => void): Promise<Unlisten
   return listen<string>('chat_error', (event) => callback(event.payload))
 }
 
+/**
+ * 监听 token 用量事件（API 模式流式结束时推送；脚本/本地模式无此事件）
+ */
+export function onChatUsage(callback: (usage: ChatUsage) => void): Promise<UnlistenFn> {
+  return listen<ChatUsage>('chat_usage', (event) => callback(event.payload))
+}
+
 // 兼容旧环境的 greet（保留，供测试通道使用）
-import type { Message } from '../types'
+import type { ChatUsage, Message, Session, SessionMeta, TestConnectionResponse } from '../types'
 export function greet(name: string): Promise<string> {
   return invoke<string>('greet', { name })
+}
+
+/**
+ * 测试 API 连接（AI-3 test_api_connection）
+ * @param base_url API 地址（带/不带 /v1 均可）
+ * @param api_key 明文 API Key（测试当前输入框内容，不涉及已保存密文）
+ */
+export function testApiConnection(base_url: string, api_key: string): Promise<TestConnectionResponse> {
+  return invoke('test_api_connection', { baseUrl: base_url, apiKey: api_key })
+}
+
+/**
+ * 用系统默认浏览器打开外部链接（收尾工程师新增，复用 tauri-plugin-opener）
+ * 用于跳转：GitHub 主页 / DeepSeek 平台 / Hermes 技能目录等
+ */
+export function openUrl(url: string): Promise<void> {
+  return invoke('open_url', { url })
+}
+
+// ==================== 多会话管理 IPC（收尾工程师批次3） ====================
+
+/** 列出所有会话元信息（按更新时间倒序） */
+export function listSessions(): Promise<SessionMeta[]> {
+  return invoke('session_list')
+}
+
+/** 新建会话（返回空会话） */
+export function createSession(): Promise<Session> {
+  return invoke('session_create')
+}
+
+/** 加载单个会话（含完整消息） */
+export function loadSession(id: string): Promise<Session> {
+  return invoke('session_load', { id })
+}
+
+/** 保存会话消息（更新标题/计数/时间；不存在则自动新建） */
+export function saveSession(id: string, messages: Message[]): Promise<Session> {
+  return invoke('session_save', { id, messages })
+}
+
+/** 重命名会话 */
+export function renameSession(id: string, title: string): Promise<SessionMeta> {
+  return invoke('session_rename', { id, title })
+}
+
+/** 删除会话 */
+export function deleteSession(id: string): Promise<void> {
+  return invoke('session_delete', { id })
 }
 
 // —— 类型提示：避免未使用告警 ——

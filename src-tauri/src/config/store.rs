@@ -61,21 +61,29 @@ pub fn set_config(cfg: AppConfig) -> Result<(), AppError> {
 pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
     let mut cfg = get_config();
 
-    // 处理明文 api_key
+    // 处理明文 api_key（主密码可选：已解锁→加密存储；未设置主密码→明文存储）
     if let Some(v) = updates.get("api_key") {
         let mut updates = updates.clone();
         updates.remove("api_key");
         if v.is_null() {
             cfg.api_key_encrypted = None;
+            cfg.api_key_plain = None;
         } else {
             let plain = v
                 .as_str()
                 .ok_or_else(|| AppError::EncryptionError("api_key 必须是字符串".into()))?;
             if plain.is_empty() {
                 cfg.api_key_encrypted = None;
-            } else {
-                let key = encryption::get_key()?; // 未解锁 → Locked
+                cfg.api_key_plain = None;
+            } else if encryption::is_unlocked() {
+                // 已解锁：AES-256-GCM 加密存储（推荐）
+                let key = encryption::get_key()?;
                 cfg.api_key_encrypted = Some(encryption::encrypt_with_key(&key, plain)?);
+                cfg.api_key_plain = None;
+            } else {
+                // 未设置/未解锁主密码：明文存储（前端会提示「未加密」，便于快速接入）
+                cfg.api_key_encrypted = None;
+                cfg.api_key_plain = Some(plain.to_string());
             }
         }
         return update(&updates); // 递归处理其余字段
