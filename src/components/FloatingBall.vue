@@ -2,7 +2,7 @@
      独立透明小窗：拖拽移动 / 双击恢复主窗口 / 右键菜单（显示主窗口、暂停监测、退出）
      空闲呼吸动画；收到监测消息时闪烁 -->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   currentMonitor,
   getCurrentWindow,
@@ -10,11 +10,13 @@ import {
   primaryMonitor,
 } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { getMonitorRules, onMonitorTrigger, toggleMonitoring } from '../utils/tauri'
+import { assetUrl, getMonitorRules, isImagePath, onMonitorTrigger, toggleMonitoring } from '../utils/tauri'
 import { useSettingStore } from '../stores/settingStore'
 
 const win = getCurrentWindow()
 const setting = useSettingStore()
+// 铃的头像：图片路径则显示图片
+const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
 
 // —— 拖拽状态 ——
 const dragging = ref(false)
@@ -156,7 +158,10 @@ function menuExit() {
   >
     <!-- 猫娘圆球：呼吸动画 / 消息闪烁 -->
     <div class="ball" :class="{ breathing: !dragging && !hasMessage, flashing: hasMessage, dragging }">
-      <span class="ball-face">{{ setting.avatarSuzu || '铃' }}</span>
+      <span class="ball-face">
+        <img v-if="avatarImg" :src="avatarImg" class="ball-img" />
+        <template v-else>{{ setting.avatarSuzu || '铃' }}</template>
+      </span>
     </div>
 
     <!-- 右键菜单 -->
@@ -223,7 +228,14 @@ function menuExit() {
 }
 .ball-face {
   font-size: 30px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
+.ball-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .ball-menu {
   position: fixed;
   z-index: 999;

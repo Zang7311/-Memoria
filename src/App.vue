@@ -7,6 +7,7 @@ import FloatingBall from './components/FloatingBall.vue'
 import Bubble from './components/Bubble.vue'
 import OnboardingView from './views/OnboardingView.vue'
 import { useSettingStore } from './stores/settingStore'
+import { assetUrl } from './utils/tauri'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const setting = useSettingStore()
@@ -16,7 +17,7 @@ const customStyle = computed<Record<string, string>>(() => {
   const s: Record<string, string> = {}
   if (setting.accentColor) s['--accent'] = setting.accentColor
   if (setting.bgColor) s['--bg-main'] = setting.bgColor
-  if (setting.bgImage) s['--bg-image'] = `url("${setting.bgImage}")`
+  if (setting.bgImage) s['--bg-image'] = `url("${assetUrl(setting.bgImage)}")`
   if (setting.uiRadius != null) s['--radius-ui'] = `${setting.uiRadius}px`
   if (setting.bubbleUserColor) s['--bubble-user-bg'] = setting.bubbleUserColor
   if (setting.bubbleSuzuColor) s['--bubble-suzu-bg'] = setting.bubbleSuzuColor
