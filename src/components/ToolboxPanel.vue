@@ -9,6 +9,10 @@ const desktop = useDesktopStore()
 
 const executingId = ref<string | null>(null)
 const feedback = ref<{ ok: boolean; text: string } | null>(null)
+// —— 输出弹窗（执行有输出的工具时弹出完整内容，避免视觉盲区）——
+const showOutput = ref(false)
+const outputContent = ref('')
+const outputTitle = ref('执行输出')
 
 // —— 添加弹窗 ——
 const showEditor = ref(false)
@@ -31,13 +35,20 @@ async function runItem(item: ToolboxItem) {
   executingId.value = null
   if (result?.error) {
     feedback.value = { ok: false, text: result.error }
+    // 失败也弹窗显示完整原因
+    outputTitle.value = `✗ ${item.name} · 失败`
+    outputContent.value = result.error
+    showOutput.value = true
+  } else if (result?.output) {
+    feedback.value = { ok: true, text: `✓ ${item.name} 已执行（点查看输出）` }
+    // 有输出则弹独立窗口完整展示，避免顶部小区域视觉盲区
+    outputTitle.value = `📄 ${item.name} · 输出`
+    outputContent.value = result.output
+    showOutput.value = true
   } else {
-    feedback.value = {
-      ok: true,
-      text: result?.output ? `✓ ${result.output}` : '✓ 已执行',
-    }
+    feedback.value = { ok: true, text: `✓ ${item.name} 已执行` }
   }
-  // 反馈 4 秒后消失
+  // 反馈 4 秒后消失（不影响弹窗）
   setTimeout(() => (feedback.value = null), 4000)
 }
 
@@ -113,6 +124,17 @@ async function confirmDelete() {
     </div>
 
     <div class="panel-footer">💡 清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</div>
+
+    <!-- 输出弹窗：完整显示命令输出（端口/清理等），可滚动，无视觉盲区 -->
+    <div v-if="showOutput" class="modal-mask" @click.self="showOutput = false">
+      <div class="modal output-modal">
+        <div class="modal-title">{{ outputTitle }}</div>
+        <pre class="output-pre">{{ outputContent }}</pre>
+        <div class="modal-actions">
+          <button class="btn confirm" @click="showOutput = false">关闭</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 添加/编辑弹窗 -->
     <div v-if="showEditor" class="modal-mask" @click.self="showEditor = false">
@@ -268,6 +290,22 @@ async function confirmDelete() {
   padding: 18px;
 }
 .modal.small { width: 240px; }
+.output-modal { width: 560px; max-width: 90vw; }
+.output-pre {
+  margin: 0 0 12px;
+  padding: 10px;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--input-bg, #1e1c20);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-main, #eee6e7);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .modal-title {
   font-weight: 600;
   margin-bottom: 14px;
