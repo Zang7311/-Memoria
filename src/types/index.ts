@@ -154,6 +154,8 @@ export interface ToolboxItem {
   needs_input?: boolean
   input_label?: string | null
   input_placeholder?: string | null
+  /** 声明的依赖 id 列表（如 ["ffmpeg"]），由统一 DependencyManager 检查 */
+  dependencies?: string[]
 }
 
 /** 获取监测状态 + 规则列表响应 */

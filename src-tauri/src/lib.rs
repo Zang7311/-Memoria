@@ -1,6 +1,7 @@
 // 《铃·记忆体》Tauri 入口：注册所有命令与模块
 mod commands;
 mod config;
+mod deps;
 mod context;
 mod desktop;
 mod diagnostic;
@@ -148,6 +149,7 @@ pub fn run() {
             commands::toolbox_execute::delete_toolbox_item,
             commands::pixel_art::save_pixel_art,
             commands::ui_image::save_ui_image,
+            deps::check_dependency,
             commands::tray::set_floating_ball_visibility,
             commands::hotkey::register_hotkey,
             commands::hotkey::unregister_hotkey,
