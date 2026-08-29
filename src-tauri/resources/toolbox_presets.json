@@ -278,7 +278,10 @@
         "enabled":  true,
         "needs_input":  true,
         "input_label":  "输入视频文件完整路径",
-        "input_placeholder":  "转码为同目录 .mp4（需已装 ffmpeg）"
+        "input_placeholder":  "转码为同目录 .mp4（需已装 ffmpeg）",
+        "dependencies":  [
+                             "ffmpeg"
+                         ]
     },
     {
         "id":  "xor",
@@ -296,7 +299,10 @@
         "icon":  "🖥️",
         "command":  "powershell -NoProfile -EncodedCommand WwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AHAAdQB0AEUAbgBjAG8AZABpAG4AZwA9AFsAVABlAHgAdAAuAEUAbgBjAG8AZABpAG4AZwBdADoAOgBVAFQARgA4ADsAIAAkAHYAbQB4AD0ARwBlAHQALQBDAG8AbQBtAGEAbgBkACAAdgBtAHcAYQByAGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUAOwAgACQAdgBiAG8AeAA9AFQAZQBzAHQALQBQAGEAdABoACAAJwBDADoAXABQAHIAbwBnAHIAYQBtACAARgBpAGwAZQBzAFwATwByAGEAYwBsAGUAXABWAGkAcgB0AHUAYQBsAEIAbwB4AFwAVgBpAHIAdAB1AGEAbABCAG8AeAAuAGUAeABlACcAOwAgAGkAZgAoACQAdgBtAHgAKQB7ACAAUwB0AGEAcgB0AC0AUAByAG8AYwBlAHMAcwAgAHYAbQB3AGEAcgBlADsAIAAnAFMAdABhAHIAdABlAGQAIABWAE0AdwBhAHIAZQAgAFcAbwByAGsAcwB0AGEAdABpAG8AbgAnACAAfQAgAGUAbABzAGUAaQBmACgAJAB2AGIAbwB4ACkAewAgAFMAdABhAHIAdAAtAFAAcgBvAGMAZQBzAHMAIAAnAEMAOgBcAFAAcgBvAGcAcgBhAG0AIABGAGkAbABlAHMAXABPAHIAYQBjAGwAZQBcAFYAaQByAHQAdQBhAGwAQgBvAHgAXABWAGkAcgB0AHUAYQBsAEIAbwB4AC4AZQB4AGUAJwA7ACAAJwBTAHQAYQByAHQAZQBkACAAVgBpAHIAdAB1AGEAbABCAG8AeAAnACAAfQAgAGUAbABzAGUAIAB7ACAAJwBOAG8AIABWAE0AIABmAG8AdQBuAGQAIABpAG4AcwB0AGEAbABsAGUAZAAuACAASQBuAHMAdABhAGwAbAAgAHcAaQB0AGgAOgAgAHcAaQBuAGcAZQB0ACAAaQBuAHMAdABhAGwAbAAgAE8AcgBhAGMAbABlAC4AVgBpAHIAdAB1AGEAbABCAG8AeAAnACAAfQA=",
         "enabled":  true,
-        "needs_input":  false
+        "needs_input":  false,
+        "dependencies":  [
+                             "qemu"
+                         ]
     },
     {
         "id":  "pixel-art",

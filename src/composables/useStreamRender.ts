@@ -25,6 +25,8 @@ export function useStreamRender() {
   let activeId: string | null = null
 
   // —— AI 工具箱意图检测：开启 ai_toolbox 且消息匹配工具意图时，直接执行工具箱工具 ——
+  // AI 危险操作清单（不可逆/系统级，执行前需用户确认）
+  const DANGEROUS_TOOLS = new Set(['shutdown-1h', 'lock', 'file-shred', 'clean-recycle', 'cancel-shutdown'])
   function detectToolboxIntent(content: string): { id: string; input?: string } | null {
     const t = content.toLowerCase()
     if (/清理内存|释放内存|内存清理/.test(t)) return { id: 'clean-memory' }
@@ -101,6 +103,15 @@ export function useStreamRender() {
     // —— AI 工具箱：开启且命中工具意图时，直接执行工具箱工具并返回结果（不走 AI 模型）——
     const intent = setting.aiToolbox ? detectToolboxIntent(content) : null
     if (intent) {
+      // AI 危险操作确认：不可逆/系统级操作需用户确认后才能执行
+      if (DANGEROUS_TOOLS.has(intent.id)) {
+        const ok = confirm(`⚠️ 即将执行「${intent.id}」，此操作可能影响系统或无法恢复，是否继续？`)
+        if (!ok) {
+          handleChunk(`已取消执行「${intent.id}」`)
+          handleEnd()
+          return
+        }
+      }
       try {
         const result = await desktop.executeToolboxItem(intent.id, intent.input)
         const out = result?.error

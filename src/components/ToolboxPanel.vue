@@ -4,6 +4,7 @@
 import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useSettingStore } from '../stores/settingStore'
+import { checkDependency, openUrl } from '../utils/tauri'
 import type { ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
@@ -20,6 +21,9 @@ const feedback = ref<{ ok: boolean; text: string } | null>(null)
 const showPixelArt = ref(false)
 // —— 正则测试器（批次4，前端组件）——
 const showRegex = ref(false)
+// —— 依赖缺失引导（ffmpeg/Ollama/OCR语言包等缺失时弹窗提示下载方法）——
+const showDepGuide = ref(false)
+const depGuide = ref<{ id?: string; name: string; hint: string; install: string; url: string | null } | null>(null)
 // —— 输出弹窗（执行有输出的工具时弹出完整内容，避免视觉盲区）——
 const showOutput = ref(false)
 const outputContent = ref('')
@@ -37,6 +41,36 @@ const pendingDeleteId = ref('')
 onMounted(() => {
   desktop.loadToolboxItems()
 })
+
+// —— 依赖缺失检测：输出含依赖关键词 → 返回安装引导 ——
+function detectDependency(text: string) {
+  if (!text) return null
+  const t = text.toLowerCase()
+  if (/ffmpeg/.test(t)) return { name: 'ffmpeg（视频转码）', hint: '用于视频格式转换（转 MP4 等）', install: 'PowerShell 管理员运行：winget install ffmpeg', url: 'https://ffmpeg.org/download.html' }
+  if (/ollama/.test(t)) return { name: 'Ollama（本地 AI）', hint: '用于本地离线对话', install: 'PowerShell 管理员运行：winget install Ollama.Ollama', url: 'https://ollama.com/download' }
+  if (/ocr engine|language pack|not available/.test(t)) return { name: 'OCR 语言包', hint: 'Windows 内置 OCR 需要系统语言包', install: '设置 → 时间和语言 → 语言 → 添加语言 → 勾选「光学字符识别」', url: null }
+  return null
+}
+function openGuideUrl(url: string) {
+  openUrl(url).catch(() => window.open(url, '_blank'))
+}
+// —— 重新检查依赖（装好后点此重试，已装则关闭引导）——
+async function recheckDep() {
+  const id = depGuide.value?.id
+  if (!id) return
+  try {
+    const st = await checkDependency(id)
+    if (st.installed) {
+      showDepGuide.value = false
+      depGuide.value = null
+      feedback.value = { ok: true, text: `✓ ${st.name} 已就绪，请重新点击工具执行` }
+    } else {
+      depGuide.value = { id: st.id, name: st.name, hint: `此功能需要安装 ${st.name}`, install: st.install, url: st.url }
+    }
+  } catch {
+    /* 忽略 */
+  }
+}
 
 async function runItem(item: ToolboxItem) {
   if (executingId.value) return
@@ -73,8 +107,28 @@ async function runItem(item: ToolboxItem) {
   }
   executingId.value = item.id
   feedback.value = null
+  // —— 统一依赖检查（工具声明 dependencies，未装则弹引导后返回）——
+  for (const depId of item.dependencies || []) {
+    try {
+      const st = await checkDependency(depId)
+      if (st && !st.installed) {
+        depGuide.value = { id: st.id, name: st.name, hint: `此功能需要安装 ${st.name}`, install: st.install, url: st.url }
+        showDepGuide.value = true
+        executingId.value = null
+        return
+      }
+    } catch {
+      /* 未知依赖跳过 */
+    }
+  }
   const result = await desktop.executeToolboxItem(item.id, input)
   executingId.value = null
+  // 依赖缺失检测：输出含依赖关键词 → 弹安装引导（自动提示下载方法）
+  const dep = detectDependency((result?.output || '') + ' ' + (result?.error || ''))
+  if (dep) {
+    depGuide.value = dep
+    showDepGuide.value = true
+  }
   if (result?.error) {
     feedback.value = { ok: false, text: result.error }
     // 失败也弹窗显示完整原因
@@ -186,6 +240,20 @@ async function confirmDelete() {
     </div>
 
     <!-- 添加/编辑弹窗 -->
+    <!-- 依赖缺失引导弹窗 -->
+    <div v-if="showDepGuide" class="modal-mask" @click.self="showDepGuide = false">
+      <div class="modal-box dep-box">
+        <h4 class="dep-title">缺少依赖：{{ depGuide?.name }}</h4>
+        <p class="dep-hint">{{ depGuide?.hint }}</p>
+        <p class="dep-install">{{ depGuide?.install }}</p>
+        <div class="modal-actions">
+          <button v-if="depGuide?.url" class="btn confirm" @click="openGuideUrl(depGuide.url)">打开下载页</button>
+          <button v-if="depGuide?.id" class="btn" @click="recheckDep">重新检查</button>
+          <button class="btn cancel" @click="showDepGuide = false">知道了</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showEditor" class="modal-mask" @click.self="showEditor = false">
       <div class="modal">
         <div class="modal-title">{{ editingItem.id.startsWith('user_') && !editingItem.name ? '添加工具' : '编辑工具' }}</div>
@@ -407,6 +475,20 @@ async function confirmDelete() {
   color: #ff8b8b;
   font-size: 12px;
   margin-bottom: 10px;
+}
+.dep-box { text-align: left; }
+.dep-title { margin: 0 0 10px; color: var(--text-main, #eee); font-size: 16px; }
+.dep-hint { margin: 0 0 8px; color: var(--text-secondary, #aaa); font-size: 13px; }
+.dep-install {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--text-main, #eee);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 .modal-actions {
   display: flex;

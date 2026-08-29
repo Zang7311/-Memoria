@@ -275,6 +275,11 @@ export function assetUrl(path: string): string {
   return convertFileSrc(path)
 }
 
+/** 统一依赖管理器：检查依赖是否安装（返回安装状态/引导/下载页） */
+export function checkDependency(id: string): Promise<{ id: string; installed: boolean; name: string; required: boolean; install: string; url: string | null }> {
+  return invoke('check_dependency', { id })
+}
+
 /** 判断字符串是否为本地图片路径（含路径分隔符或图片扩展名） */
 export function isImagePath(v?: string | null): boolean {
   if (!v) return false
