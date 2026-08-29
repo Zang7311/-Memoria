@@ -42,7 +42,7 @@ export function onChatUsage(callback: (usage: ChatUsage) => void): Promise<Unlis
 }
 
 // 兼容旧环境的 greet（保留，供测试通道使用）
-import type { ChatUsage, Message, Session, SessionMeta, TestConnectionResponse } from '../types'
+import type { ChatUsage, DetectOllamaResponse, GpuVram, Message, Session, SessionMeta, TestConnectionResponse } from '../types'
 export function greet(name: string): Promise<string> {
   return invoke<string>('greet', { name })
 }
@@ -62,6 +62,36 @@ export function testApiConnection(base_url: string, api_key: string): Promise<Te
  */
 export function openUrl(url: string): Promise<void> {
   return invoke('open_url', { url })
+}
+
+/** 检测是否以管理员权限运行 */
+export function isAdmin(): Promise<boolean> {
+  return invoke('is_admin')
+}
+
+/** 以管理员权限重启应用（弹 UAC 提示） */
+export function restartAsAdmin(): Promise<void> {
+  return invoke('restart_as_admin')
+}
+
+/** 检测 Ollama 是否安装 + 列出已安装模型（一键本地部署 AI） */
+export function detectOllama(): Promise<DetectOllamaResponse> {
+  return invoke('detect_ollama')
+}
+
+/** 一键拉取本地模型（ollama pull，阻塞等待完成） */
+export function pullModel(model: string): Promise<string> {
+  return invoke('pull_model', { model })
+}
+
+/** 检测显卡显存（用于判断能否跑本地 AI） */
+export function detectGpuVram(): Promise<GpuVram[]> {
+  return invoke('detect_gpu_vram')
+}
+
+/** 设置 Ollama 模型存储路径（OLLAMA_MODELS 用户环境变量） */
+export function setOllamaModelsPath(path: string): Promise<string> {
+  return invoke('set_ollama_models_path', { path })
 }
 
 // ==================== 多会话管理 IPC（收尾工程师批次3） ====================

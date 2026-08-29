@@ -174,6 +174,14 @@ pub fn run() {
             commands::session::session_save,
             commands::session::session_rename,
             commands::session::session_delete,
+            // —— 收尾工程师：管理员权限 ——
+            commands::admin::is_admin,
+            commands::admin::restart_as_admin,
+            // —— 收尾工程师：一键本地部署 AI ——
+            commands::local_ai::detect_ollama,
+            commands::local_ai::pull_model,
+            commands::local_ai::detect_gpu_vram,
+            commands::local_ai::set_ollama_models_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

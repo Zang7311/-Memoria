@@ -230,6 +230,18 @@ export interface ChatUsage {
   total_tokens: number
 }
 
+/** Ollama 本地 AI 检测结果 */
+export interface DetectOllamaResponse {
+  installed: boolean
+  models: string[]
+}
+
+/** 显卡显存信息 */
+export interface GpuVram {
+  name: string
+  vram_mb: number
+}
+
 // ==================== 多会话管理（收尾工程师批次3） ====================
 
 /** 会话元信息（会话标签/历史列表展示） */

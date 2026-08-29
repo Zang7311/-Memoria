@@ -44,3 +44,5 @@ pub mod update_check;
 // —— 收尾工程师 ——
 pub mod open_url;
 pub mod session;
+pub mod admin;
+pub mod local_ai;

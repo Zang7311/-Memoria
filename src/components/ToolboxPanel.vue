@@ -112,7 +112,7 @@ async function confirmDelete() {
       <div v-if="desktop.toolboxLoading" class="cell loading-cell">加载中…</div>
     </div>
 
-    <div class="panel-footer">右键工具可删除（仅自定义项）</div>
+    <div class="panel-footer">💡 清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</div>
 
     <!-- 添加/编辑弹窗 -->
     <div v-if="showEditor" class="modal-mask" @click.self="showEditor = false">

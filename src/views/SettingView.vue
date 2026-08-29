@@ -8,7 +8,7 @@ import PluginManager from '../components/PluginManager.vue'
 import SyncPanel from '../components/SyncPanel.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
-import { getAutostart, openUrl, registerHotkey, setAutostart, testApiConnection } from '../utils/tauri'
+import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, setAutostart, setOllamaModelsPath, testApiConnection } from '../utils/tauri'
 
 const setting = useSettingStore()
 
@@ -49,6 +49,65 @@ const unlockPwd = ref('')
 const cryptoMsg = ref('')
 const testMsg = ref('')
 const testing = ref(false)
+// 管理员权限状态（null 检测中 / true 已管理员 / false 普通）
+const adminState = ref<boolean | null>(null)
+// —— 一键本地部署 AI ——
+const ollama = ref<{ installed: boolean; models: string[] }>({ installed: false, models: [] })
+const ollamaChecked = ref(false)
+const pullModelName = ref('qwen2.5:3b')
+const localAiMsg = ref('')
+const gpuVram = ref<{ name: string; vram_mb: number }[]>([])
+const modelsPath = ref('')
+const pathMsg = ref('')
+
+async function detectLocalAI() {
+  try {
+    ollama.value = await detectOllama()
+  } catch {
+    ollama.value = { installed: false, models: [] }
+  }
+  ollamaChecked.value = true
+  await detectVramOnly()
+}
+async function detectVramOnly() {
+  try { gpuVram.value = await detectGpuVram() } catch { gpuVram.value = [] }
+}
+// 部署前检查显存，不合适弹温馨提示
+async function checkVram(): Promise<boolean> {
+  try {
+    const gpus = await detectGpuVram()
+    gpuVram.value = gpus
+    if (gpus.length === 0) return true
+    const maxVram = Math.max(...gpus.map((g) => g.vram_mb))
+    if (maxVram < 4000) {
+      alert(`主人～ 你的显卡显存只有 ${(maxVram / 1024).toFixed(1)}GB，跑本地 AI 会比较吃力哦 😿\n\n建议用轻量模型（qwen2.5:3b 或更小），或改用 API 模式更流畅～`)
+      return false
+    }
+    return true
+  } catch {
+    return true
+  }
+}
+async function doPullModel() {
+  if (!pullModelName.value.trim()) return
+  if (!(await checkVram())) return
+  localAiMsg.value = `⏳ 正在拉取 ${pullModelName.value.trim()}…（首次可能需几分钟，取决于网速）`
+  try {
+    const r = await pullModel(pullModelName.value.trim())
+    localAiMsg.value = `✅ ${r}`
+    await detectLocalAI()
+  } catch (e) {
+    localAiMsg.value = `✗ ${e}`
+  }
+}
+async function doSaveModelsPath() {
+  if (!modelsPath.value.trim()) return
+  try {
+    pathMsg.value = await setOllamaModelsPath(modelsPath.value.trim())
+  } catch (e) {
+    pathMsg.value = `✗ ${e}`
+  }
+}
 
 // 常见 OpenAI 兼容模型预设（可下拉选择，也可手填自定义）
 const MODEL_PRESETS = [
@@ -91,7 +150,22 @@ onMounted(async () => {
     const res = await getAutostart()
     autostart.value = res.enabled
   } catch { /* 忽略 */ }
+  // 检测管理员权限
+  try { adminState.value = await isAdmin() } catch { adminState.value = false }
+  // 检测本地 Ollama
+  await detectLocalAI()
 })
+
+// 以管理员权限重启
+async function requestAdmin() {
+  if (!confirm('将以管理员权限重启应用（会弹出 UAC 提示）。\n重启后可正常使用：电源模式切换、深度清理内存等特殊工具。')) return
+  try {
+    await restartAsAdmin()
+    alert('已请求管理员权限启动。请在弹出的 UAC 窗口点击「是」，然后关闭当前窗口，使用新的管理员窗口。')
+  } catch (e) {
+    alert(`启动失败：${e}`)
+  }
+}
 
 // —— 通用 ——
 async function toggleAutostart() {
@@ -246,6 +320,16 @@ async function savePersona() {
         </section>
 
         <section class="card">
+          <div class="card-title">🛡️ 管理员权限</div>
+          <p class="hint">
+            当前状态：{{ adminState === null ? '检测中…' : adminState ? '✅ 已以管理员权限运行' : '普通权限（电源模式切换 / 深度清理内存等特殊工具需管理员）' }}
+          </p>
+          <div v-if="adminState === false" class="row">
+            <button class="btn primary" @click="requestAdmin">🔐 以管理员权限重启</button>
+          </div>
+        </section>
+
+        <section class="card">
           <div class="card-title">🚀 开机自启动</div>
           <label class="switch-wrap">
             <input v-model="autostart" type="checkbox" class="switch" @change="toggleAutostart" />
@@ -346,6 +430,36 @@ async function savePersona() {
             <span class="label">当前：{{ depth }}</span>
           </div>
           <button class="btn primary" @click="saveModel">保存模型设置</button>
+        </section>
+
+        <!-- 一键本地部署 AI -->
+        <section class="card">
+          <div class="card-title">🤖 一键本地部署 AI（Ollama）</div>
+          <p class="hint">
+            {{ !ollamaChecked ? '检测中…' : ollama.installed ? `✅ Ollama 已安装（${ollama.models.length} 个模型）` : '❌ 未检测到 Ollama，需先安装' }}
+            <button v-if="ollamaChecked" class="btn ghost" style="margin-left:8px;padding:2px 10px" @click="detectLocalAI">重新检测</button>
+          </p>
+          <template v-if="ollamaChecked && ollama.installed">
+            <p v-if="ollama.models.length" class="hint">已装模型：{{ ollama.models.join('、') }}</p>
+            <p v-else class="hint">还没有模型，下拉一个开始用：</p>
+            <p v-if="gpuVram.length" class="hint">🖥️ 显卡：{{ gpuVram.map((g) => `${g.name}（${(g.vram_mb / 1024).toFixed(1)}GB）`).join('、') }}</p>
+            <div class="row">
+              <input v-model="pullModelName" class="input long" placeholder="qwen2.5:3b" />
+              <button class="btn primary" @click="doPullModel">⬇️ 一键拉取模型</button>
+            </div>
+            <div v-if="localAiMsg" class="msg">{{ localAiMsg }}</div>
+            <div class="row" style="margin-top:10px">
+              <input v-model="modelsPath" class="input long" placeholder="模型存储路径（可选，如 D:\ollama-models）" />
+              <button class="btn ghost" @click="doSaveModelsPath">💾 保存路径</button>
+            </div>
+            <div v-if="pathMsg" class="msg">{{ pathMsg }}</div>
+          </template>
+          <template v-else-if="ollamaChecked && !ollama.installed">
+            <div class="row">
+              <button class="btn primary" @click="openExternal('https://ollama.com/download')">🌐 打开 Ollama 官网下载</button>
+            </div>
+            <p class="hint" style="margin-top:6px">安装 Ollama 后回到本页点「重新检测」，再一键拉取模型。推荐 <b>qwen2.5:3b</b>（轻量）或 <b>qwen2.5:7b</b>（均衡）。</p>
+          </template>
         </section>
 
         <section class="card">
