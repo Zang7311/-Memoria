@@ -151,6 +151,9 @@ export interface ToolboxItem {
   icon: string // emoji 或名称
   command: string
   enabled: boolean
+  needs_input?: boolean
+  input_label?: string | null
+  input_placeholder?: string | null
 }
 
 /** 获取监测状态 + 规则列表响应 */

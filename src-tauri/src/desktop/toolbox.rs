@@ -76,9 +76,17 @@ pub fn delete_user_item(item_id: &str) -> Result<(), AppError> {
 /// 异步执行工具命令（cmd /C），30 秒超时强制终止（kill_on_drop）
 /// Windows：隐藏控制台窗口（CREATE_NO_WINDOW），避免执行时弹出黑色终端；
 /// 命令输出仍通过 stdout 捕获并返回前端反馈。
-pub async fn execute(item: &ToolboxItem) -> Result<ExecuteToolboxResponse, AppError> {
+pub async fn execute(item: &ToolboxItem, input: Option<String>) -> Result<ExecuteToolboxResponse, AppError> {
+    let command = item.command.clone();
     let mut cmd = tokio::process::Command::new("cmd");
     cmd.arg("/C");
+    // 需要输入参数的工具：输入经环境变量 TOOLBOX_INPUT（base64 UTF-8）传给 PowerShell 脚本，
+    // 规避 cmd/-EncodedCommand 下中文与引号在命令行传参的编码/解析问题（PowerShell -EncodedCommand 后不接受位置参数）
+    if let Some(inp) = input {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(inp.as_bytes());
+        cmd.env("TOOLBOX_INPUT", b64);
+    }
     // 超时 drop 命令时强制杀死子进程，避免残留
     cmd.kill_on_drop(true);
     #[cfg(windows)]
@@ -86,7 +94,7 @@ pub async fn execute(item: &ToolboxItem) -> Result<ExecuteToolboxResponse, AppEr
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW 隐藏控制台
         // raw_arg 原样传命令，避免 .arg() 对含空格/引号的命令自动加引号导致 cmd 解析失败
-        cmd.raw_arg(&item.command);
+        cmd.raw_arg(&command);
     }
     #[cfg(not(windows))]
     {

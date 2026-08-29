@@ -255,9 +255,9 @@ export function listToolboxItems(): Promise<{ items: ToolboxItem[] }> {
   return invoke('list_toolbox_items')
 }
 
-/** 执行工具箱命令 */
-export function executeToolbox(item_id: string): Promise<ExecuteToolboxResponse> {
-  return invoke('execute_toolbox', { request: { item_id } })
+/** 执行工具箱命令（需要输入参数的工具传 input，对应 {input} 占位符） */
+export function executeToolbox(item_id: string, input?: string): Promise<ExecuteToolboxResponse> {
+  return invoke('execute_toolbox', { request: { item_id, input: input ?? null } })
 }
 
 /** 新增/更新用户自定义工具箱条目 */
