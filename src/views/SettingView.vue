@@ -322,9 +322,16 @@ async function savePersona() {
           <div class="card-title">🎨 外观</div>
           <div class="row">
             <span class="label">主题</span>
-            <button class="btn ghost" @click="setting.toggleTheme()">
-              {{ setting.theme === 'dark' ? '🌙 深色（点击切换亮色）' : '☀️ 亮色（点击切换深色）' }}
-            </button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">🌙 深色</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'light' }" @click="setting.setTheme('light')">☀️ 亮色</button>
+          </div>
+          <div class="row theme-row">
+            <span class="label">风格</span>
+            <button class="btn ghost" :class="{ on: setting.theme === 'win10' }" @click="setting.setTheme('win10')">🪟 Win10</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'edge' }" @click="setting.setTheme('edge')">🌐 微软浏览器</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">⬛ 极简文字</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">🍏 iOS 扁平</button>
+            <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">🫧 iOS 毛玻璃</button>
           </div>
         </section>
 
@@ -652,6 +659,8 @@ async function savePersona() {
 .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; }
 .btn.primary { background: var(--accent, #ff7a94); color: #fff; }
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
+.btn.on { border: 1px solid var(--accent); color: var(--accent); }
+.theme-row { flex-wrap: wrap; gap: 6px; }
 .btn.danger { background: rgba(217, 83, 79, 0.25); color: var(--danger, #ff6b6b); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .switch-wrap { display: flex; align-items: center; gap: 8px; }

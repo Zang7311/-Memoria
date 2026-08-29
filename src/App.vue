@@ -10,7 +10,7 @@ import { useSettingStore } from './stores/settingStore'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const setting = useSettingStore()
-const theme = computed(() => (setting.theme === 'dark' ? 'dark' : 'light'))
+const theme = computed(() => setting.theme || 'dark')
 
 // 当前窗口 label（Tauri 环境；非 Tauri 环境默认主窗口）
 const winLabel = ref('main')
@@ -90,6 +90,82 @@ onMounted(async () => {
   --input-bg: #2a272b;
   --accent: #ff7a94;
   --danger: #ff6b6b;
+}
+/* ================= 五套 UI 风格主题（大版本方向） ================= */
+/* ① Win10：亚克力深灰 + 微软蓝 */
+.app-root.win10 {
+  --bg-main: #202225;
+  --bg-bar: rgba(32, 34, 37, 0.92);
+  --text-main: #f0f0f0;
+  --text-secondary: #a0a0a0;
+  --text-user: #ffffff;
+  --text-suzu: #d8d8d8;
+  --bubble-user-bg: #2f3136;
+  --bubble-suzu-bg: #3a3d42;
+  --border: rgba(255, 255, 255, 0.12);
+  --input-bg: #2b2d30;
+  --accent: #00a4ef;
+  --danger: #e81123;
+}
+/* ② 微软浏览器(Edge)：深蓝灰 + 简洁浏览器感 */
+.app-root.edge {
+  --bg-main: #232627;
+  --bg-bar: rgba(35, 38, 39, 0.9);
+  --text-main: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-user: #ffffff;
+  --text-suzu: #d5dbe0;
+  --bubble-user-bg: #2c2f31;
+  --bubble-suzu-bg: #3a3f42;
+  --border: rgba(255, 255, 255, 0.13);
+  --input-bg: #2a2d2f;
+  --accent: #4d8bf5;
+  --danger: #f28b82;
+}
+/* ③ 极简文字风：纯黑白 + 高对比 */
+.app-root.minimal {
+  --bg-main: #0d0d0d;
+  --bg-bar: rgba(13, 13, 13, 0.96);
+  --text-main: #d4d4d4;
+  --text-secondary: #666666;
+  --text-user: #000000;
+  --text-suzu: #cccccc;
+  --bubble-user-bg: #ffffff;
+  --bubble-suzu-bg: #1a1a1a;
+  --border: rgba(255, 255, 255, 0.22);
+  --input-bg: #161616;
+  --accent: #888888;
+  --danger: #ff4444;
+}
+/* ④ iOS 毛玻璃之前(扁平化)：纯色块 + 系统蓝 */
+.app-root.ios-flat {
+  --bg-main: #1c1c1e;
+  --bg-bar: rgba(44, 44, 46, 0.95);
+  --text-main: #ffffff;
+  --text-secondary: #98989d;
+  --text-user: #ffffff;
+  --text-suzu: #c8c8cc;
+  --bubble-user-bg: #0a84ff;
+  --bubble-suzu-bg: #2c2c2e;
+  --border: rgba(255, 255, 255, 0.15);
+  --input-bg: #2c2c2e;
+  --accent: #0a84ff;
+  --danger: #ff453a;
+}
+/* ⑤ iOS 毛玻璃之后(现代)：半透明 + 粉红 + 柔和渐变 */
+.app-root.ios-glass {
+  --bg-main: #1b1b1f;
+  --bg-bar: rgba(44, 44, 46, 0.55);
+  --text-main: #ffffff;
+  --text-secondary: #a0a0a8;
+  --text-user: #ffffff;
+  --text-suzu: #f0d8e0;
+  --bubble-user-bg: #ff2d55;
+  --bubble-suzu-bg: linear-gradient(135deg, #4a3a4a, #3a2a3e);
+  --border: rgba(255, 255, 255, 0.2);
+  --input-bg: rgba(44, 44, 46, 0.6);
+  --accent: #ff2d55;
+  --danger: #ff453a;
 }
 html,
 body {
