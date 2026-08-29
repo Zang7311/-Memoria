@@ -6,6 +6,7 @@ import { useDesktopStore } from '../stores/desktopStore'
 import { useSettingStore } from '../stores/settingStore'
 import type { ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
+import RegexTester from './RegexTester.vue'
 
 const desktop = useDesktopStore()
 const setting = useSettingStore()
@@ -17,6 +18,8 @@ const executingId = ref<string | null>(null)
 const feedback = ref<{ ok: boolean; text: string } | null>(null)
 // —— 像素画板（批次3，前端组件）——
 const showPixelArt = ref(false)
+// —— 正则测试器（批次4，前端组件）——
+const showRegex = ref(false)
 // —— 输出弹窗（执行有输出的工具时弹出完整内容，避免视觉盲区）——
 const showOutput = ref(false)
 const outputContent = ref('')
@@ -54,6 +57,11 @@ async function runItem(item: ToolboxItem) {
   // 像素画板：前端交互组件，不执行命令
   if (item.id === 'pixel-art') {
     showPixelArt.value = true
+    return
+  }
+  // 正则测试器：前端交互组件
+  if (item.id === 'regex') {
+    showRegex.value = true
     return
   }
   // 需要输入参数的工具：先弹输入框
@@ -132,6 +140,8 @@ async function confirmDelete() {
   <div class="toolbox-panel">
     <!-- 像素画板（批次3，全屏遮罩） -->
     <PixelArtPanel v-if="showPixelArt" @close="showPixelArt = false" />
+    <!-- 正则测试器（批次4，全屏遮罩） -->
+    <RegexTester v-if="showRegex" @close="showRegex = false" />
     <div class="panel-header">
       <span class="panel-title">工具箱</span>
       <div class="header-btns">
