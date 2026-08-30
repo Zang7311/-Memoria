@@ -7,6 +7,7 @@ mod desktop;
 mod diagnostic;
 mod engine;
 mod error;
+mod events;
 mod logs;
 mod memory;
 mod milestones;

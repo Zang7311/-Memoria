@@ -5,7 +5,7 @@ import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { assetUrl, checkDependency, decodeQrcode, generateQrcode, ocrImage, openUrl } from '../utils/tauri'
+import { assetUrl, checkDependency, decodeQrcode, generateQrcode, getMemories, ocrImage, openUrl } from '../utils/tauri'
 import type { ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
@@ -24,6 +24,34 @@ const executingText = ref<string | null>(null)
 const phaseText = ref<string | null>(null) // 真实阶段文本（有阶段输出的工具用）
 const phaseDots = ref('')
 let phaseTimer: ReturnType<typeof setInterval> | undefined
+// —— 记忆×工具联动（概率事件，非彩蛋）：中等概率触发，覆盖常用工具 ——
+const memoryEcho = ref<string | null>(null)
+// 工具 id → (记忆关键词正则, 提起文案)；执行成功时 35% 概率检查记忆命中
+const TOOL_MEMORY_RULES: { id: string; kw: RegExp; text: string }[] = [
+  { id: 'clean-memory', kw: /卡|卡顿|慢|内存|清理|释放/, text: '（铃探头看了看）主人之前说电脑有点卡，这次铃帮你清理得干干净净啦～' },
+  { id: 'screenshot', kw: /截图|截屏|录屏|屏幕/, text: '（铃眨眨眼）主人上次也截过图呢，这次截到什么好东西啦？' },
+  { id: 'volume', kw: /音量|声音|太吵|太小声|静音/, text: '（铃竖起耳朵）音量调好啦～主人之前说声音不舒服，铃记着呢！' },
+  { id: 'music', kw: /音乐|歌|唱歌|听歌|乐队/, text: '（铃轻轻哼了一声）主人上次聊到喜欢的歌，铃还记在记忆里哦～' },
+  { id: 'network', kw: /网速|网络|wifi|宽带|断网|连接/, text: '（铃看了看信号）网络弄好啦！主人上次说网卡，铃这次帮你盯紧啦～' },
+  { id: 'lock', kw: /锁屏|隐私|离开|安全/, text: '（铃认真点头）锁好啦！主人的隐私最重要，铃会守着的～' },
+  { id: 'calculator', kw: /数学|计算|算数|数字/, text: '（铃掰了掰手指）算好了！主人之前也问过类似的计算，铃还记得呢～' },
+]
+// 记忆×工具联动检查：35% 概率 + 记忆关键词命中 → 显示铃的提起
+async function checkToolMemoryEcho(itemId: string) {
+  memoryEcho.value = null
+  try {
+    const rule = TOOL_MEMORY_RULES.find((r) => r.id === itemId)
+    if (!rule) return
+    // 中等概率（35%）
+    const nanos = Date.now()
+    if (nanos % 100 > 35) return
+    const resp = await getMemories({ limit: 100 })
+    const hit = resp.memories.some((m) => m.role === 'user' && rule.kw.test(m.content))
+    if (hit) memoryEcho.value = rule.text
+  } catch {
+    /* 静默 */
+  }
+}
 // —— 格式化硬盘预填盘符（双确认后跳过通用输入框）——
 const formatDiskInput = ref<string | null>(null)
 // —— P2：错误恢复动作（失败弹窗的"下一步"建议）——
@@ -290,6 +318,8 @@ async function runItem(item: ToolboxItem) {
   if (!result?.error) {
     milestone.record('first_toolbox', '第一次使用铃的工具箱').catch(() => {})
     milestone.recordTool(item.name).catch(() => {})
+    // 记忆×工具联动（中等概率概率事件）：35% 概率提起相关记忆
+    checkToolMemoryEcho(item.id)
   }
   // 反馈 6 秒后消失（开始语+完成语周期，不影响弹窗）
   setTimeout(() => (feedback.value = null), 6000)
@@ -360,6 +390,11 @@ async function confirmDelete() {
       <span class="exec-spinner">⏳</span>
       <span class="exec-text">{{ executingText }}</span>
       <span v-if="phaseText" class="exec-phase">{{ phaseText }}</span>
+    </div>
+    <!-- 记忆×工具联动（概率事件）：铃提起相关记忆 -->
+    <div v-if="memoryEcho" class="memory-echo">
+      <span class="echo-text">{{ memoryEcho }}</span>
+      <button class="echo-close" title="关闭" @click="memoryEcho = null">✕</button>
     </div>
 
     <!-- 九宫格 -->
@@ -545,6 +580,32 @@ async function confirmDelete() {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+/* —— 记忆×工具联动（概率事件）提示条 —— */
+.memory-echo {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(76, 175, 80, 0.08);
+  border: 1px solid rgba(76, 175, 80, 0.25);
+  font-size: var(--fs-12);
+  color: var(--text-main);
+  min-height: 32px;
+}
+.echo-text { flex: 1; line-height: 1.6; }
+.echo-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--fs-11);
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+.echo-close:hover { color: var(--danger); }
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

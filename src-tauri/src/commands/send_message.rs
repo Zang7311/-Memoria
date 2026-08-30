@@ -128,6 +128,28 @@ async fn generate_and_emit(
         );
     }
 
+    // 特殊事件集（隐藏彩蛋）：① 每日彩蛋（节日/陪伴天数里程碑）② 关键词彩蛋（10 个彩蛋位）
+    // 三种模式（API/离线/本地）统一触发，命中则直接推送彩蛋回复，不走引擎
+    // ① 每日彩蛋（当天首次消息触发）
+    let egg = crate::events::check_daily_special()
+        // ② 关键词彩蛋（概率触发，没中则走正常引擎）
+        .or_else(|| crate::events::check_special_events(input, None));
+    if let Some(egg_msg) = egg {
+        // 彩蛋回复流式推送（复用 script 的 3~5 字片段节奏）
+        let chars: Vec<char> = egg_msg.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let size = 3 + ((i as u64) % 3) as usize;
+            let end = (i + size).min(chars.len());
+            let chunk: String = chars[i..end].iter().collect();
+            crate::stream::sender::send_chunk(app, &chunk)?;
+            i = end;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        crate::stream::sender::send_end(app)?;
+        return Ok(());
+    }
+
     // 按 model_mode 选择引擎
     let reply = match setting.model_mode.as_str() {
         "api" => {

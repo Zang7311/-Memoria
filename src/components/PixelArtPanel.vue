@@ -1,7 +1,7 @@
 <!-- 《铃·记忆体》像素画板（批次3）：32×32 网格画板，选色绘制/右键擦除，保存 PNG 到桌面 -->
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { savePixelArt } from '../utils/tauri'
+import { savePixelArt, getMemories } from '../utils/tauri'
 
 const emit = defineEmits<{ close: [] }>()
 const SIZE = 32
@@ -9,8 +9,27 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const colors = ['#000000', '#ffffff', '#ff0000', '#ff7700', '#ffff00', '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff', '#ff00ff', '#ff0088', '#ff7a94', '#ffd700', '#c0c0c0', '#a0a0a0', '#665544', '#553300', '#332200']
 const curColor = ref('#ff7a94')
 const msg = ref('')
+// 记忆×工具联动彩蛋（特殊事件集）：铃记得主人喜欢画画时，打开画板会提起
+const memoryEcho = ref('')
 let drawing = false
 let erasing = false
+
+// 挂载时检查记忆：有"画画/像素画"相关记忆 → 铃突然提起（彩蛋，可关闭）
+onMounted(async () => {
+  try {
+    const resp = await getMemories({ limit: 100 })
+    const liked = resp.memories.find((m) => /像素画|画画|绘画|涂鸦|画图/.test(m.content) && m.role === 'user')
+    if (liked) {
+      memoryEcho.value = '（铃轻轻探过头来）主人不是喜欢画这个吗？铃还记得呢～想画点什么呀？'
+    }
+  } catch {
+    /* 后端不可用时静默 */
+  }
+})
+
+function dismissEcho() {
+  memoryEcho.value = ''
+}
 
 function ctx2d() {
   return canvas.value?.getContext('2d')
@@ -64,6 +83,11 @@ onMounted(clear)
 
 <template>
   <div class="pixel-panel" @click.self="emit('close')">
+    <!-- 记忆×工具联动彩蛋（特殊事件集）：铃记得主人喜欢画画 -->
+    <div v-if="memoryEcho" class="pp-echo">
+      <span class="pp-echo-text">{{ memoryEcho }}</span>
+      <button class="pp-echo-close" title="关闭" @click="dismissEcho">✕</button>
+    </div>
     <div class="pp-head">
       <span class="pp-title">像素画板（32×32）</span>
       <div class="pp-btns">
@@ -112,6 +136,35 @@ onMounted(clear)
   box-sizing: border-box;
   overflow-y: auto;
 }
+/* 记忆×工具联动彩蛋（特殊事件集） */
+.pp-echo {
+  width: 420px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 122, 148, 0.1);
+  border: 1px solid rgba(255, 122, 148, 0.3);
+  margin-bottom: 8px;
+}
+.pp-echo-text {
+  flex: 1;
+  font-size: var(--fs-12);
+  color: var(--text-main);
+  line-height: 1.6;
+}
+.pp-echo-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--fs-11);
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+.pp-echo-close:hover { color: var(--danger); }
 .pp-head {
   background: var(--bg-bar, rgba(34, 32, 36, 0.92));
   padding: 8px 14px;
