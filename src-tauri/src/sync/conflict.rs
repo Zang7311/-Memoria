@@ -1,4 +1,4 @@
-// 《铃·记忆体》冲突检测与解决（AI-8）
+﻿// 《铃·记忆体》冲突检测与解决（AI-8）
 //
 // 同一记忆（id 相同）在不同设备上被修改 → 冲突。
 // 解决策略（任务书任务 5）：
@@ -216,6 +216,8 @@ mod tests {
             timestamp: ts.into(),
             tags: None,
             summary: None,
+                    category: None,
+            use_count: 0,
         }
     }
 

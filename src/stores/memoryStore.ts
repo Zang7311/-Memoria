@@ -2,14 +2,18 @@
 // 管理 memories 列表、currentSet（当前记忆集）、searchKeyword、sets（所有记忆集）
 // 通过 tauri.ts 调用后端 IPC；后端未就绪时静默回退，不阻塞 UI
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Memory } from '../types'
 import {
   createMemorySet as ipcCreateSet,
   deleteMemory as ipcDelete,
+  deleteMemoriesBatch as ipcDeleteBatch,
+  editMemoryContent as ipcEditMemory,
   getMemories as ipcGet,
   listMemorySets as ipcListSets,
+  markImportantBatch as ipcMarkBatch,
   markMemoryImportant as ipcMark,
+  memoryStats as ipcStats,
   switchMemorySet as ipcSwitch,
 } from '../utils/tauri'
 
@@ -104,6 +108,87 @@ export const useMemoryStore = defineStore('memory', () => {
     await loadMemories()
   }
 
+  // —— 记忆中心（大项目）：统计 / 分类筛选 / 批量操作 ——
+  const stats = ref<{ total: number; size_mb: number; important_count: number; duplicate_count: number; categories: { name: string; count: number }[] } | null>(null)
+  const categoryFilter = ref<string>('')
+  const selectedIds = ref<Set<string>>(new Set())
+
+  /** 加载记忆中心统计 */
+  async function loadStats() {
+    try {
+      stats.value = await ipcStats(currentSet.value)
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  /** 按分类过滤（空=全部） */
+  function setCategory(cat: string) {
+    categoryFilter.value = cat
+  }
+
+  /** 过滤后的记忆列表（按分类） */
+  const filteredMemories = computed(() => {
+    if (!categoryFilter.value) return memories.value
+    return memories.value.filter((m) => (m.category || '日常对话') === categoryFilter.value)
+  })
+
+  /** 切换勾选 */
+  function toggleSelect(id: string) {
+    const s = new Set(selectedIds.value)
+    if (s.has(id)) s.delete(id)
+    else s.add(id)
+    selectedIds.value = s
+  }
+
+  /** 全选/取消全选当前列表 */
+  function toggleSelectAll() {
+    const list = filteredMemories.value
+    if (selectedIds.value.size === list.length && list.length > 0) {
+      selectedIds.value = new Set()
+    } else {
+      selectedIds.value = new Set(list.map((m) => m.id))
+    }
+  }
+
+  /** 批量删除 */
+  async function deleteSelected() {
+    const ids = [...selectedIds.value]
+    if (ids.length === 0) return
+    try {
+      await ipcDeleteBatch(ids, currentSet.value)
+      selectedIds.value = new Set()
+      await loadMemories()
+      await loadStats()
+    } catch (e) {
+      errorMsg.value = String(e)
+    }
+  }
+
+  /** 批量标记重要 */
+  async function markSelectedImportant(important: boolean) {
+    const ids = [...selectedIds.value]
+    if (ids.length === 0) return
+    try {
+      await ipcMarkBatch(ids, important, currentSet.value)
+      selectedIds.value = new Set()
+      await loadMemories()
+      await loadStats()
+    } catch (e) {
+      errorMsg.value = String(e)
+    }
+  }
+
+  /** 编辑记忆内容 */
+  async function editMemory(id: string, content: string) {
+    try {
+      await ipcEditMemory(id, content, currentSet.value)
+      await loadMemories()
+    } catch (e) {
+      errorMsg.value = String(e)
+    }
+  }
+
   // 基础 action：添加一条记忆（本地插入，AI-3 对话后也可调用）
   function addMemory(mem: Memory) {
     memories.value.push(mem)
@@ -124,5 +209,17 @@ export const useMemoryStore = defineStore('memory', () => {
     markImportant,
     search,
     addMemory,
+    // 记忆中心
+    stats,
+    categoryFilter,
+    selectedIds,
+    loadStats,
+    setCategory,
+    filteredMemories,
+    toggleSelect,
+    toggleSelectAll,
+    deleteSelected,
+    markSelectedImportant,
+    editMemory,
   }
 })

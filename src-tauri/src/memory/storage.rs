@@ -66,6 +66,14 @@ pub(crate) fn atomic_write_index(index_path: &PathBuf, memories: &[Memory]) -> R
     Ok(())
 }
 
+/// 公开整表写入（记忆中心批量操作用，内部带写锁）
+pub fn write_all(index_path: &PathBuf, memories: &[Memory]) -> Result<(), AppError> {
+    let _guard = MEMORY_WRITER_LOCK
+        .lock()
+        .map_err(|_| AppError::MemoryError("记忆写锁获取失败".into()))?;
+    atomic_write_index(index_path, memories)
+}
+
 /// 追加一条记忆（带全局锁，去重），返回写入后的总条数
 /// 供 AI-3 及对话引擎调用（保持原签名不变）
 pub fn append_memory(index_path: &PathBuf, memory: &Memory) -> Result<usize, AppError> {
@@ -206,6 +214,8 @@ pub fn save_user_message(index_path: &PathBuf, id: &str, content: &str) -> Resul
         timestamp: crate::utils::now_str(),
         tags: None,
         summary: None,
+        category: Some(crate::memory::category::classify(content)),
+        use_count: 0,
     };
     append_memory(index_path, &mem)
 }
@@ -223,6 +233,8 @@ pub fn save_assistant_message(
         timestamp: crate::utils::now_str(),
         tags: None,
         summary: None,
+        category: Some(crate::memory::category::classify(content)),
+        use_count: 0,
     };
     append_memory(index_path, &mem)
 }

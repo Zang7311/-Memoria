@@ -148,6 +148,11 @@ pub fn run() {
             commands::memory_set_list::list_memory_sets,
             commands::memory_write::write_memory,
             commands::memory_mark::mark_memory_important,
+            // —— 记忆中心命令 ——
+            memory::center::memory_stats,
+            memory::center::delete_memories_batch,
+            memory::center::mark_important_batch,
+            memory::center::edit_memory_content,
             // —— P3 陪伴记录命令 ——
             milestones::record_milestone,
             milestones::get_milestones,

@@ -17,6 +17,10 @@ export interface Memory {
   timestamp: string
   tags?: string[]
   summary?: string
+  /** 记忆分类（记忆中心） */
+  category?: string | null
+  /** 使用次数（被上下文引用次数） */
+  use_count?: number
 }
 
 /** 应用设置 */

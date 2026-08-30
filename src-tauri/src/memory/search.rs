@@ -1,4 +1,4 @@
-// 《铃·记忆体》记忆搜索（memory/search.rs）
+﻿// 《铃·记忆体》记忆搜索（memory/search.rs）
 // 关键词搜索：匹配 content 或 summary 包含关键词。
 // 支持多关键词（空格分隔，AND 逻辑）。
 use crate::types::Memory;
@@ -46,6 +46,8 @@ mod tests {
             timestamp: String::new(),
             tags: None,
             summary: summary.map(|s| s.to_string()),
+            category: None,
+            use_count: 0,
         }
     }
 
