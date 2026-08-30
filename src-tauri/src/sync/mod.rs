@@ -9,6 +9,7 @@ pub mod payload;
 pub mod transfer;
 
 pub use transfer::{spawn_listener, DATA_TRANSFER_PORT};
+pub use discovery::spawn_responder;
 
 /// 设备发现端口（任务书固定 54545，可配置）
 pub const DEVICE_DISCOVERY_PORT: u16 = 54545;

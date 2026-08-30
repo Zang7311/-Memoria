@@ -68,9 +68,10 @@ pub fn run() {
                 }
             }
 
-            // —— AI-8 同步模块初始化 + TCP 监听 + 网络监测 ——
+            // —— AI-8 同步模块初始化 + TCP 监听 + UDP 广播响应 + 网络监测 ——
             sync::init();
             sync::spawn_listener(app.handle().clone());
+            sync::spawn_responder();
             network::spawn_monitor(app.handle().clone());
 
             // —— AI-5 插件系统初始化 ——
