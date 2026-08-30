@@ -10,6 +10,7 @@ import SyncPanel from '../components/SyncPanel.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
+import { MODEL_MODE_LABEL } from '../types'
 import TheIcon from '../components/TheIcon.vue'
 import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection } from '../utils/tauri'
 
@@ -212,6 +213,28 @@ const MODEL_PRESETS = [
 const mixRate = ref(8)
 const selfName = ref('铃')
 const userName = ref('主人')
+
+// —— 能力面板（大项目）：当前模型与能力矩阵 ——
+// 已知模型视觉能力表（未知模型显示"未知"）
+const VISION_MODELS = ['vl', 'vision', '4o', '4.1', 'llava', 'gemini', 'gpt-4', 'claude', 'qwen2.5-vl', 'qwen3-vl', 'moonshot-vision']
+// 能力矩阵（computed，跟随当前模式/模型实时变化）
+const abilityMatrix = computed(() => {
+  const mode = setting.modelMode
+  const model = (mode === 'api' ? setting.apiModel : mode === 'local' ? (ollama.value.models[0] || '') : '').toLowerCase()
+  const isVision = VISION_MODELS.some((k) => model.includes(k))
+  return {
+    modeLabel: MODEL_MODE_LABEL[mode] || mode,
+    modelName: mode === 'api' ? (setting.apiModel || '未设置') : mode === 'local' ? (ollama.value.models[0] || '未拉取模型') : '内置回复库',
+    rows: [
+      { name: '文字对话', ok: true, detail: '基础能力，始终可用' },
+      { name: '图片理解', ok: mode === 'script' ? false : isVision, unknown: mode !== 'script' && !isVision && mode === 'api', detail: mode === 'script' ? '离线模式不支持' : isVision ? `「${model}」支持视觉` : '当前模型不支持' },
+      { name: '联网能力', ok: mode !== 'script', detail: mode === 'script' ? '完全离线' : mode === 'local' ? '模型本地，联网可选' : '云端调用，需联网' },
+      { name: '记忆存储', ok: true, detail: '铃的本体能力，所有模式可用' },
+      { name: '工具箱', ok: true, detail: '44 个工具，所有模式可用' },
+      { name: '离线可用', ok: mode !== 'api', detail: mode === 'api' ? '云端模式需联网' : '完全离线可用' },
+    ],
+  }
+})
 
 function syncFromStore() {
   modelMode.value = setting.modelMode
@@ -549,6 +572,24 @@ async function toggleAiToolbox() {
             </div>
           </template>
           <p v-else class="diary-empty">铃正在等你开启第一段对话…</p>
+        </section>
+
+        <!-- 能力面板（大项目）：当前模型与能力矩阵 -->
+        <section class="card">
+          <div class="card-title">🪄 铃的能力</div>
+          <p class="cap-mode">
+            <span class="cap-mode-tag">{{ abilityMatrix.modeLabel }}</span>
+            <span class="cap-mode-model">{{ abilityMatrix.modelName }}</span>
+          </p>
+          <div class="ability-list">
+            <div v-for="r in abilityMatrix.rows" :key="r.name" class="ability-row">
+              <span class="ability-name">{{ r.name }}</span>
+              <span class="ability-state" :class="r.ok ? 'ok' : r.unknown ? 'unknown' : 'no'">
+                {{ r.ok ? '✓' : r.unknown ? '?' : '✕' }}
+              </span>
+              <span class="ability-detail">{{ r.detail }}</span>
+            </div>
+          </div>
         </section>
 
         <section class="card">
@@ -1063,6 +1104,53 @@ async function toggleAiToolbox() {
 .diary-days-label { font-size: var(--fs-14); color: var(--text-main); font-weight: 600; }
 .diary-sub { font-size: var(--fs-11); color: var(--text-secondary); }
 .diary-list { display: flex; flex-direction: column; gap: 4px; }
+/* —— 能力面板（大项目）样式 —— */
+.cap-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cap-mode-tag {
+  font-size: var(--fs-11);
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: var(--accent, #ff7a94);
+  color: #fff;
+}
+.cap-mode-model {
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+.ability-list { display: flex; flex-direction: column; gap: 2px; }
+.ability-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: var(--fs-11);
+}
+.ability-row:hover { background: rgba(128, 128, 128, 0.08); }
+.ability-name { width: 70px; color: var(--text-main); flex-shrink: 0; }
+.ability-state {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-10);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ability-state.ok { background: rgba(76, 175, 80, 0.15); color: var(--success, #4caf50); }
+.ability-state.no { background: rgba(217, 83, 79, 0.15); color: var(--danger, #d9534f); }
+.ability-state.unknown { background: rgba(240, 173, 78, 0.15); color: var(--warning, #f0ad4e); }
+.ability-detail { color: var(--text-secondary); flex: 1; }
 /* —— 每日日记条目（折叠） —— */
 .diary-entry {
   border-radius: 10px;
