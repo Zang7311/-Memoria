@@ -72,6 +72,11 @@ async function startSync() {
 async function doCheckUpdate() {
   updateResult.value = '检查中…'
   const res = await sync.checkUpdateNow(true)
+  if (res?.error) {
+    // 检查失败：如实显示原因 + 解决建议，不误报"最新"
+    updateResult.value = `检查失败：${res.error}\n\n提示：请确保已开启代理（FlClash 系统代理或 TUN 模式）后再试`
+    return
+  }
   if (res?.has_update && res.version_info) {
     const v = res.version_info
     updateResult.value = `发现新版本 ${v.latest_version}（当前 ${v.current_version}）`

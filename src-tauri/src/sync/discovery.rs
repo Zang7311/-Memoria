@@ -11,6 +11,7 @@ use crate::types::{DiscoverDevicesResponse, SyncDevice};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use tokio::net::UdpSocket;
@@ -193,4 +194,57 @@ pub fn touch_device(device_id: &str, addr: &SocketAddr) {
             d.ip = addr.ip().to_string();
         }
     }
+}
+
+/// —— 常驻 UDP 广播响应器（修复：设备发现缺"响应方"）——
+/// 之前 discover_devices 只发广播 + 收回复，但没有任何进程监听 54545 应答，
+/// 导致两台机器互相搜不到。此函数在 54545 常驻监听，收到其他设备的发现广播
+/// 后，立即回包自己的设备信息（device_id/name/version/timestamp），
+/// 使对方 discover_devices 的 recv_from 能收到应答。
+static RESPONDING: AtomicBool = AtomicBool::new(false);
+
+/// 启动 UDP 广播响应器（lib.rs setup 调用，幂等）
+pub fn spawn_responder() {
+    if RESPONDING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let socket = match UdpSocket::bind("0.0.0.0:54545").await {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("[sync] UDP 响应器绑定 0.0.0.0:54545 失败：{e}");
+                RESPONDING.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+        let _ = socket.set_broadcast(true);
+        log::info!("[sync] UDP 广播响应器已监听 0.0.0.0:54545");
+        let mut buf = [0u8; 1024];
+        loop {
+            match socket.recv_from(&mut buf).await {
+                Ok((n, addr)) => {
+                    if let Ok(text) = std::str::from_utf8(&buf[..n]) {
+                        if let Ok(b) = serde_json::from_str::<DiscoveryBeacon>(text) {
+                            // 忽略自己发出的广播，避免自应答
+                            let cfg = conflict::get_config();
+                            if b.device_id == cfg.device_id {
+                                continue;
+                            }
+                            // 回包自己的设备信息
+                            let reply = DiscoveryBeacon {
+                                device_id: cfg.device_id.clone(),
+                                device_name: cfg.device_name.clone(),
+                                version: env!("CARGO_PKG_VERSION").to_string(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                            };
+                            if let Ok(payload) = serde_json::to_string(&reply) {
+                                let _ = socket.send_to(payload.as_bytes(), addr).await;
+                            }
+                        }
+                    }
+                }
+                Err(e) => log::debug!("[sync] UDP 响应器 recv 失败：{e}"),
+            }
+        }
+    });
 }
