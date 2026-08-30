@@ -25,10 +25,9 @@ function toggleModeExpand(key: string) {
 
 // 形象风格预设：影响主题 / 语言浓度 / 自称 / 称呼
 const STYLES: Record<string, { label: string; emoji: string; theme: 'light' | 'dark'; mix: number; self: string; user: string; desc: string }> = {
-  daily: { label: '日常', emoji: '🌸', theme: 'light', mix: 8, self: '铃', user: '主人', desc: '温柔陪伴，日常问候' },
-  chuunibyou: { label: '中二', emoji: '⚔️', theme: 'dark', mix: 12, self: '本座·铃', user: '凡人', desc: '「吾乃月城铃华，被选中的主人啊！」' },
-  healing: { label: '治愈', emoji: '🫂', theme: 'light', mix: 5, self: '铃', user: '亲爱的', desc: '软软糯糯，治愈人心' },
-  lewd: { label: '涩涩', emoji: '🔞', theme: 'dark', mix: 15, self: '铃', user: '主人大人', desc: '调皮撒娇，偶尔撩拨（18+ 内容由你主导）' },
+  daily: { label: '日常', emoji: '🌸', theme: 'light', mix: 8, self: '铃', user: '同学', desc: '温柔陪伴，日常问候' },
+  chuunibyou: { label: '中二', emoji: '⚔️', theme: 'dark', mix: 12, self: '本座·铃', user: '凡人', desc: '「吾乃月城铃华，被选中的同学啊！」' },
+  healing: { label: '治愈', emoji: '🫂', theme: 'light', mix: 5, self: '铃', user: '同学', desc: '软软糯糯，治愈人心' },
 }
 
 const stepTitles = ['选择存储路径', '选择模式 & 设置主密码', '选择形象风格']
@@ -100,7 +99,7 @@ async function finish() {
     <div class="onboard-card">
       <div class="logo">铃·记忆体</div>
       <div class="slogan">我，与你交谈，为你存忆</div>
-      <div class="subtitle">你的桌面猫娘伴侣，初次见面～</div>
+      <div class="subtitle">你的桌面伙伴 zas-Memoria，初次见面～</div>
 
       <!-- 步骤指示器 -->
       <div class="steps">

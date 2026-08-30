@@ -54,8 +54,8 @@ export const useSettingStore = defineStore('setting', () => {
   const dataPath = ref('')
   const pluginEnabled = ref(true)
   const selfName = ref('铃')
-  const userName = ref('主人')
-  // 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩）
+  const userName = ref('同学')
+  // 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈）
   const persona = ref('daily')
   // —— 主密码状态 ——
   const hasMasterPassword = ref(false)
@@ -95,7 +95,7 @@ export const useSettingStore = defineStore('setting', () => {
     dataPath.value = c.data_path
     pluginEnabled.value = c.plugin_enabled
     selfName.value = c.self_name ?? '铃'
-    userName.value = c.user_name ?? '主人'
+    userName.value = c.user_name ?? '同学'
     persona.value = c.persona ?? 'daily'
     hasMasterPassword.value = c.has_master_password
     loaded.value = true

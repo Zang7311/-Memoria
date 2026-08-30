@@ -249,7 +249,7 @@ export interface AppConfig {
   enabled_plugins: string[]
   self_name?: string | null
   user_name?: string | null
-  /** 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩） */
+  /** 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈） */
   persona?: string
   master_password_salt?: string | null
   has_master_password: boolean

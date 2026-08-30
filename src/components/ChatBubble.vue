@@ -32,7 +32,7 @@ const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl
 
 <template>
   <div class="bubble-row" :class="isUser ? 'row-user' : 'row-suzu'">
-    <!-- 铃的头像（猫娘） -->
+    <!-- 铃的头像 -->
     <div v-if="!isUser" class="avatar">
       <img v-if="avatarImg" :src="avatarImg" class="avatar-img" />
       <template v-else>{{ setting.avatarSuzu || '铃' }}</template>

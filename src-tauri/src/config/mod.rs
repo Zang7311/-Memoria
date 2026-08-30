@@ -7,11 +7,12 @@ pub mod store;
 
 use std::path::PathBuf;
 
-/// 配置数据目录：~/.铃记忆体/
-/// （任务书约定；注意与 AI-6 的 %APPDATA%/ling-memoria/ 分属两处，见 store.rs 顶部债务注释）
+/// 配置数据目录：~/.铃记忆体-teens/
+/// （青少年版 v1.0-0.4.6：独立数据目录，避免与主线版共用配置互相覆盖；
+///   主线版为 ~/.铃记忆体/）
 pub fn data_dir() -> PathBuf {
     let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".铃记忆体")
+    PathBuf::from(home).join(".铃记忆体-teens")
 }
 
 /// 配置文件路径

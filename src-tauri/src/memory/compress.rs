@@ -19,7 +19,7 @@ fn summarize(batch: &[Memory]) -> String {
     }
     let mut parts: Vec<String> = Vec::new();
     for m in batch {
-        let role = if m.role == "assistant" { "铃" } else { "主人" };
+        let role = if m.role == "assistant" { "铃" } else { "同学" };
         let mut text = m.content.trim().to_string();
         if text.chars().count() > 40 {
             let cut: String = text.chars().take(40).collect();

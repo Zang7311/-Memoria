@@ -57,7 +57,7 @@ function timeOf(m: Memory) {
 }
 
 function roleLabel(m: Memory) {
-  return m.role === 'assistant' ? '铃' : '主人'
+  return m.role === 'assistant' ? '铃' : '同学'
 }
 
 // 摘要（前 20 字）

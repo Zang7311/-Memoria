@@ -449,7 +449,7 @@ impl PluginManager {
         let manifest = serde_json::json!({
             "name": format!("终端命令：{name}"),
             "version": "0.1.0",
-            "author": "主人",
+            "author": "同学",
             "description": description,
             "main": "",
             "skills": [{

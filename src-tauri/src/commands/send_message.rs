@@ -156,7 +156,7 @@ async fn generate_and_emit(
             let base = setting.api_base_url.clone().unwrap_or_default();
             let key = setting.api_key.clone().unwrap_or_default();
             let self_name = setting.self_name.clone().unwrap_or_else(|| "铃".to_string());
-            let user_name = setting.user_name.clone().unwrap_or_else(|| "主人".to_string());
+            let user_name = setting.user_name.clone().unwrap_or_else(|| "同学".to_string());
             engine::api::run_api(app, input, &memories, &base, &key, &setting.api_model, depth, &setting.persona, &self_name, &user_name).await?
         }
         "local" => {

@@ -316,7 +316,7 @@ onMounted(() => {
 
       <div class="field">
         <label>执行完铃说的话（可选）</label>
-        <input v-model="say" class="input" placeholder="如：晚安，主人～" />
+        <input v-model="say" class="input" placeholder="如：晚安，同学～" />
       </div>
       <div class="row">
         <button class="btn primary" @click="saveCmd">{{ editingId ? '保存修改' : '新增指令' }}</button>

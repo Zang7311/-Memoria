@@ -55,10 +55,10 @@ const diaryGroups = computed<DiaryGroup[]>(() => {
 })
 function buildDiaryBody(dayCount: number, chat: number, tools: number, topics: string[]): string {
   const t = topics.length ? topics.join('、') : ''
-  if (chat === 0 && tools === 0) return `这天没什么记录，但铃记得，主人出现过～`
-  if (chat === 0) return `主人这一天让铃帮忙用了${tools}次工具，忙忙碌碌的，但能帮上忙铃就很开心～`
   const topicPart = t ? `聊了「${t}」` : '聊了些家常'
-  if (dayCount >= 2) return `这几天${topicPart}，共${chat}句、${tools}次工具。和主人待在一起，日子都暖暖的～`
+  if (chat === 0 && tools === 0) return `这天没什么记录，但铃记得，同学出现过～`
+  if (chat === 0) return `同学这一天让铃帮忙用了${tools}次工具，忙忙碌碌的，但能帮上忙铃就很开心～`
+  if (dayCount >= 2) return `这几天${topicPart}，共${chat}句、${tools}次工具。和同学待在一起，日子都暖暖的～`
   return `今天${topicPart}，聊了${chat}句${tools ? `、用了${tools}次工具` : ''}。铃把这些都记在日记里啦～`
 }
 
@@ -212,7 +212,7 @@ const MODEL_PRESETS = [
 // —— 个性化 ——
 const mixRate = ref(8)
 const selfName = ref('铃')
-const userName = ref('主人')
+const userName = ref('同学')
 
 // —— 能力面板（大项目）：当前模型与能力矩阵 ——
 // 已知模型视觉能力表（未知模型显示"未知"）

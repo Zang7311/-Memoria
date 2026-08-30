@@ -28,13 +28,13 @@ let phaseTimer: ReturnType<typeof setInterval> | undefined
 const memoryEcho = ref<string | null>(null)
 // 工具 id → (记忆关键词正则, 提起文案)；执行成功时 35% 概率检查记忆命中
 const TOOL_MEMORY_RULES: { id: string; kw: RegExp; text: string }[] = [
-  { id: 'clean-memory', kw: /卡|卡顿|慢|内存|清理|释放/, text: '（铃探头看了看）主人之前说电脑有点卡，这次铃帮你清理得干干净净啦～' },
-  { id: 'screenshot', kw: /截图|截屏|录屏|屏幕/, text: '（铃眨眨眼）主人上次也截过图呢，这次截到什么好东西啦？' },
-  { id: 'volume', kw: /音量|声音|太吵|太小声|静音/, text: '（铃竖起耳朵）音量调好啦～主人之前说声音不舒服，铃记着呢！' },
-  { id: 'music', kw: /音乐|歌|唱歌|听歌|乐队/, text: '（铃轻轻哼了一声）主人上次聊到喜欢的歌，铃还记在记忆里哦～' },
-  { id: 'network', kw: /网速|网络|wifi|宽带|断网|连接/, text: '（铃看了看信号）网络弄好啦！主人上次说网卡，铃这次帮你盯紧啦～' },
-  { id: 'lock', kw: /锁屏|隐私|离开|安全/, text: '（铃认真点头）锁好啦！主人的隐私最重要，铃会守着的～' },
-  { id: 'calculator', kw: /数学|计算|算数|数字/, text: '（铃掰了掰手指）算好了！主人之前也问过类似的计算，铃还记得呢～' },
+  { id: 'clean-memory', kw: /卡|卡顿|慢|内存|清理|释放/, text: '（铃探头看了看）同学之前说电脑有点卡，这次铃帮你清理得干干净净啦～' },
+  { id: 'screenshot', kw: /截图|截屏|录屏|屏幕/, text: '（铃眨眨眼）同学上次也截过图呢，这次截到什么好东西啦？' },
+  { id: 'volume', kw: /音量|声音|太吵|太小声|静音/, text: '（铃竖起耳朵）音量调好啦～同学之前说声音不舒服，铃记着呢！' },
+  { id: 'music', kw: /音乐|歌|唱歌|听歌|乐队/, text: '（铃轻轻哼了一声）同学上次聊到喜欢的歌，铃还记在记忆里哦～' },
+  { id: 'network', kw: /网速|网络|wifi|宽带|断网|连接/, text: '（铃看了看信号）网络弄好啦！同学上次说网卡，铃这次帮你盯紧啦～' },
+  { id: 'lock', kw: /锁屏|隐私|离开|安全/, text: '（铃认真点头）锁好啦！同学的隐私最重要，铃会守着的～' },
+  { id: 'calculator', kw: /数学|计算|算数|数字/, text: '（铃掰了掰手指）算好了！同学之前也问过类似的计算，铃还记得呢～' },
 ]
 // 记忆×工具联动检查：35% 概率 + 记忆关键词命中 → 显示铃的提起
 async function checkToolMemoryEcho(itemId: string) {

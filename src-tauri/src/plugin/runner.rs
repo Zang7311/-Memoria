@@ -280,9 +280,9 @@ mod tests {
     fn js执行_字符串返回() {
         let code = "globalThis.skills = { hi: function(p){ return '你好，' + p.who; } };";
         let mut params = HashMap::new();
-        params.insert("who".to_string(), Value::from("主人"));
+        params.insert("who".to_string(), Value::from("同学"));
         let r = run_js_blocking(code, "hi", &serde_json::to_string(&params).unwrap(), &[]).unwrap();
-        assert!(r.contains("你好，主人"));
+        assert!(r.contains("你好，同学"));
     }
 
     #[test]

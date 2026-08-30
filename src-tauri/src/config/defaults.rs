@@ -30,7 +30,7 @@ pub fn default_config() -> AppConfig {
         plugin_enabled: true,
         enabled_plugins: Vec::new(),
         self_name: Some("铃".to_string()),
-        user_name: Some("主人".to_string()),
+        user_name: Some("同学".to_string()),
         persona: "daily".to_string(),
         master_password_salt: None,
         has_master_password: false,

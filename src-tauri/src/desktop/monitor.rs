@@ -277,7 +277,7 @@ fn check_and_trigger(app: &AppHandle, info: &WindowInfo) {
             app_name: info.app_name.clone(),
             window_title: info.window_title.clone(),
             reply: if rule.trigger_reply.is_empty() {
-                "主人在忙什么呢？".to_string()
+                "同学在忙什么呢？".to_string()
             } else {
                 rule.trigger_reply.clone()
             },

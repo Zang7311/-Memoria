@@ -66,10 +66,10 @@ pub struct Setting {
     /// AI 自称（回复模板占位替换，默认「铃」；前端未传时为空则用默认）
     #[serde(default)]
     pub self_name: Option<String>,
-    /// 对用户的称呼（回复模板占位替换，默认「主人」）
+    /// 对用户的称呼（回复模板占位替换，默认「同学」）
     #[serde(default)]
     pub user_name: Option<String>,
-    /// 形象人格：daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩
+    /// 形象人格：daily 日常 / chuunibyou 中二 / healing 治愈
     #[serde(default = "default_persona")]
     pub persona: String,
 }
@@ -518,10 +518,10 @@ pub struct AppConfig {
     /// AI 自称（对话占位替换，默认「铃」）
     #[serde(default)]
     pub self_name: Option<String>,
-    /// 对主人的称呼（对话占位替换，默认「主人」）
+    /// 对同学的称呼（对话占位替换，默认「同学」）
     #[serde(default)]
     pub user_name: Option<String>,
-    /// 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈 / lewd 涩涩）
+    /// 形象人格（daily 日常 / chuunibyou 中二 / healing 治愈）
     #[serde(default = "default_persona")]
     pub persona: String,
     /// 主密码派生密钥的盐（base64，非密钥材料，可安全落盘；用于重装后重新派生密钥）
@@ -766,7 +766,7 @@ pub struct MasterPasswordStatus {
 pub struct SyncDevice {
     /// 设备唯一标识（首次启动生成）
     pub device_id: String,
-    /// 设备名称（如 "主人-PC"）
+    /// 设备名称（如 "同学-PC"）
     pub device_name: String,
     pub ip: String,
     pub port: u16,

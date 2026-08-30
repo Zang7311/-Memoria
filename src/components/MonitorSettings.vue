@@ -82,11 +82,11 @@ async function removeRule(rule: ScreenMonitorRule) {
 // —— 导入模板 ——
 const TEMPLATES: Record<string, ScreenMonitorRule[]> = {
   游戏模式: [
-    { id: `rule_${Date.now()}_game1`, app_name: 'minecraft*', trigger_reply: '主人开始挖方块了呀，注意别摔死喵~', enabled: true, cooldown_seconds: 300 },
+    { id: `rule_${Date.now()}_game1`, app_name: 'minecraft*', trigger_reply: '同学开始挖方块了呀，注意别摔死哦~', enabled: true, cooldown_seconds: 300 },
     { id: `rule_${Date.now()}_game2`, app_name: 'steam*', trigger_reply: '要玩游戏了吗？铃在旁边给你加油！', enabled: true, cooldown_seconds: 300 },
   ],
   工作模式: [
-    { id: `rule_${Date.now()}_work1`, app_name: 'code*', trigger_reply: '主人专心写代码的样子真帅，累了记得休息一下~', enabled: true, cooldown_seconds: 600 },
+    { id: `rule_${Date.now()}_work1`, app_name: 'code*', trigger_reply: '同学专心写代码的样子真棒，累了记得休息一下~', enabled: true, cooldown_seconds: 600 },
     { id: `rule_${Date.now()}_work2`, app_name: 'chrome.exe', trigger_reply: '又在查资料？需要铃帮忙整理吗？', enabled: true, cooldown_seconds: 600 },
   ],
 }

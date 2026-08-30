@@ -112,7 +112,6 @@ async function onPersonaChange(e: Event) {
               <option value="daily">日常</option>
               <option value="chuunibyou">中二</option>
               <option value="healing">治愈</option>
-              <option value="lewd">涩涩</option>
             </select>
             <span
               class="gear"

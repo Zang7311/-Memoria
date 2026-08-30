@@ -9,7 +9,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const colors = ['#000000', '#ffffff', '#ff0000', '#ff7700', '#ffff00', '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff', '#ff00ff', '#ff0088', '#ff7a94', '#ffd700', '#c0c0c0', '#a0a0a0', '#665544', '#553300', '#332200']
 const curColor = ref('#ff7a94')
 const msg = ref('')
-// 记忆×工具联动彩蛋（特殊事件集）：铃记得主人喜欢画画时，打开画板会提起
+// 记忆×工具联动彩蛋（特殊事件集）：铃记得同学喜欢画画时，打开画板会提起
 const memoryEcho = ref('')
 let drawing = false
 let erasing = false
@@ -20,7 +20,7 @@ onMounted(async () => {
     const resp = await getMemories({ limit: 100 })
     const liked = resp.memories.find((m) => /像素画|画画|绘画|涂鸦|画图/.test(m.content) && m.role === 'user')
     if (liked) {
-      memoryEcho.value = '（铃轻轻探过头来）主人不是喜欢画这个吗？铃还记得呢～想画点什么呀？'
+      memoryEcho.value = '（铃轻轻探过头来）同学不是喜欢画这个吗？铃还记得呢～想画点什么呀？'
     }
   } catch {
     /* 后端不可用时静默 */
@@ -83,7 +83,7 @@ onMounted(clear)
 
 <template>
   <div class="pixel-panel" @click.self="emit('close')">
-    <!-- 记忆×工具联动彩蛋（特殊事件集）：铃记得主人喜欢画画 -->
+    <!-- 记忆×工具联动彩蛋（特殊事件集）：铃记得同学喜欢画画 -->
     <div v-if="memoryEcho" class="pp-echo">
       <span class="pp-echo-text">{{ memoryEcho }}</span>
       <button class="pp-echo-close" title="关闭" @click="dismissEcho">✕</button>

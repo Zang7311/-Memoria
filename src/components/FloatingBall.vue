@@ -156,7 +156,7 @@ function menuExit() {
     @dblclick="onDoubleClick"
     @contextmenu="onContextMenu"
   >
-    <!-- 猫娘圆球：呼吸动画 / 消息闪烁 -->
+    <!-- zas-Memoria 圆球：呼吸动画 / 消息闪烁 -->
     <div class="ball" :class="{ breathing: !dragging && !hasMessage, flashing: hasMessage, dragging }">
       <span class="ball-face">
         <img v-if="avatarImg" :src="avatarImg" class="ball-img" />

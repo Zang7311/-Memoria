@@ -16,7 +16,7 @@ use std::sync::{LazyLock, Mutex};
 pub struct SyncConfig {
     /// 本机设备 ID（首次启动生成，uuid v4）
     pub device_id: String,
-    /// 本机设备名称（如 "主人-PC"）
+    /// 本机设备名称（如 "同学-PC"）
     pub device_name: String,
     /// 冲突解决策略
     #[serde(default)]

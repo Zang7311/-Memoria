@@ -176,7 +176,7 @@ mod tests {
     fn auto_title_uses_first_user_message() {
         let msgs = vec![
             msg("user", "  你好，铃\n第二行"),
-            msg("assistant", "主人你好呀"),
+            msg("assistant", "同学你好呀"),
         ];
         let t = auto_title(&msgs).unwrap();
         assert!(t.starts_with("你好，铃"));

@@ -25,7 +25,7 @@ fn load_library() -> &'static ReplyLibrary {
                 let mut map = HashMap::new();
                 map.insert(
                     "日常".to_string(),
-                    vec!["主人～铃在这里呢。".to_string()],
+                    vec!["同学～铃在这里呢。".to_string()],
                 );
                 map
             })
@@ -84,7 +84,7 @@ fn classify_scored(input: &str, depth: u8, memories: Option<&[crate::types::Memo
         return cat;
     }
 
-    // —— 记忆兜底：输入无关键词命中时，扫描最近记忆（主人常聊话题也算数）——
+    // —— 记忆兜底：输入无关键词命中时，扫描最近记忆（同学常聊话题也算数）——
     if let Some(ms) = memories {
         // 只取最近的用户消息做话题统计（最多 10 条）
         let recent_user: String = ms
@@ -252,7 +252,7 @@ pub async fn run_script(
 ) -> Result<String, AppError> {
     let category = classify_scored(input, depth, Some(memories));
     let raw = pick_reply(category);
-    // 名称占位替换：自定义名称功能（默认「铃」/「主人」，未配置时保持原文）
+    // 名称占位替换：自定义名称功能（默认「铃」/「同学」，未配置时保持原文）
     let reply = apply_names(&raw, setting);
     log::info!(
         "[script] 输入「{input}」→ 分类「{category}」（depth={depth}）"
@@ -273,18 +273,18 @@ pub async fn run_script(
     Ok(reply)
 }
 
-/// 名称占位替换：把回复模板中的「铃」替换为 AI 自定义自称，「主人」替换为用户自定义称呼。
-/// 未配置（None）时保持默认「铃」「主人」不变。先替换自称再替换称呼，
-/// 避免自定义称呼中出现「铃」「主人」字样时被二次替换（配置端应避免这种字面冲突）。
+/// 名称占位替换：把回复模板中的「铃」替换为 AI 自定义自称，「同学」替换为用户自定义称呼。
+/// 未配置（None）时保持默认「铃」「同学」不变。先替换自称再替换称呼，
+/// 避免自定义称呼中出现「铃」「同学」字样时被二次替换（配置端应避免这种字面冲突）。
 pub fn apply_names(text: &str, setting: &crate::types::Setting) -> String {
     let self_name = setting.self_name.as_deref().unwrap_or("铃");
-    let user_name = setting.user_name.as_deref().unwrap_or("主人");
+    let user_name = setting.user_name.as_deref().unwrap_or("同学");
     if self_name.is_empty() && user_name.is_empty() {
         return text.to_string();
     }
     let mut out = text.replace("铃", self_name);
-    if !user_name.is_empty() && user_name != "主人" {
-        out = out.replace("主人", user_name);
+    if !user_name.is_empty() && user_name != "同学" {
+        out = out.replace("同学", user_name);
     }
     out
 }
@@ -340,7 +340,7 @@ mod tests {
     fn classify_keywords() {
         let cases = [
             ("我好累", "安慰"),
-            ("主人又熬夜", "吐槽"),
+            ("同学又熬夜", "吐槽"),
             ("说日语", "日语"),
             ("抱抱我", "撒娇"),
             ("来点英文", "英文"),
@@ -349,7 +349,7 @@ mod tests {
             // 扩充文库新增分类（moon12-3）
             ("早上好呀", "问候"),
             ("你好呀", "问候"),
-            ("主人真棒", "夸奖"),
+            ("同学真棒", "夸奖"),
             ("我好想你", "想念"),
             ("你吃饭了吗", "吃饭"),
             ("我要睡觉了", "睡觉"),
@@ -389,30 +389,30 @@ mod tests {
         assert_eq!(classify("抱抱我", 4), "撒娇");
     }
 
-    /// 自定义名称占位替换：默认不替换，配置后替换「铃」和「主人」
+    /// 自定义名称占位替换：默认不替换，配置后替换「铃」和「同学」
     #[test]
     fn apply_names_replace() {
         use crate::types::Setting;
 
         // 默认设置：保持原文
         let s = Setting::default();
-        assert_eq!(apply_names("主人，铃在这里～", &s), "主人，铃在这里～");
+        assert_eq!(apply_names("同学，铃在这里～", &s), "同学，铃在这里～");
 
         // 自定义 AI 自称 + 用户称呼
         let mut s2 = Setting::default();
         s2.self_name = Some("月城鈴華".to_string());
         s2.user_name = Some("阿伟".to_string());
         assert_eq!(
-            apply_names("主人～铃陪着你！", &s2),
+            apply_names("同学～铃陪着你！", &s2),
             "阿伟～月城鈴華陪着你！"
         );
 
         // 只改一个：自称保持默认
         let mut s3 = Setting::default();
         s3.user_name = Some("老板".to_string());
-        assert_eq!(apply_names("主人，铃想你", &s3), "老板，铃想你");
+        assert_eq!(apply_names("同学，铃想你", &s3), "老板，铃想你");
 
-        // 英文/颜表情分类里不含「主人」「铃」时原样通过
+        // 英文/颜表情分类里不含「同学」「铃」时原样通过
         assert_eq!(apply_names("I love you, master~", &s2), "I love you, master~");
     }
 }

@@ -193,7 +193,7 @@ export function useStreamRender() {
   // mock 流式：拆分为 2~5 字片段，用定时器驱动（仅测试用途）
   function runMock(content: string) {
     return new Promise<void>((resolve) => {
-      const reply = `收到啦主人～关于「${content || '这件事'}」，铃已经在为你记忆并记录在本子里啦。😊`
+      const reply = `收到啦同学～关于「${content || '这件事'}」，铃已经在为你记忆并记录在本子里啦。😊`
       const pieces: string[] = []
       let i = 0
       while (i < reply.length) {
