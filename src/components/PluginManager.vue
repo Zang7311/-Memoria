@@ -89,10 +89,58 @@ async function onInstall() {
     await store.install(src)
     showInstall.value = false
     installSource.value = ''
-    alert('安装成功！请先在权限区授予所需权限，然后启用插件。')
+    // 安装成功 → 弹权限确认单（P2：安全关键，默认全不勾，最小权限原则）
+    const installed = store.plugins.find((p) => p.manifest.permissions?.length)
+    if (installed && installed.manifest.permissions.length > 0) {
+      openPermConfirm(installed)
+    } else {
+      alert('安装成功！请先启用插件（如无权限申请则直接可用）。')
+    }
   } catch (e) {
     installError.value = String(e)
   }
+}
+
+// —— P2：安装后权限确认单 ——
+const permConfirm = ref<Plugin | null>(null)
+const permChecked = ref<Set<string>>(new Set())
+const permConfirmBusy = ref(false)
+const permConfirmMsg = ref('')
+
+function openPermConfirm(p: Plugin) {
+  permChecked.value = new Set()
+  permConfirmMsg.value = ''
+  permConfirm.value = p
+}
+function togglePermCheck(perm: string) {
+  const s = new Set(permChecked.value)
+  if (s.has(perm)) s.delete(perm)
+  else s.add(perm)
+  permChecked.value = s
+}
+// 确认授权（勾选的权限批量授予）
+async function confirmPerms() {
+  const p = permConfirm.value
+  if (!p) return
+  permConfirmBusy.value = true
+  permConfirmMsg.value = ''
+  try {
+    for (const perm of p.manifest.permissions) {
+      if (permChecked.value.has(perm) && !hasPerm(p, perm)) {
+        const updated = await store.setPermission(p.id, perm, true)
+        Object.assign(p, updated)
+      }
+    }
+    permConfirm.value = null
+  } catch (e) {
+    permConfirmMsg.value = `授权失败：${String(e)}`
+  } finally {
+    permConfirmBusy.value = false
+  }
+}
+// 全部拒绝（不授权，插件默认无权限可用）
+function rejectPerms() {
+  permConfirm.value = null
 }
 
 // 卸载（带确认）
@@ -267,6 +315,40 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
         </div>
       </div>
     </div>
+
+    <!-- P2：安装后权限确认单（安全关键，默认全不勾，最小权限原则） -->
+    <div v-if="permConfirm" class="modal-mask">
+      <div class="modal perm-modal">
+        <h3>🔐 插件权限确认</h3>
+        <p class="modal-tip">
+          插件「<b>{{ permConfirm.name }}</b>」申请以下权限：
+        </p>
+        <div class="perm-list">
+          <label
+            v-for="perm in permConfirm.manifest.permissions"
+            :key="perm"
+            class="perm-item"
+            :class="{ high: perm === 'system' }"
+          >
+            <input
+              type="checkbox"
+              :checked="permChecked.has(perm)"
+              @change="togglePermCheck(perm)"
+            />
+            <span class="perm-name">{{ PERMISSION_LABELS[perm] || perm }}</span>
+            <span v-if="perm === 'system'" class="perm-warn">⚠️ 高风险</span>
+          </label>
+        </div>
+        <p class="modal-tip">默认全不勾选（最小权限）。未授权的功能会提示权限不足。</p>
+        <div v-if="permConfirmMsg" class="error-box">{{ permConfirmMsg }}</div>
+        <div class="modal-actions">
+          <button class="mini-btn" :disabled="permConfirmBusy" @click="rejectPerms">全部拒绝</button>
+          <button class="primary-btn small" :disabled="permConfirmBusy" @click="confirmPerms">
+            {{ permConfirmBusy ? '授权中…' : `确认授权（${permChecked.size}）` }}
+          </button>
+        </div>
+      </div>
+    </div>
   </aside>
 </template>
 
@@ -292,13 +374,13 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 }
 .panel-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
 .icon-btn {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.7;
 }
 .tabs {
@@ -314,7 +396,7 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   padding: 6px 4px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-main, #222);
   opacity: 0.7;
 }
@@ -344,28 +426,28 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 }
 .card-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-14);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .tag {
-  font-size: 10px;
+  font-size: var(--fs-10);
   padding: 1px 6px;
   border-radius: 8px;
   font-weight: 400;
 }
 .tag.hermes {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--info-bg);
+  color: var(--info);
 }
 .card-meta {
-  font-size: 11px;
+  font-size: var(--fs-11);
   opacity: 0.6;
   margin-top: 2px;
 }
 .card-desc {
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.8;
   margin-top: 4px;
   line-height: 1.4;
@@ -377,7 +459,7 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   margin-top: 6px;
 }
 .skill-tag {
-  font-size: 11px;
+  font-size: var(--fs-11);
   background: rgba(255, 182, 193, 0.25);
   border-radius: 6px;
   padding: 2px 6px;
@@ -405,7 +487,7 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 .slider {
   position: absolute;
   inset: 0;
-  background: #ccc;
+  background: var(--text-secondary, #ccc);
   border-radius: 20px;
   transition: 0.2s;
   cursor: pointer;
@@ -417,12 +499,12 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   height: 14px;
   left: 3px;
   top: 3px;
-  background: #fff;
+  background: #ffffff; /* 开关滑块固定白色 */
   border-radius: 50%;
   transition: 0.2s;
 }
 .switch input:checked + .slider {
-  background: #ff8fab;
+  background: var(--accent);
 }
 .switch input:checked + .slider::before {
   transform: translateX(16px);
@@ -432,11 +514,11 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   background: transparent;
   border-radius: 6px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   cursor: pointer;
 }
 .mini-btn.danger {
-  color: #dc2626;
+  color: var(--danger);
   border-color: rgba(220, 38, 38, 0.4);
 }
 .mini-btn.danger:hover {
@@ -444,17 +526,17 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 }
 .primary-btn {
   border: none;
-  background: linear-gradient(135deg, #ffb6c1, #ff8fab);
-  color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 45%, #fff), var(--accent));
+  color: var(--text-user);
   border-radius: 8px;
   padding: 7px 12px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   cursor: pointer;
   font-weight: 600;
 }
 .primary-btn.small {
   padding: 5px 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .primary-btn:hover {
   filter: brightness(1.05);
@@ -465,14 +547,14 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   padding-top: 6px;
 }
 .perm-title {
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.7;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
 }
 .perm-toggle {
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .perm-list {
   margin-top: 6px;
@@ -484,34 +566,34 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   cursor: pointer;
 }
 .perm-item .danger {
-  color: #dc2626;
+  color: var(--danger);
 }
 .perm-item em {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--fs-10);
   opacity: 0.6;
   margin-left: 4px;
 }
 .perm-empty {
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.6;
 }
 .empty-tip {
   text-align: center;
   color: var(--text-main, #888);
-  font-size: 12px;
+  font-size: var(--fs-12);
   padding: 20px 0;
 }
 .error-box {
   background: rgba(220, 38, 38, 0.1);
-  color: #dc2626;
+  color: var(--danger);
   border-radius: 6px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   margin: 8px 10px 0;
   word-break: break-all;
 }
@@ -527,14 +609,14 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   color: var(--text-main, #222);
   border-radius: 6px;
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .cmd-code {
   display: block;
   background: rgba(0, 0, 0, 0.06);
   border-radius: 4px;
   padding: 3px 6px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   margin-top: 4px;
   word-break: break-all;
 }
@@ -558,16 +640,44 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 }
 .modal h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-15);
 }
 .modal-tip {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.7;
 }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+/* —— P2：权限确认单样式 —— */
+.perm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.perm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  cursor: pointer;
+  font-size: var(--fs-13);
+  transition: background 0.15s;
+}
+.perm-item:hover { background: rgba(128, 128, 128, 0.08); }
+.perm-item.high { border-color: rgba(217, 83, 79, 0.4); background: rgba(217, 83, 79, 0.06); }
+.perm-item input { accent-color: var(--accent, #ff7a94); cursor: pointer; }
+.perm-name { flex: 1; }
+.perm-warn {
+  font-size: var(--fs-10);
+  color: var(--danger, #d9534f);
+  font-weight: 600;
 }
 </style>

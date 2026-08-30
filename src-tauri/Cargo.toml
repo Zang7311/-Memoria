@@ -54,6 +54,8 @@ sha2 = "0.10"
 rand = "0.8"
 # 密文 base64 编码
 base64 = "0.22"
+# 控制台输出智能解码（GBK 回退，解决 PS5.1 中文输出乱码）
+encoding_rs = "0.8"
 # 诊断包导出（zip 压缩）
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # ==================== moon10 二维码生成与识别 ====================

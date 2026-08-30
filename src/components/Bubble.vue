@@ -103,7 +103,7 @@ async function onClickBubble() {
   width: 364px;
   border-radius: 16px;
   background: linear-gradient(135deg, rgba(255, 211, 224, 0.95), rgba(201, 228, 255, 0.95));
-  color: #4a3641;
+  color: var(--text-suzu, #4a3641);
   padding: 12px 14px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   border: 1.5px solid rgba(255, 255, 255, 0.7);
@@ -123,17 +123,17 @@ async function onClickBubble() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--fs-13);
   overflow: hidden;
   flex-shrink: 0;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .from {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .ctx {
-  font-size: 11px;
+  font-size: var(--fs-11);
   opacity: 0.65;
   margin-left: auto;
   max-width: 180px;
@@ -142,7 +142,7 @@ async function onClickBubble() {
   white-space: nowrap;
 }
 .bubble-text {
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1.5;
   word-break: break-all;
   max-height: 56px;
@@ -151,7 +151,7 @@ async function onClickBubble() {
 .bubble-hint {
   margin-top: 6px;
   text-align: right;
-  font-size: 10px;
+  font-size: var(--fs-10);
   opacity: 0.55;
 }
 .fade-enter-active,

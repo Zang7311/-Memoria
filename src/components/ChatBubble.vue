@@ -72,11 +72,11 @@ const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ffe4e1, #fff0f5);
+  background: var(--bubble-suzu-bg, linear-gradient(135deg, #ffe4e1, #fff0f5));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: var(--fs-18);
   flex-shrink: 0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   overflow: hidden;
@@ -89,7 +89,7 @@ const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl
   max-width: 72%;
   padding: 10px 14px;
   border-radius: 16px;
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1.6;
   position: relative;
   word-break: break-word;
@@ -124,13 +124,13 @@ const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl
 .error-tip {
   display: block;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--danger, #d9534f);
   opacity: 0.85;
 }
 .time {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-align: right;
   opacity: 0.55;
 }

@@ -6,10 +6,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 /**
  * 发送一条用户消息（后台 AI-3 负责生成回复）
- * 对应 Rust 侧 send_message 命令，参数 content + depth
+ * 对应 Rust 侧 send_message 命令，参数 content + depth + sessionId（可选）
  */
-export async function sendMessage(content: string, depth: number): Promise<void> {
-  return await invoke('send_message', { content, depth })
+export async function sendMessage(content: string, depth: number, sessionId?: string | null): Promise<void> {
+  return await invoke('send_message', { content, depth, sessionId })
 }
 
 /**
@@ -150,6 +150,45 @@ export function deleteMemory(memory_id: string, set_name?: string): Promise<Dele
 /** 切换记忆集，返回当前集名称 */
 export function switchMemorySet(set_name: string): Promise<string> {
   return invoke('switch_memory_set', { req: { set_name } })
+}
+
+// ==================== P3 陪伴记录（与铃的日记） ====================
+
+/** 记录一个里程碑（首次见面日期在第一次调用时自动记下；同一 key 幂等） */
+export function recordMilestone(key: string, label: string): Promise<void> {
+  return invoke('record_milestone', { key, label })
+}
+
+/** 获取陪伴记录（含陪伴天数） */
+export function getMilestones(): Promise<{
+  first_date: string | null
+  days: number
+  items: { key: string; label: string; date: string }[]
+  daily: { date: string; chat_count: number; tool_count: number; topics: string[] }[]
+}> {
+  return invoke('get_milestones')
+}
+
+/** 记录一次聊天（当日累积：句数+1、话题合并） */
+export function recordDailyChat(text: string): Promise<void> {
+  return invoke('record_daily_chat', { text })
+}
+
+/** 记录一次工具箱使用（当日工具数+1） */
+export function recordDailyTool(toolName: string): Promise<void> {
+  return invoke('record_daily_tool', { toolName })
+}
+
+// ==================== P3 救援模式 ====================
+
+/** 救援检测：检查配置/记忆/插件/日志等关键资源 */
+export function recoveryCheck(): Promise<{ name: string; ok: boolean; detail: string }[]> {
+  return invoke('recovery_check')
+}
+
+/** 重置配置（自动备份后重建默认） */
+export function recoveryResetConfig(): Promise<string> {
+  return invoke('recovery_reset_config')
 }
 
 /** 创建新记忆集，返回新集名称 */

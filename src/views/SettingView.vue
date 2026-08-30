@@ -1,7 +1,7 @@
 <!-- 《铃·记忆体》设置页（AI-7 4.1）完整实现：9 个标签页
      通用 / 模型 / 记忆 / 监测 / 个性化 / 插件 / 同步 / 赞助 / 诊断 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import DiagnosticView from '../components/DiagnosticView.vue'
 import MonitorSettings from '../components/MonitorSettings.vue'
 import PluginManager from '../components/PluginManager.vue'
@@ -9,21 +9,69 @@ import QuickCommandPanel from '../components/QuickCommandPanel.vue'
 import SyncPanel from '../components/SyncPanel.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
+import { useMilestoneStore } from '../stores/milestoneStore'
+import TheIcon from '../components/TheIcon.vue'
 import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection } from '../utils/tauri'
 
 const setting = useSettingStore()
+const milestone = useMilestoneStore()
+
+// —— P3 日记：1-3 天一组，折叠摘要行 + 15-40 字正文 ——
+const diaryOpen = ref<number | null>(null)
+const showBadges = ref(false)
+function toggleDiary(i: number) {
+  diaryOpen.value = diaryOpen.value === i ? null : i
+}
+// 按 1-3 天分组合并（倒序 daily → 正序处理 → 每 3 天一组）
+interface DiaryGroup {
+  end: string
+  days: number
+  chat: number
+  tools: number
+  topics: string[]
+  summary: string
+  body: string
+}
+const diaryGroups = computed<DiaryGroup[]>(() => {
+  // daily 已倒序（最新在前），翻转成时间正序后每 3 天一组
+  const days = [...milestone.daily].reverse()
+  const groups: DiaryGroup[] = []
+  for (let i = 0; i < days.length; i += 3) {
+    const chunk = days.slice(i, i + 3)
+    const chat = chunk.reduce((s, d) => s + d.chat_count, 0)
+    const tools = chunk.reduce((s, d) => s + d.tool_count, 0)
+    const topics = [...new Set(chunk.flatMap((d) => d.topics))].slice(0, 3)
+    const end = chunk[chunk.length - 1].date.slice(5) // mm-dd
+    const start = chunk[0].date.slice(5)
+    const dayLabel = chunk.length > 1 ? `${start}~${end}` : end
+    // 摘要行：mm-dd · 聊了x句 · 用了x次工具 · 话题：xx
+    const summary = `${dayLabel} · 聊了${chat}句 · 用了${tools}次工具${topics.length ? ' · 话题：' + topics.join('、') : ''}`
+    // 正文（15-40 字，铃的语气）
+    const body = buildDiaryBody(chunk.length, chat, tools, topics)
+    groups.push({ end: dayLabel, days: chunk.length, chat, tools, topics, summary, body })
+  }
+  return groups.reverse() // 最新在前
+})
+function buildDiaryBody(dayCount: number, chat: number, tools: number, topics: string[]): string {
+  const t = topics.length ? topics.join('、') : ''
+  if (chat === 0 && tools === 0) return `这天没什么记录，但铃记得，主人出现过～`
+  if (chat === 0) return `主人这一天让铃帮忙用了${tools}次工具，忙忙碌碌的，但能帮上忙铃就很开心～`
+  const topicPart = t ? `聊了「${t}」` : '聊了些家常'
+  if (dayCount >= 2) return `这几天${topicPart}，共${chat}句、${tools}次工具。和主人待在一起，日子都暖暖的～`
+  return `今天${topicPart}，聊了${chat}句${tools ? `、用了${tools}次工具` : ''}。铃把这些都记在日记里啦～`
+}
 
 const tabs = [
-  { key: 'general', label: '通用', icon: '🛠️' },
-  { key: 'model', label: '模型', icon: '🤖' },
-  { key: 'memory', label: '记忆', icon: '🧠' },
-  { key: 'monitor', label: '监测', icon: '👁️' },
-  { key: 'persona', label: '个性化', icon: '🎀' },
-  { key: 'plugin', label: '插件', icon: '🧩' },
-  { key: 'quick', label: '指令', icon: '⚡' },
-  { key: 'sync', label: '同步', icon: '🔄' },
-  { key: 'sponsor', label: '赞助', icon: '💝' },
-  { key: 'diag', label: '诊断', icon: '🩺' },
+  { key: 'general', label: '通用', icon: 'settings' },
+  { key: 'model', label: '模型', icon: 'command' },
+  { key: 'memory', label: '记忆', icon: 'memory' },
+  { key: 'monitor', label: '监测', icon: 'monitor' },
+  { key: 'persona', label: '个性化', icon: 'customize' },
+  { key: 'plugin', label: '插件', icon: 'plugin' },
+  { key: 'quick', label: '指令', icon: 'command' },
+  { key: 'sync', label: '同步', icon: 'sync' },
+  { key: 'sponsor', label: '赞助', icon: 'sponsor' },
+  { key: 'diag', label: '诊断', icon: 'diagnostic' },
 ]
 const activeTab = ref('general')
 
@@ -45,6 +93,29 @@ const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
 const apiKeyInput = ref('')
 const depth = ref(2)
+// 思考档位人话标签（P1：深度 1-4 → 快速/平衡/深入/认真思考）
+const DEPTH_LABEL: Record<number, string> = {
+  1: '⚡ 快速',
+  2: '⚖️ 平衡',
+  3: '🧠 深入',
+  4: '🔥 认真思考',
+}
+// 快速选择（P1：人话分层，一键填入推荐配置）
+function pickQuick(kind: 'deepseek' | 'openai' | 'local' | 'script') {
+  if (kind === 'deepseek') {
+    modelMode.value = 'api'
+    apiBaseUrl.value = 'https://api.deepseek.com'
+    apiModel.value = 'deepseek-chat'
+  } else if (kind === 'openai') {
+    modelMode.value = 'api'
+    if (!apiBaseUrl.value) apiBaseUrl.value = 'https://api.openai.com/v1'
+    if (!apiModel.value) apiModel.value = 'gpt-4o-mini'
+  } else if (kind === 'local') {
+    modelMode.value = 'local'
+  } else {
+    modelMode.value = 'script'
+  }
+}
 const masterPwd = ref('')
 const masterPwd2 = ref('')
 const unlockPwd = ref('')
@@ -156,6 +227,8 @@ function syncFromStore() {
 onMounted(async () => {
   if (!setting.loaded) await setting.loadConfig()
   syncFromStore()
+  // P3：确保陪伴记录已加载（防 App.vue 未加载完成）
+  if (!milestone.loaded) await milestone.load().catch(() => {})
   autostart.value = setting.autostart
   try {
     const res = await getAutostart()
@@ -318,6 +391,7 @@ async function savePersona() {
 async function saveUiCustom() {
   await setting.update({
     accent_color: setting.accentColor || null,
+    danger_color: setting.dangerColor || null,
     bg_color: setting.bgColor || null,
     bg_image: setting.bgImage || null,
     bubble_user_color: setting.bubbleUserColor || null,
@@ -327,6 +401,8 @@ async function saveUiCustom() {
     ui_radius: setting.uiRadius ?? null,
   })
   generalMsg.value = '✓ 外观自定义已保存'
+  // P3：第一次自定义外观里程碑（幂等）
+  milestone.record('first_custom', '第一次自定义外观').catch(() => {})
 }
 
 // —— 自定义主题组合 ——
@@ -421,6 +497,7 @@ async function toggleAiToolbox() {
     <!-- 标签导航 -->
     <div class="tabs">
       <div v-for="t in tabs" :key="t.key" class="tab" :class="{ active: activeTab === t.key }" @click="activeTab = t.key">
+        <TheIcon :name="t.icon" :size="14" class="tab-icon" />
         {{ t.label }}
       </div>
     </div>
@@ -428,6 +505,52 @@ async function toggleAiToolbox() {
     <div class="tab-content">
       <!-- ============ 通用 ============ -->
       <div v-if="activeTab === 'general'">
+        <!-- P3：与铃的日记（陪伴记录）置顶显示 -->
+        <section class="card diary-card">
+          <div class="card-title">📖 与铃的日记</div>
+          <template v-if="milestone.days > 0">
+            <p class="diary-days">
+              <span class="diary-num">{{ milestone.days }}</span>
+              <span class="diary-days-label">天</span>
+              <span class="diary-sub">与铃相遇{{ milestone.firstDate ? '于 ' + milestone.firstDate : '' }}</span>
+            </p>
+            <!-- 每日日记（1-3 天一组，折叠显示摘要行） -->
+            <div class="diary-list">
+              <div
+                v-for="(g, gi) in diaryGroups"
+                :key="g.end"
+                class="diary-entry"
+                :class="{ open: diaryOpen === gi }"
+              >
+                <div class="diary-row" @click="toggleDiary(gi)">
+                  <span class="diary-date">{{ g.end }}</span>
+                  <span class="diary-summary">{{ g.summary }}</span>
+                  <span class="diary-arrow">{{ diaryOpen === gi ? '▴' : '▾' }}</span>
+                </div>
+                <div v-if="diaryOpen === gi" class="diary-body">{{ g.body }}</div>
+              </div>
+              <div v-if="diaryGroups.length === 0" class="diary-empty">
+                第一天，故事从一句"你好"开始～
+              </div>
+            </div>
+            <!-- 里程碑（纪念章，折叠） -->
+            <div v-if="milestone.items.length > 0" class="diary-badges">
+              <div class="badges-head" @click="showBadges = !showBadges">
+                <span>🎖️ 纪念章（{{ milestone.items.length }}）</span>
+                <span>{{ showBadges ? '▴' : '▾' }}</span>
+              </div>
+              <div v-if="showBadges" class="badges-body">
+                <div v-for="m in milestone.items" :key="m.key" class="diary-item">
+                  <span class="diary-check">✓</span>
+                  <span class="diary-label">{{ m.label }}</span>
+                  <span class="diary-date">{{ m.date }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <p v-else class="diary-empty">铃正在等你开启第一段对话…</p>
+        </section>
+
         <section class="card">
           <div class="card-title">外观</div>
           <div class="row">
@@ -455,6 +578,14 @@ async function toggleAiToolbox() {
               <div class="row">
                 <input v-model="setting.accentColor" class="input" placeholder="#ff7a94" style="flex:1" />
                 <input type="color" v-model="setting.accentColor" class="color-swatch" />
+              </div>
+              <p class="hint" style="margin-top:2px">设置主色后，铃的气泡/危险按钮自动跟随（可单独覆盖）</p>
+            </div>
+            <div class="field">
+              <label>危险色（删除/错误按钮）</label>
+              <div class="row">
+                <input v-model="setting.dangerColor" class="input" placeholder="留空则跟随主色" style="flex:1" />
+                <input type="color" v-model="setting.dangerColor" class="color-swatch" />
               </div>
             </div>
             <div class="field">
@@ -612,12 +743,40 @@ async function toggleAiToolbox() {
           </p>
         </section>
 
+        <!-- 快速选择（P1：人话分层，点卡片自动填推荐配置） -->
         <section class="card">
-          <div class="card-title">运行模式</div>
+          <div class="card-title">选择铃的运行方式</div>
+          <div class="quick-modes">
+            <div class="qmode" :class="{ sel: modelMode === 'api' && apiBaseUrl.includes('deepseek') }" @click="pickQuick('deepseek')">
+              <div class="qmode-icon">☁️</div>
+              <div class="qmode-name">DeepSeek<span class="qmode-tag">推荐</span></div>
+              <div class="qmode-desc">云端智能，性价比高，中文好</div>
+            </div>
+            <div class="qmode" :class="{ sel: modelMode === 'api' && !apiBaseUrl.includes('deepseek') && apiBaseUrl !== '' }" @click="pickQuick('openai')">
+              <div class="qmode-icon">🌐</div>
+              <div class="qmode-name">OpenAI 兼容</div>
+              <div class="qmode-desc">任意兼容服务（Qwen / GPT / 中转）</div>
+            </div>
+            <div class="qmode" :class="{ sel: modelMode === 'local' }" @click="pickQuick('local')">
+              <div class="qmode-icon">💻</div>
+              <div class="qmode-name">本地 AI</div>
+              <div class="qmode-desc">模型跑在自己电脑，离线可用</div>
+            </div>
+            <div class="qmode" :class="{ sel: modelMode === 'script' }" @click="pickQuick('script')">
+              <div class="qmode-icon">📴</div>
+              <div class="qmode-name">离线模式</div>
+              <div class="qmode-desc">零配置，内置回复库，即开即用</div>
+            </div>
+          </div>
+          <p class="hint">点击卡片会自动切换模式并填入推荐配置；下方「运行模式」可手调高级参数。</p>
+        </section>
+
+        <section class="card">
+          <div class="card-title">运行模式<span class="card-sub">高级参数</span></div>
           <div class="modes">
-            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">脚本</div>
-            <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">API</div>
-            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">本地</div>
+            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">离线</div>
+            <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">云端</div>
+            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">本地 AI</div>
           </div>
           <template v-if="modelMode === 'api'">
             <div class="field">
@@ -640,11 +799,17 @@ async function toggleAiToolbox() {
             <div v-if="testMsg" class="msg">{{ testMsg }}</div>
           </template>
           <div class="field">
-            <label>思考深度（1-4）</label>
+            <label>回复速度</label>
             <input v-model="depth" type="range" min="1" max="4" step="1" class="range" />
-            <span class="label">当前：{{ depth }}</span>
+            <div class="depth-labels">
+              <span>⚡ 快速</span><span>⚖️ 平衡</span><span>🧠 深入</span><span>🔥 认真思考</span>
+            </div>
+            <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
           </div>
           <button class="btn primary" @click="saveModel">保存模型设置</button>
+          <p class="hint key-guide">
+            <span class="key-guide-arrow">⬇</span> API 密钥在下方「API 密钥」卡片填写，填完回到这里点保存
+          </p>
         </section>
 
         <!-- 一键本地部署 AI -->
@@ -696,7 +861,7 @@ async function toggleAiToolbox() {
             主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️（密钥将明文存储，建议设置主密码加密）' }}
           </p>
           <div class="field">
-            <label>{{ setting.unlocked ? '新密钥（AES-256-GCM 加密存储）' : '新密钥（当前明文存储，不设主密码也可用）' }}</label>
+            <label>{{ setting.unlocked ? '新密钥（加密存储，主密码保护）' : '新密钥（当前明文存储，不设主密码也可用）' }}</label>
             <div class="row">
               <input v-model="apiKeyInput" type="password" class="input long" placeholder="sk-..." />
               <button class="btn primary" @click="saveApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
@@ -820,14 +985,14 @@ async function toggleAiToolbox() {
   height: 100%;
   box-sizing: border-box;
 }
-.page-title { margin: 0 0 16px; font-size: 18px; }
+.page-title { margin: 0 0 16px; font-size: var(--fs-18); }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .tab {
-  padding: 7px 13px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  padding: 7px 13px; border-radius: 20px; cursor: pointer; font-size: var(--fs-13);
   background: rgba(128, 128, 128, 0.12); color: var(--text-secondary);
   transition: all 0.15s;
 }
-.tab.active { background: var(--accent, #ff7a94); color: #fff; }
+.tab.active { background: var(--accent, #ff7a94); color: var(--text-user); }
 .tab-icon { margin-right: 3px; }
 .tab-content { display: flex; flex-direction: column; gap: 4px; }
 .card {
@@ -835,33 +1000,151 @@ async function toggleAiToolbox() {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 14px; padding: 16px; margin-bottom: 12px;
 }
-.card-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
-.hint { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; line-height: 1.6; }
+.card-title { font-weight: 600; font-size: var(--fs-14); margin-bottom: 10px; }
+.hint { font-size: var(--fs-12); color: var(--text-secondary); margin: 0 0 8px; line-height: 1.6; }
 .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-.label { font-size: 13px; color: var(--text-secondary); }
+.label { font-size: var(--fs-13); color: var(--text-secondary); }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.field label { font-size: 12px; color: var(--text-secondary); }
+.field label { font-size: var(--fs-12); color: var(--text-secondary); }
 .input {
   padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--input-bg); color: var(--text-main); font-size: 13px;
+  background: var(--input-bg); color: var(--text-main); font-size: var(--fs-13);
 }
 .input.long { flex: 1; min-width: 220px; }
-.range { accent-color: var(--accent, #ff7a94); }
+.range { width: 100%; accent-color: var(--accent, #ff7a94); }
+.depth-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
 .modes { display: flex; gap: 8px; margin-bottom: 12px; }
+/* —— 快速选择（P1）样式 —— */
+.quick-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.qmode {
+  border: 2px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  background: var(--input-bg, transparent);
+}
+.qmode:hover { border-color: var(--accent, #ff7a94); }
+.qmode.sel { border-color: var(--accent, #ff7a94); background: rgba(255, 122, 148, 0.08); }
+.qmode-icon { font-size: var(--fs-18); }
+.qmode-name { font-weight: 700; font-size: var(--fs-13); margin: 2px 0; }
+.qmode-tag {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 7px;
+  font-size: var(--fs-10); font-weight: 600; background: var(--accent, #ff7a94); color: #fff;
+  vertical-align: 1px;
+}
+.qmode-desc { font-size: var(--fs-10); color: var(--text-secondary); }
+.card-sub { font-size: var(--fs-10); color: var(--text-secondary); font-weight: 400; margin-left: 6px; }
+/* 密钥位置引导（P1）：小字 + 向下箭头 */
+.key-guide {
+  margin-top: 8px;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* —— P3：与铃的日记样式 —— */
+.diary-card { background: linear-gradient(160deg, rgba(255, 122, 148, 0.06), rgba(201, 228, 255, 0.06)); }
+.diary-days { display: flex; align-items: baseline; gap: 6px; margin: 6px 0 10px; }
+.diary-num { font-size: var(--fs-30); font-weight: 800; color: var(--accent, #ff7a94); line-height: 1; }
+.diary-days-label { font-size: var(--fs-14); color: var(--text-main); font-weight: 600; }
+.diary-sub { font-size: var(--fs-11); color: var(--text-secondary); }
+.diary-list { display: flex; flex-direction: column; gap: 4px; }
+/* —— 每日日记条目（折叠） —— */
+.diary-entry {
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.08);
+  overflow: hidden;
+}
+.diary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: var(--fs-12);
+  user-select: none;
+}
+.diary-row:hover { background: rgba(128, 128, 128, 0.08); }
+.diary-date { font-weight: 700; color: var(--accent, #ff7a94); flex-shrink: 0; }
+.diary-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main);
+}
+.diary-arrow { font-size: var(--fs-10); color: var(--text-secondary); flex-shrink: 0; }
+.diary-body {
+  padding: 6px 10px 8px;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  line-height: 1.7;
+  border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.2));
+}
+/* —— 纪念章（折叠） —— */
+.diary-badges { margin-top: 8px; border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.25)); padding-top: 6px; }
+.badges-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  user-select: none;
+  padding: 2px 4px;
+}
+.badges-body { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.diary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.08);
+  font-size: var(--fs-12);
+}
+.diary-check { color: var(--success, #4caf50); font-weight: 700; }
+.diary-label { flex: 1; color: var(--text-main); }
+.diary-date { font-size: var(--fs-10); color: var(--text-secondary); }
+.diary-empty { font-size: var(--fs-12); color: var(--text-secondary); padding: 8px 0; }
+.key-guide-arrow {
+  color: var(--accent, #ff7a94);
+  font-size: var(--fs-14);
+  animation: key-bounce 1.6s ease-in-out infinite;
+}
+@keyframes key-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(3px); }
+}
 .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-.step { font-size: 12px; padding: 3px 9px; border-radius: 12px; background: rgba(128, 128, 128, 0.14); color: var(--text-secondary); }
-.step.on { background: var(--accent, #ff7a94); color: #fff; }
-.arrow { color: var(--text-secondary); font-size: 12px; }
+.step { font-size: var(--fs-12); padding: 3px 9px; border-radius: 12px; background: rgba(128, 128, 128, 0.14); color: var(--text-secondary); }
+.step.on { background: var(--accent, #ff7a94); color: var(--text-user); }
+.arrow { color: var(--text-secondary); font-size: var(--fs-12); }
 .mode {
   padding: 8px 16px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border);
-  font-size: 13px; background: transparent;
+  font-size: var(--fs-13); background: transparent;
 }
-.mode.sel { border-color: var(--accent); background: var(--accent); color: #fff; }
+.mode.sel { border-color: var(--accent); background: var(--accent); color: var(--text-user); }
 .vram-modal { width: 360px; text-align: left; }
-.modal-body { font-size: 13px; line-height: 1.6; margin: 0 0 8px; }
-.modal-tip { font-size: 12px; color: var(--text-secondary, #999); margin: 0 0 14px; line-height: 1.6; }
-.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; }
-.btn.primary { background: var(--accent, #ff7a94); color: #fff; }
+.modal-body { font-size: var(--fs-13); line-height: 1.6; margin: 0 0 8px; }
+.modal-tip { font-size: var(--fs-12); color: var(--text-secondary, #999); margin: 0 0 14px; line-height: 1.6; }
+.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-13); }
+.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
 .btn.on { border: 1px solid var(--accent); color: var(--accent); }
 .theme-row { flex-wrap: wrap; gap: 6px; }
@@ -870,11 +1153,11 @@ async function toggleAiToolbox() {
 .theme-presets { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border, rgba(128,128,128,0.25)); display: flex; flex-direction: column; gap: 8px; }
 .preset-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
 .preset-item { display: flex; align-items: center; gap: 8px; background: rgba(128,128,128,0.1); padding: 6px 10px; border-radius: 8px; }
-.preset-name { flex: 1; font-size: 13px; color: var(--text-main); }
-.btn.danger { background: rgba(217, 83, 79, 0.25); color: var(--danger, #ff6b6b); }
+.preset-name { flex: 1; font-size: var(--fs-13); color: var(--text-main); }
+.btn.danger { background: var(--danger-bg); color: var(--danger, #ff6b6b); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .switch-wrap { display: flex; align-items: center; gap: 8px; }
 .switch { width: 40px; height: 20px; accent-color: var(--accent, #ff7a94); }
-.msg { font-size: 12px; margin-top: 6px; color: var(--accent, #ff7a94); }
+.msg { font-size: var(--fs-12); margin-top: 6px; color: var(--accent, #ff7a94); }
 .msg.global { margin-top: 12px; }
 </style>

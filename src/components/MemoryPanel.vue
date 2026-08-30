@@ -3,9 +3,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useMemoryStore } from '../stores/memoryStore'
+import { useMilestoneStore } from '../stores/milestoneStore'
 import type { Memory } from '../types'
 
 const store = useMemoryStore()
+const milestone = useMilestoneStore()
 
 // 面板展开/收起
 const expanded = ref(true)
@@ -62,6 +64,21 @@ function summaryOf(m: Memory) {
   return text.length > 20 ? text.slice(0, 20) + '…' : text
 }
 
+// —— 记忆透明页（P1）：统计与重要记忆 ——
+// 重要记忆（当前列表内）
+const importantMemories = computed(() => store.memories.filter((m) => isImportant(m)))
+// 最早/最近时间（当前列表）
+const earliest = computed(() => {
+  const t = store.memories.map((m) => m.timestamp || '').filter(Boolean).sort()
+  return t.length ? t[0].slice(0, 10) : '—'
+})
+const latest = computed(() => {
+  const t = store.memories.map((m) => m.timestamp || '').filter(Boolean).sort()
+  return t.length ? t[t.length - 1].slice(0, 10) : '—'
+})
+// 隐私说明折叠
+const showPrivacy = ref(false)
+
 // 删除（带确认）
 function onDelete(m: Memory) {
   if (confirm(`确定删除这条记忆吗？\n${summaryOf(m)}`)) {
@@ -98,6 +115,8 @@ async function onCreateSet() {
   await store.createSet(name)
   newSetName.value = ''
   showCreateInput.value = false
+  // P3：第一次创建记忆集里程碑（幂等）
+  milestone.record('first_memory', '创建了第一个记忆集').catch(() => {})
 }
 
 onMounted(() => {
@@ -131,6 +150,42 @@ onMounted(() => {
           @keyup.enter="onCreateSet"
         />
         <button class="confirm-btn" @click="onCreateSet">确定</button>
+      </div>
+
+      <!-- 记忆透明页（P1 重点）：铃记住了什么 -->
+      <div class="transparency">
+        <div class="trans-head" @click="showPrivacy = !showPrivacy" title="点击查看隐私说明">
+          <span class="trans-title">铃记住了</span>
+          <span class="trans-toggle">{{ showPrivacy ? '❯' : '❮' }}</span>
+        </div>
+
+        <!-- 统计行 -->
+        <div class="trans-stats">
+          <div class="stat"><b>{{ store.memories.length }}</b><span>条记忆</span></div>
+          <div class="stat"><b>{{ importantMemories.length }}</b><span>条重要</span></div>
+          <div class="stat"><b>{{ earliest }}</b><span>最早</span></div>
+          <div class="stat"><b>{{ latest }}</b><span>最近</span></div>
+        </div>
+
+        <!-- 重要记忆胶囊（铃最该记住的事） -->
+        <div v-if="importantMemories.length > 0" class="important-box">
+          <div class="important-label">⭐ 铃最在意的：</div>
+          <div v-for="m in importantMemories.slice(0, 5)" :key="m.id" class="important-chip">
+            <span class="imp-text" :title="m.content">{{ summaryOf(m) }}</span>
+            <span class="imp-role">{{ roleLabel(m) }}</span>
+            <button class="imp-unmark" title="取消重要" @click="onMark(m)">✕</button>
+          </div>
+          <div v-if="importantMemories.length > 5" class="important-more">还有 {{ importantMemories.length - 5 }} 条…</div>
+        </div>
+        <div v-else class="important-empty">还没有重要记忆——聊天中觉得哪句重要，可以在这里点 ⭐ 收藏</div>
+
+        <!-- 隐私承诺（折叠） -->
+        <div v-if="showPrivacy" class="privacy-box">
+          <p>🔒 <b>记忆只保存在本机</b>（你的数据目录），不会上传到任何地方。</p>
+          <p>设置主密码后，API 密钥等敏感信息会加密存储。</p>
+          <p>你可以随时在下方时间线里查看、删除或收藏任何一条记忆。</p>
+        </div>
+        <div class="privacy-hint">🔒 本机存储 · 不上传 · 可随时删除</div>
       </div>
 
       <!-- 搜索框 -->
@@ -216,11 +271,11 @@ onMounted(() => {
   min-height: 64px;
 }
 .collapsed-icon {
-  font-size: 16px;
+  font-size: var(--fs-16);
   line-height: 1;
 }
 .panel-title {
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -231,17 +286,133 @@ onMounted(() => {
   opacity: 0.7;
 }
 .memory-panel:not(.expanded) .toggle-btn {
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .set-bar {
   display: flex;
   gap: 6px;
   padding: 8px 12px 0;
 }
+/* —— 记忆透明页（P1 重点）样式：毛玻璃背景板 —— */
+.transparency {
+  margin: 8px 10px 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+/* 暗色主题：毛玻璃底色加深 */
+.app-root.dark .transparency,
+.app-root.ios-glass .transparency {
+  background: rgba(30, 30, 40, 0.35);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.trans-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 6px;
+}
+.trans-title {
+  font-size: var(--fs-13);
+  font-weight: 700;
+  color: var(--accent, #ff7a94);
+}
+.trans-toggle { font-size: var(--fs-10); opacity: 0.6; }
+.trans-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+}
+.stat b { font-size: var(--fs-14); color: var(--text-main); }
+.important-box {
+  border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.25));
+  padding-top: 6px;
+}
+.important-label {
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.important-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  background: rgba(255, 122, 148, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 122, 148, 0.25);
+  font-size: var(--fs-11);
+}
+.imp-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main);
+}
+.imp-role {
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.imp-unmark {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--fs-10);
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.imp-unmark:hover { color: var(--danger); }
+.important-more { font-size: var(--fs-10); color: var(--text-secondary); padding-top: 2px; }
+.important-empty {
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+  border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.25));
+  padding-top: 6px;
+  line-height: 1.5;
+}
+.privacy-box {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.08);
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.privacy-box p { margin: 0 0 4px; }
+.privacy-box p:last-child { margin-bottom: 0; }
+.privacy-hint {
+  margin-top: 6px;
+  font-size: var(--fs-10);
+  color: var(--success, #4caf50);
+  text-align: center;
+}
 .set-select {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-12);
   padding: 4px 6px;
   border-radius: 6px;
   border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
@@ -252,7 +423,7 @@ onMounted(() => {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--fs-16);
   opacity: 0.7;
 }
 .create-set-row {
@@ -263,7 +434,7 @@ onMounted(() => {
 .set-input {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-12);
   padding: 4px 6px;
   border-radius: 6px;
   border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
@@ -271,12 +442,12 @@ onMounted(() => {
   color: var(--text-main, #222);
 }
 .confirm-btn {
-  font-size: 12px;
+  font-size: var(--fs-12);
   padding: 2px 8px;
   border: none;
   border-radius: 6px;
   background: var(--accent, #ffb6c1);
-  color: #fff;
+  color: var(--text-user);
   cursor: pointer;
 }
 .search-box {
@@ -285,7 +456,7 @@ onMounted(() => {
 .search-input {
   width: 100%;
   box-sizing: border-box;
-  font-size: 12px;
+  font-size: var(--fs-12);
   padding: 5px 8px;
   border-radius: 8px;
   border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
@@ -294,7 +465,7 @@ onMounted(() => {
 }
 .error-tip {
   margin: 8px 12px 0;
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--danger, #e53935);
 }
 .timeline {
@@ -304,7 +475,7 @@ onMounted(() => {
 }
 .loading,
 .empty {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-secondary, #888);
   text-align: center;
   padding: 16px 0;
@@ -313,7 +484,7 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 .day-label {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-secondary, #888);
   padding: 2px 0 4px;
   border-bottom: 1px dashed var(--border, rgba(128, 128, 128, 0.2));
@@ -331,7 +502,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .mem-time {
   color: var(--text-secondary, #888);
@@ -340,16 +511,16 @@ onMounted(() => {
 }
 .mem-role {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--fs-11);
   padding: 1px 5px;
   border-radius: 4px;
-  color: #fff;
+  color: var(--text-user);
 }
 .mem-role.user {
-  background: #5b8def;
+  background: var(--info);
 }
 .mem-role.assistant {
-  background: #ff9ec4;
+  background: var(--accent);
 }
 .mem-preview {
   overflow: hidden;
@@ -359,7 +530,7 @@ onMounted(() => {
 }
 .mem-full {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .mem-full-content {
   background: rgba(128, 128, 128, 0.08);
@@ -378,7 +549,7 @@ onMounted(() => {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--fs-14);
   opacity: 0.6;
 }
 .act-btn:hover {

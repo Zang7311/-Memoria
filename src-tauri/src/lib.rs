@@ -9,6 +9,7 @@ mod engine;
 mod error;
 mod logs;
 mod memory;
+mod milestones;
 mod network;
 mod sessions;
 // AI-5：插件模块与类型公开（供集成测试/下游引用）
@@ -36,7 +37,26 @@ pub fn run() {
         .setup(|app| {
             // —— AI-7 配置中心 + 日志系统（最先初始化，供其他模块使用）——
             logs::init();
+
+            // ==================== P3 救援模式 ====================
+            // 触发条件：启动参数 --recovery（配置损坏/启动失败时用户手动进入）
             config::store::init(app.handle().clone());
+            let recovery_mode = std::env::args().any(|a| a == "--recovery");
+            if recovery_mode {
+                // 恢复模式：只建极简窗口，跳过全部正常初始化
+                log::warn!("[setup] 进入恢复模式（--recovery 或配置初始化失败）");
+                tauri::WebviewWindowBuilder::new(
+                    app,
+                    "recovery",
+                    tauri::WebviewUrl::App("index.html".into()),
+                )
+                .title("铃·恢复模式")
+                .inner_size(720.0, 520.0)
+                .resizable(false)
+                .build()?;
+                return Ok(());
+            }
+
             log::info!("[setup] 铃·记忆体 启动，配置与日志系统已就绪");
 
             // 用户开启「始终以管理员运行」且当前非管理员 → 自动提权重启（弹一次 UAC）
@@ -128,6 +148,11 @@ pub fn run() {
             commands::memory_set_list::list_memory_sets,
             commands::memory_write::write_memory,
             commands::memory_mark::mark_memory_important,
+            // —— P3 陪伴记录命令 ——
+            milestones::record_milestone,
+            milestones::get_milestones,
+            milestones::record_daily_chat,
+            milestones::record_daily_tool,
             // —— AI-5 插件命令 ——
             commands::plugin_list::list_plugins,
             commands::plugin_install::install_plugin,
@@ -164,6 +189,9 @@ pub fn run() {
             commands::logs_get::get_logs,
             commands::logs_clear::clear_logs,
             commands::diagnostic_export::export_diagnostic,
+            // —— P3 救援模式命令 ——
+            diagnostic::recovery_check,
+            diagnostic::recovery_reset_config,
             commands::system_info::get_system_info,
             commands::master::set_master_password,
             commands::master::unlock,

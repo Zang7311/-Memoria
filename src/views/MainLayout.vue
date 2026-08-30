@@ -10,6 +10,7 @@ import MemoryPanel from '../components/MemoryPanel.vue'
 import PluginManager from '../components/PluginManager.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import SettingView from './SettingView.vue'
+import TheIcon from '../components/TheIcon.vue'
 import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { assetUrl, isImagePath } from '../utils/tauri'
@@ -81,7 +82,7 @@ async function onPersonaChange(e: Event) {
             <!-- AI-8：网络状态指示器（点击进设置-同步） -->
             <span
               class="net-indicator"
-              :title="'网络：' + (sync.networkStatus === 'online' ? '在线' : sync.networkStatus === 'offline' ? '离线（已切脚本模式）' : '未知')"
+              :title="'网络：' + (sync.networkStatus === 'online' ? '在线' : sync.networkStatus === 'offline' ? '离线（已切离线模式）' : '未知')"
               @click="openSettings"
             >
               <span v-if="sync.networkStatus === 'online'" class="dot online">🟢</span>
@@ -122,21 +123,21 @@ async function onPersonaChange(e: Event) {
             <span
               class="gear"
               :class="{ active: showToolbox }"
-              title="工具箱（AI-6）"
+              title="铃的工具箱（AI-6）"
               @click="showToolbox = !showToolbox"
-            >🧰</span>
+            ><TheIcon name="toolbox" :size="18" /></span>
             <span
               class="gear"
               :class="{ active: showPlugins }"
               title="插件管理（AI-5）"
               @click="showPlugins = !showPlugins"
-            >🧩</span>
+            ><TheIcon name="plugin" :size="18" /></span>
             <span
               class="gear"
               :class="{ active: showSettings }"
               title="设置（AI-6）"
               @click="showSettings = !showSettings"
-            >⚙️</span>
+            ><TheIcon name="settings" :size="18" /></span>
           </div>
         </header>
 
@@ -151,9 +152,9 @@ async function onPersonaChange(e: Event) {
             @click="chat.switchSession(s.id)"
           >
             <span class="s-title">{{ s.title }}</span>
-            <span class="s-del" title="删除会话" @click.stop="onDeleteSession(s.id)">✕</span>
+            <span class="s-del" title="删除会话" @click.stop="onDeleteSession(s.id)"><TheIcon name="close" :size="10" /></span>
           </div>
-          <button class="new-session" title="新建会话" @click="chat.createSession()">＋</button>
+          <button class="new-session" title="新建会话" @click="chat.createSession()"><TheIcon name="add" :size="16" /></button>
         </div>
 
         <!-- 中间对话流 -->
@@ -233,11 +234,11 @@ async function onPersonaChange(e: Event) {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ffe4e1, #fff0f5);
+  background: var(--bubble-suzu-bg, linear-gradient(135deg, #ffe4e1, #fff0f5));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: var(--fs-20);
   overflow: hidden;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
@@ -247,7 +248,7 @@ async function onPersonaChange(e: Event) {
   gap: 1px;
 }
 .title-name {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
   color: var(--text-main, #222);
 }
@@ -258,7 +259,7 @@ async function onPersonaChange(e: Event) {
 }
 .top-right .net-indicator,
 .top-right .sync-indicator {
-  font-size: 15px;
+  font-size: var(--fs-15);
   cursor: pointer;
   opacity: 0.85;
   transition: opacity 0.15s ease;
@@ -277,9 +278,10 @@ async function onPersonaChange(e: Event) {
   50% { opacity: 1; }
 }
 .top-right .gear {
-  font-size: 18px;
+  font-size: var(--fs-18);
   cursor: pointer;
   opacity: 0.7;
+  color: var(--text-secondary, #999);
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .top-right .gear:hover {
@@ -289,7 +291,7 @@ async function onPersonaChange(e: Event) {
 .top-right .gear.active {
   opacity: 1;
   transform: rotate(30deg);
-  color: #ff8fab;
+  color: var(--accent);
 }
 .persona-select {
   background: transparent;
@@ -297,7 +299,7 @@ async function onPersonaChange(e: Event) {
   color: var(--text-main, #222);
   border-radius: 8px;
   padding: 3px 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   cursor: pointer;
   max-width: 96px;
 }
@@ -318,7 +320,7 @@ async function onPersonaChange(e: Event) {
   gap: 4px;
   padding: 3px 8px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   cursor: pointer;
   background: rgba(128, 128, 128, 0.12);
   color: var(--text-secondary, #999);
@@ -327,10 +329,10 @@ async function onPersonaChange(e: Event) {
 }
 .session-tab.active {
   background: var(--accent, #ff7a94);
-  color: #fff;
+  color: var(--text-user);
 }
 .s-title { overflow: hidden; text-overflow: ellipsis; }
-.s-del { opacity: 0.6; font-size: 10px; padding-left: 2px; }
+.s-del { opacity: 0.6; font-size: var(--fs-10); padding-left: 2px; color: var(--text-secondary, #999); }
 .s-del:hover { opacity: 1; }
 .new-session {
   border: 1px dashed var(--border, rgba(128, 128, 128, 0.4));
@@ -340,7 +342,7 @@ async function onPersonaChange(e: Event) {
   width: 24px;
   height: 22px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-13);
   flex-shrink: 0;
 }
 .new-session:hover { color: var(--accent, #ff7a94); border-color: var(--accent, #ff7a94); }
@@ -376,14 +378,14 @@ async function onPersonaChange(e: Event) {
   background: rgba(128, 128, 128, 0.2);
   color: var(--text-main);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .close-btn:hover {
-  background: rgba(255, 107, 107, 0.35);
+  background: var(--danger-bg);
 }
 .usage-bar {
   padding: 4px 16px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-secondary, #999);
   border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.2));
   text-align: right;

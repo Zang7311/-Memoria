@@ -26,33 +26,52 @@ pub fn read_memories(index_path: &PathBuf) -> Result<Vec<Memory>, AppError> {
 
 /// 从记忆中截取最近 n 条，并按 token 上限做截断（估算 4 字符 ≈ 1 token）
 /// 返回排序后的 messages（旧→新），供引擎构造请求体
+/// 改进（对话本体优化）：标记 important 的记忆优先保留——先收集重要记忆，
+/// 再从普通记忆中按时间补足；token 截断时重要记忆不被丢弃。
 pub fn build_context(
     memories: &[Memory],
     context_length: u8,
     max_tokens: usize,
 ) -> Vec<Memory> {
     let n = context_length as usize;
-    // 取最近 n 条
+    // 1) 重要记忆（tags 含 important）全量收集（最多 n 条）
+    let mut important: Vec<Memory> = memories
+        .iter()
+        .filter(|m| m.tags.as_ref().is_some_and(|t| t.iter().any(|x| x == "important")))
+        .cloned()
+        .collect();
+    important.sort_by_key(|m| m.timestamp.clone());
+
+    // 2) 普通记忆取最近 n 条（倒序去重重要记忆后取）
+    let important_ids: std::collections::HashSet<&str> =
+        important.iter().map(|m| m.id.as_str()).collect();
     let mut recent: Vec<Memory> = memories
         .iter()
         .rev()
+        .filter(|m| !important_ids.contains(m.id.as_str()))
         .take(n)
         .cloned()
         .collect();
     recent.reverse(); // 恢复旧→新
 
-    // token 截断：从最早的开始丢，直到估测 token 不超限
+    // 3) 合并：重要记忆在前（保证不被截断），普通记忆在后（按时间）
+    // 先记录重要记忆的数量（用于截断保护），再移动进 merged
+    let important_len = important.len();
     let estimate_tokens = |m: &Memory| (m.content.chars().count() + 3) / 4;
-    let mut total: usize = recent.iter().map(estimate_tokens).sum();
-    let mut idx = 0;
-    while total > max_tokens && idx < recent.len() {
-        total -= estimate_tokens(&recent[idx]);
-        idx += 1;
+    let mut merged: Vec<Memory> = Vec::new();
+    merged.extend(important);
+    merged.extend(recent);
+
+    // 4) token 截断：重要记忆先计入额度，从普通记忆（末尾）开始丢
+    let mut total: usize = merged.iter().map(estimate_tokens).sum();
+    // 从后往前丢普通记忆，直到不超限；重要记忆在头部不丢
+    let mut idx = merged.len();
+    while total > max_tokens && idx > important_len {
+        idx -= 1;
+        total -= estimate_tokens(&merged[idx]);
     }
-    if idx > 0 {
-        recent.drain(..idx);
-    }
-    recent
+    merged.truncate(idx);
+    merged
 }
 
 #[cfg(test)]

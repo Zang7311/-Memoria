@@ -29,11 +29,11 @@ export interface Setting {
   depth: 1 | 2 | 3 | 4 // 默认 2
 }
 
-/** 模型模式中文名映射（可选，便于 UI 展示） */
+/** 模型模式中文名映射（可选，便于 UI 展示）——人话版（D 批次文案统一） */
 export const MODEL_MODE_LABEL: Record<Setting['modelMode'], string> = {
-  script: '脚本模式',
-  api: 'API 模式',
-  local: '本地模式',
+  script: '离线模式',
+  api: '云端AI',
+  local: '本地AI',
 }
 
 // ==================== AI-4 记忆系统（与 Rust 端契约对齐） ====================
@@ -258,6 +258,7 @@ export interface AppConfig {
   ui_radius?: number | null
   bubble_user_color?: string | null
   bubble_suzu_color?: string | null
+  danger_color?: string | null
   ui_themes?: UiThemePreset[] | null
   run_as_admin?: boolean
   emoji_mode?: string | null
@@ -270,6 +271,7 @@ export interface AppConfig {
 export interface UiThemePreset {
   name: string
   accent_color: string
+  danger_color?: string | null
   bg_color: string
   bg_image?: string | null
   bubble_user_color: string

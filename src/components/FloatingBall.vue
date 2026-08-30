@@ -198,9 +198,9 @@ function menuExit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #ffd3e0, #c9e4ff);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent, #ff7a94) 55%, #fff), color-mix(in srgb, var(--info, #6db3ff) 45%, #fff));
   border: 2px solid rgba(255, 255, 255, 0.7);
-  box-shadow: 0 4px 16px rgba(255, 138, 171, 0.45);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent, #ff7a94) 45%, transparent);
   cursor: grab;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -220,14 +220,14 @@ function menuExit() {
 /* 消息闪烁 */
 .ball.flashing {
   animation: flash 0.5s ease-in-out 6;
-  border-color: #ff7a94;
+  border-color: var(--accent);
 }
 @keyframes flash {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.35; transform: scale(1.15); }
 }
 .ball-face {
-  font-size: 30px;
+  font-size: var(--fs-30);
   width: 100%;
   height: 100%;
   display: flex;
@@ -250,15 +250,15 @@ function menuExit() {
 .menu-item {
   padding: 8px 12px;
   border-radius: 6px;
-  font-size: 13px;
-  color: #eee6e7;
+  font-size: var(--fs-13);
+  color: var(--text-main, #eee6e7);
   cursor: pointer;
 }
 .menu-item:hover {
   background: rgba(255, 138, 171, 0.25);
 }
 .menu-item.danger {
-  color: #ff7a94;
+  color: var(--accent);
 }
 .menu-mask {
   position: fixed;

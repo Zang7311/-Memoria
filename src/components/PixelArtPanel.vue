@@ -122,7 +122,7 @@ onMounted(clear)
   width: 420px;
   flex-shrink: 0;
 }
-.pp-title { font-weight: 600; color: var(--text-main, #eee); white-space: nowrap; font-size: 14px; }
+.pp-title { font-weight: 600; color: var(--text-main, #eee); white-space: nowrap; font-size: var(--fs-14); }
 .pp-colors { display: flex; gap: 5px; flex-wrap: wrap; width: 420px; flex-shrink: 0; }
 .pp-color { width: 24px; height: 24px; border-radius: 6px; border: 2px solid rgba(128, 128, 128, 0.4); cursor: pointer; }
 .pp-color.sel { border-color: var(--accent, #ff7a94); transform: scale(1.15); }
@@ -132,10 +132,10 @@ canvas {
   image-rendering: pixelated;
   width: 420px;
   height: 420px;
-  background: #fff;
+  background: #ffffff; /* 像素画布必须固定白色，不随主题变化 */
   border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
   cursor: crosshair;
   flex-shrink: 0;
 }
-.pp-msg { color: var(--text-main, #eee); font-size: 12px; flex-shrink: 0; }
+.pp-msg { color: var(--text-main, #eee); font-size: var(--fs-12); flex-shrink: 0; }
 </style>

@@ -3006,6 +3006,7 @@ dependencies = [
  "base64 0.22.1",
  "boa_engine",
  "chrono",
+ "encoding_rs",
  "futures-util",
  "image",
  "log",

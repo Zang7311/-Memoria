@@ -6,6 +6,20 @@ use crate::error::AppError;
 use crate::types::{ExecuteToolboxResponse, ToolboxItem};
 use std::time::Duration;
 
+/// 智能解码控制台输出：优先 UTF-8，失败回退 GBK（中文 Windows PS5.1 默认 OEM 代码页 936）
+fn decode_console(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.trim().to_string(),
+        Err(_) => {
+            let (text, _, _) = encoding_rs::GBK.decode(bytes);
+            text.trim().to_string()
+        }
+    }
+}
+
 /// 合并返回工具箱条目：预设 + 用户自定义（用户条目 id 以 "user_" 前缀）
 pub fn list_items(resource_dir: &std::path::Path) -> Vec<ToolboxItem> {
     let mut items = load_presets(resource_dir);
@@ -106,8 +120,10 @@ pub async fn execute(item: &ToolboxItem, input: Option<String>) -> Result<Execut
         Err(_) => Err(AppError::ToolboxTimeout(item.name.clone())),
         Ok(Err(e)) => Err(AppError::ToolboxError(e.to_string())),
         Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            // 智能解码：优先 UTF-8（新命令已设 UTF-8 输出），失败回退 GBK
+            // （PS5.1 默认 OEM 代码页 936 输出中文，直接 from_utf8_lossy 会乱码）
+            let stdout = decode_console(&output.stdout);
+            let stderr = decode_console(&output.stderr);
             let success = output.status.success();
             if success {
                 let text = if !stdout.is_empty() { stdout } else { stderr };

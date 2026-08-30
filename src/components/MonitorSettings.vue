@@ -199,7 +199,7 @@ function importTemplate(name: string) {
 }
 .section-title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-15);
   margin-bottom: 14px;
 }
 .row {
@@ -215,7 +215,7 @@ function importTemplate(name: string) {
   gap: 8px;
 }
 .label {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--text-secondary, #9a9294);
 }
 .switch {
@@ -235,8 +235,8 @@ select {
   padding: 8px 12px;
   border-radius: 8px;
   background: rgba(255, 160, 60, 0.15);
-  color: #ffb26b;
-  font-size: 12px;
+  color: var(--warning);
+  font-size: var(--fs-12);
 }
 .actions {
   display: flex;
@@ -249,14 +249,14 @@ select {
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
-.btn.primary { background: var(--accent, #ff7a94); color: #fff; }
+.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
 .rule-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .rule-table th {
   text-align: left;
@@ -274,7 +274,7 @@ select {
   background: rgba(128, 128, 128, 0.15);
   padding: 2px 6px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .reply-cell {
   max-width: 220px;
@@ -289,7 +289,7 @@ select {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--fs-14);
   padding: 2px 4px;
   opacity: 0.8;
 }
@@ -330,7 +330,7 @@ select {
 }
 .field span {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-secondary, #9a9294);
   margin-bottom: 4px;
 }
@@ -343,12 +343,12 @@ select {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
   background: var(--input-bg, #2a272b);
   color: var(--text-main, #eee6e7);
-  font-size: 13px;
+  font-size: var(--fs-13);
   resize: vertical;
 }
 .editor-error {
-  color: #ff8b8b;
-  font-size: 12px;
+  color: var(--danger);
+  font-size: var(--fs-12);
   margin-bottom: 10px;
 }
 .modal-actions {
@@ -358,5 +358,5 @@ select {
   margin-top: 8px;
 }
 .btn.cancel { background: rgba(128, 128, 128, 0.2); color: var(--text-main); }
-.btn.confirm { background: var(--accent, #ff7a94); color: #fff; }
+.btn.confirm { background: var(--accent, #ff7a94); color: var(--text-user); }
 </style>

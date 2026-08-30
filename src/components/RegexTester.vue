@@ -87,7 +87,7 @@ const matches = computed(() => {
 .rp-head { display: flex; align-items: center; justify-content: space-between; }
 .rp-title { font-weight: 600; color: var(--text-main, #eee); }
 .rp-row { display: flex; align-items: center; gap: 8px; }
-.rp-row label { color: var(--text-secondary, #aaa); font-size: 13px; width: 44px; flex-shrink: 0; }
+.rp-row label { color: var(--text-secondary, #aaa); font-size: var(--fs-13); width: 44px; flex-shrink: 0; }
 .rp-input {
   flex: 1;
   padding: 8px 10px;
@@ -96,10 +96,10 @@ const matches = computed(() => {
   background: var(--input-bg, #2a272b);
   color: var(--text-main, #eee);
   font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .rp-input.small { flex: 0 0 70px; }
-.rp-lb { color: var(--text-secondary, #aaa); font-size: 13px; }
+.rp-lb { color: var(--text-secondary, #aaa); font-size: var(--fs-13); }
 .rp-textarea {
   min-height: 160px;
   padding: 10px;
@@ -108,11 +108,11 @@ const matches = computed(() => {
   background: var(--input-bg, #2a272b);
   color: var(--text-main, #eee);
   font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--fs-13);
   resize: vertical;
 }
-.rp-err { color: #ff8b8b; font-size: 12px; }
-.rp-info { color: var(--text-secondary, #aaa); font-size: 12px; }
+.rp-err { color: var(--danger); font-size: var(--fs-12); }
+.rp-info { color: var(--text-secondary, #aaa); font-size: var(--fs-12); }
 .rp-matches { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
 .rp-match {
   display: flex;
@@ -122,10 +122,10 @@ const matches = computed(() => {
   padding: 4px 10px;
   border-radius: 6px;
   font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--text-main, #eee);
   word-break: break-all;
 }
-.rp-pos { color: var(--accent, #ff7a94); font-size: 11px; flex-shrink: 0; }
-.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; background: rgba(128, 128, 128, 0.18); color: var(--text-main, #eee); }
+.rp-pos { color: var(--accent, #ff7a94); font-size: var(--fs-11); flex-shrink: 0; }
+.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-13); background: rgba(128, 128, 128, 0.18); color: var(--text-main, #eee); }
 </style>
