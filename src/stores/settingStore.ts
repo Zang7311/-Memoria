@@ -22,6 +22,7 @@ export const useSettingStore = defineStore('setting', () => {
   const theme = ref<'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass'>('dark')
   // —— 外观自定义（用户可自行调整，持久化到 config.json）——
   const accentColor = ref<string | null>(null)
+  const dangerColor = ref<string | null>(null)
   const bgColor = ref<string | null>(null)
   const bgImage = ref<string | null>(null)
   const avatarSuzu = ref<string | null>(null)
@@ -65,6 +66,7 @@ export const useSettingStore = defineStore('setting', () => {
     firstLaunch.value = c.first_launch
     theme.value = (c.theme as 'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass') || 'dark'
     accentColor.value = c.accent_color ?? null
+    dangerColor.value = c.danger_color ?? null
     bgColor.value = c.bg_color ?? null
     bgImage.value = c.bg_image ?? null
     avatarSuzu.value = c.avatar_suzu ?? null
@@ -133,6 +135,7 @@ export const useSettingStore = defineStore('setting', () => {
   /** 把组合值应用到当前字段（不写盘） */
   function applyPreset(p: UiThemePreset) {
     accentColor.value = p.accent_color || null
+    dangerColor.value = p.danger_color ?? null
     bgColor.value = p.bg_color || null
     bgImage.value = p.bg_image ?? null
     bubbleUserColor.value = p.bubble_user_color || null
@@ -146,6 +149,7 @@ export const useSettingStore = defineStore('setting', () => {
     const preset: UiThemePreset = {
       name,
       accent_color: accentColor.value ?? '#ff7a94',
+      danger_color: dangerColor.value,
       bg_color: bgColor.value ?? '#1d1b1f',
       bg_image: bgImage.value,
       bubble_user_color: bubbleUserColor.value ?? '#2d2d2d',
@@ -169,6 +173,7 @@ export const useSettingStore = defineStore('setting', () => {
     applyPreset(p)
     await update({
       accent_color: p.accent_color || null,
+      danger_color: p.danger_color ?? null,
       bg_color: p.bg_color || null,
       bg_image: p.bg_image ?? null,
       bubble_user_color: p.bubble_user_color || null,
@@ -233,7 +238,7 @@ export const useSettingStore = defineStore('setting', () => {
   return {
     loaded, firstLaunch,
     theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiKeyPlain, apiModel, modelMode, depth,
-    accentColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
+    accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,
     emojiMode, aiToolbox,

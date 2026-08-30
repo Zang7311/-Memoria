@@ -122,26 +122,26 @@ onMounted(() => {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 14px; padding: 16px;
 }
-.card-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
-.hint { font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; }
-.info-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.card-title { font-weight: 600; font-size: var(--fs-14); margin-bottom: 10px; }
+.hint { font-size: var(--fs-12); color: var(--text-secondary); margin: 0 0 10px; }
+.info-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
 .info-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
 .info-table td:first-child { color: var(--text-secondary); width: 120px; white-space: nowrap; }
 .log-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .input {
   padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--input-bg); color: var(--text-main); font-size: 12px;
+  background: var(--input-bg); color: var(--text-main); font-size: var(--fs-12);
 }
 .log-list {
   max-height: 260px; overflow-y: auto; background: rgba(0, 0, 0, 0.25);
-  border-radius: 8px; padding: 8px; font-family: Consolas, monospace; font-size: 11px;
+  border-radius: 8px; padding: 8px; font-family: Consolas, monospace; font-size: var(--fs-11);
 }
 .log-line { padding: 2px 4px; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
-.log-line.err { color: #ff7a7a; }
-.log-line.warn { color: #ffd07a; }
-.log-line.info { color: #9ad1ff; }
-.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 12px; }
-.btn.primary { background: var(--accent, #ff7a94); color: #fff; }
+.log-line.err { color: var(--danger); }
+.log-line.warn { color: var(--warning); }
+.log-line.info { color: var(--info); }
+.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-12); }
+.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
-.msg { font-size: 12px; margin-top: 8px; color: var(--accent); word-break: break-all; }
+.msg { font-size: var(--fs-12); margin-top: 8px; color: var(--accent); word-break: break-all; }
 </style>

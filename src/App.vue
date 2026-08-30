@@ -6,17 +6,29 @@ import MainLayout from './views/MainLayout.vue'
 import FloatingBall from './components/FloatingBall.vue'
 import Bubble from './components/Bubble.vue'
 import OnboardingView from './views/OnboardingView.vue'
+import RecoveryView from './views/RecoveryView.vue'
 import { useSettingStore } from './stores/settingStore'
+import { useMilestoneStore } from './stores/milestoneStore'
 import { assetUrl } from './utils/tauri'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 
 const setting = useSettingStore()
+const milestone = useMilestoneStore()
 const theme = computed(() => setting.theme || 'dark')
 // 外观自定义：把用户自定值映射为 CSS 变量（覆盖主题色/背景/圆角，仅添加已设置的）
 const customStyle = computed<Record<string, string>>(() => {
   const s: Record<string, string> = {}
-  if (setting.accentColor) s['--accent'] = setting.accentColor
+  if (setting.accentColor) {
+    s['--accent'] = setting.accentColor
+    // 主色联动：未单独设置危险色时，危险色用主色的深色调（保持风格统一）
+    if (!setting.dangerColor) s['--danger'] = setting.accentColor
+    // 主色联动：未单独设置铃的气泡色时，气泡用主色浅渐变（跟随风格主色）
+    if (!setting.bubbleSuzuColor) {
+      s['--bubble-suzu-bg'] = `linear-gradient(135deg, color-mix(in srgb, ${setting.accentColor} 38%, transparent), color-mix(in srgb, ${setting.accentColor} 18%, transparent))`
+    }
+  }
+  if (setting.dangerColor) s['--danger'] = setting.dangerColor
   if (setting.bgColor) s['--bg-main'] = setting.bgColor
   if (setting.bgImage) s['--bg-image'] = `url("${assetUrl(setting.bgImage)}")`
   if (setting.uiRadius != null) s['--radius-ui'] = `${setting.uiRadius}px`
@@ -47,6 +59,11 @@ onMounted(async () => {
     } catch {
       firstLaunch.value = false
     }
+    // P3：陪伴记录——首次见面自动记录（后端幂等），并加载已有里程碑
+    milestone.load().catch(() => { /* 静默 */ })
+    if (!setting.firstLaunch) {
+      milestone.record('first_launch', '与铃初次见面').catch(() => { /* 静默 */ })
+    }
     // moon12：监听旧版数据迁移完成事件，提示用户
     listen<string>('legacy-migrated', (event) => {
       legacyMigrated.value = `已从旧版本迁移数据：${event.payload}`
@@ -73,6 +90,8 @@ onMounted(async () => {
     <MainLayout v-else-if="winLabel === 'main'" />
     <FloatingBall v-else-if="winLabel === 'floating-ball'" />
     <Bubble v-else-if="winLabel === 'bubble'" />
+    <!-- P3：救援模式窗口（--recovery 启动） -->
+    <RecoveryView v-else-if="winLabel === 'recovery'" />
   </div>
 </template>
 
@@ -109,6 +128,40 @@ onMounted(async () => {
 
 <!-- 全局主题变量定义（亮/暗两套） -->
 <style>
+/* ================= 全局统一体系（moon12-2） =================
+   所有组件必须引用以下变量，禁止裸硬编码颜色/字号：
+   · 字体：--font-main（正文）/ --font-mono（代码/等宽）
+   · 字号阶梯：--fs-10 ~ --fs-40（统一档位，改一处全局生效）
+   · 语义色：--accent/--danger/--success/--warning/--info + 各自 *-bg 底色
+   · 主题变量：--bg-main/--bg-bar/--text-main/--text-secondary/--input-bg/--border/--bubble-* */
+:root {
+  /* 字体（全局统一，minimal 主题可覆盖为等宽风格） */
+  --font-main: system-ui, 'Microsoft YaHei', 'PingFang SC', -apple-system, sans-serif;
+  --font-mono: Consolas, 'Cascadia Mono', 'Sarasa Mono SC', monospace;
+
+  /* 字号阶梯（统一档位） */
+  --fs-10: 10px;
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-30: 30px;
+  --fs-40: 40px;
+
+  /* 语义色（默认暗色系，亮色主题在下方覆盖） */
+  --success: #7fd99a;
+  --success-bg: rgba(90, 200, 120, 0.15);
+  --warning: #ffb26b;
+  --warning-bg: rgba(255, 178, 107, 0.15);
+  --info: #6db3ff;
+  --info-bg: rgba(109, 179, 255, 0.15);
+  --danger: #ff8b8b;
+  --danger-bg: rgba(255, 107, 107, 0.15);
+}
 :root,
 .app-root.light {
   --bg-main: #f7f2f4;
@@ -123,6 +176,14 @@ onMounted(async () => {
   --input-bg: #ffffff;
   --accent: #ff8fa3;
   --danger: #d9534f;
+  /* 亮色语义色（深色字，浅底） */
+  --success: #2e7d32;
+  --success-bg: rgba(46, 125, 50, 0.12);
+  --warning: #b26a00;
+  --warning-bg: rgba(178, 106, 0, 0.12);
+  --info: #1a56a8;
+  --info-bg: rgba(26, 86, 168, 0.12);
+  --danger-bg: rgba(217, 83, 79, 0.12);
 }
 .app-root.dark {
   --bg-main: #1d1b1f;
@@ -137,6 +198,23 @@ onMounted(async () => {
   --input-bg: #2a272b;
   --accent: #ff7a94;
   --danger: #ff6b6b;
+  /* 暗色语义色（亮字，暗底） */
+  --success: #7fd99a;
+  --success-bg: rgba(90, 200, 120, 0.15);
+  --warning: #ffb26b;
+  --warning-bg: rgba(255, 178, 107, 0.15);
+  --info: #6db3ff;
+  --info-bg: rgba(109, 179, 255, 0.15);
+  --danger-bg: rgba(255, 107, 107, 0.15);
+}
+/* 全局字体统一 */
+html,
+body {
+  font-family: var(--font-main);
+}
+#app,
+.app-root {
+  font-family: var(--font-main);
 }
 /* ================= 五套 UI 风格主题（大版本方向） ================= */
 /* ① Win10：亚克力深灰 + 微软蓝 */

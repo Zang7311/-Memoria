@@ -15,6 +15,7 @@ import {
   setConflictPolicy,
   startSync,
 } from '../utils/tauri'
+import { useMilestoneStore } from './milestoneStore'
 
 export const useSyncStore = defineStore('sync', () => {
   /** 发现的设备列表 */
@@ -91,6 +92,10 @@ export const useSyncStore = defineStore('sync', () => {
       syncStatus.value = res.success ? 'done' : 'error'
       message.value = res.message
       syncProgress.value = 1
+      // P3：第一次同步成功里程碑（幂等）
+      if (res.success) {
+        useMilestoneStore().record('first_sync', '第一次同步成功').catch(() => {})
+      }
       await refreshStatus()
     } catch (e) {
       syncStatus.value = 'error'

@@ -66,7 +66,7 @@ async function handleSend() {
   border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
   background: var(--input-bg, #ffffff);
   color: var(--text-main, #222);
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1.5;
   font-family: inherit;
 }
@@ -83,8 +83,8 @@ async function handleSend() {
   border: none;
   border-radius: 12px;
   background: var(--accent, #ff8fa3);
-  color: #fff;
-  font-size: 20px;
+  color: var(--text-user);
+  font-size: var(--fs-20);
   cursor: pointer;
   display: flex;
   align-items: center;

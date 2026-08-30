@@ -100,39 +100,39 @@ function openExternal(url: string) {
 }
 .store-name {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-13);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .store-tag {
-  font-size: 10px;
-  background: #d1fae5;
-  color: #047857;
+  font-size: var(--fs-10);
+  background: var(--success-bg);
+  color: var(--success);
   padding: 1px 6px;
   border-radius: 8px;
   font-weight: 400;
 }
 .store-meta {
-  font-size: 11px;
+  font-size: var(--fs-11);
   opacity: 0.6;
   margin-top: 2px;
 }
 .store-desc {
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.8;
   margin-top: 4px;
 }
 .store-msg {
   background: rgba(255, 193, 7, 0.15);
-  color: #b45309;
+  color: var(--warning);
   border-radius: 6px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   white-space: pre-line;
 }
 .store-tip {
-  font-size: 11px;
+  font-size: var(--fs-11);
   opacity: 0.6;
   text-align: center;
 }
@@ -142,7 +142,7 @@ function openExternal(url: string) {
   color: var(--accent, #ff7a94);
   border-radius: 8px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   cursor: pointer;
 }
 .more-btn:hover {

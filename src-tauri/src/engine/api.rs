@@ -47,6 +47,8 @@ pub async fn run_api(
     api_model: &str,
     depth: u8,
     persona: &str,
+    self_name: &str,
+    user_name: &str,
 ) -> Result<String, AppError> {
     if api_base_url.trim().is_empty() {
         return Err(AppError::ConfigError("未配置 API 地址".into()));
@@ -61,7 +63,13 @@ pub async fn run_api(
 
     // 构建 messages：系统人格 + 上下文 + 当前输入
     let mut messages: Vec<serde_json::Value> = Vec::new();
-    messages.push(serde_json::json!({ "role": "system", "content": persona_system_prompt(persona) }));
+    let sys = format!(
+        "{}\n【身份约定】你的名字叫「{}」，用户是你的「{}」。所有回复默认以这个称呼关系进行；\n【回复风格】语气自然口语化，像真人聊天，不要每次都长篇大论；适度使用 emoji 或颜文字；\n【记忆】上下文里的历史消息是你们的过往对话，请自然地延续话题；标记为 important 的内容是用户重视的事，请记住。",
+        persona_system_prompt(persona),
+        self_name,
+        user_name,
+    );
+    messages.push(serde_json::json!({ "role": "system", "content": sys }));
     messages.extend(context.iter().map(|m| {
         serde_json::json!({ "role": m.role, "content": m.content })
     }));

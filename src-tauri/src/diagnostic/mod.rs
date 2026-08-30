@@ -78,3 +78,106 @@ pub fn format_system_info(info: &SystemInfo) -> String {
     }
     s
 }
+
+// ==================== P3 救援模式 ====================
+
+/// 救援检测：检查各项关键资源是否完好（恢复窗口用）
+/// 返回每项 { name, ok, detail }
+#[tauri::command]
+pub fn recovery_check() -> Result<Vec<serde_json::Value>, AppError> {
+    let mut results = Vec::new();
+
+    // 1. 配置文件
+    let cfg_path = crate::config::config_path();
+    let cfg_ok = cfg_path.exists();
+    let cfg_detail = if cfg_ok {
+        cfg_path.to_string_lossy().to_string()
+    } else {
+        "缺失（将自动重建默认配置）".to_string()
+    };
+    results.push(serde_json::json!({
+        "name": "配置文件",
+        "ok": cfg_ok,
+        "detail": cfg_detail,
+    }));
+
+    // 2. 数据目录（记忆）
+    let data_path = crate::config::default_data_path();
+    let data_ok = std::path::Path::new(&data_path).exists();
+    let data_detail = if data_ok {
+        data_path.clone()
+    } else {
+        "尚未创建（首次使用属正常）".to_string()
+    };
+    results.push(serde_json::json!({
+        "name": "记忆数据目录",
+        "ok": data_ok,
+        "detail": data_detail,
+    }));
+
+    // 3. 记忆索引文件
+    let idx_path = std::path::Path::new(&data_path).join("index.json");
+    let idx_ok = idx_path.exists();
+    let idx_detail = if idx_ok {
+        let count = crate::memory::storage::read_all(&idx_path).map(|v| v.len()).unwrap_or(0);
+        format!("{} 条记忆", count)
+    } else {
+        "无索引（首次使用属正常）".to_string()
+    };
+    results.push(serde_json::json!({
+        "name": "记忆索引",
+        "ok": idx_ok,
+        "detail": idx_detail,
+    }));
+
+    // 4. 插件目录
+    let plugin_dir = std::env::var("APPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("ling-memoria/plugins"))
+        .unwrap_or_default();
+    let plugin_ok = plugin_dir.exists();
+    let plugin_detail = if plugin_ok {
+        plugin_dir.to_string_lossy().to_string()
+    } else {
+        "无插件（正常）".to_string()
+    };
+    results.push(serde_json::json!({
+        "name": "插件目录",
+        "ok": plugin_ok,
+        "detail": plugin_detail,
+    }));
+
+    // 5. 日志目录
+    let log_dir = std::env::var("APPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("ling-memoria/logs"))
+        .unwrap_or_default();
+    let log_ok = log_dir.exists();
+    let log_detail = if log_ok {
+        log_dir.to_string_lossy().to_string()
+    } else {
+        "无日志（正常）".to_string()
+    };
+    results.push(serde_json::json!({
+        "name": "日志目录",
+        "ok": log_ok,
+        "detail": log_detail,
+    }));
+
+    Ok(results)
+}
+
+/// 重置配置：备份损坏配置后重建默认配置（恢复窗口用）
+#[tauri::command]
+pub fn recovery_reset_config() -> Result<String, AppError> {
+    let cfg_path = crate::config::config_path();
+    if cfg_path.exists() {
+        // 备份为 config.json.bak-<时间戳>
+        let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
+        let bak = cfg_path.with_file_name(format!("config.json.bak-{}", ts));
+        std::fs::copy(&cfg_path, &bak).map_err(|e| AppError::ConfigError(e.to_string()))?;
+        let _ = std::fs::remove_file(&cfg_path);
+        log::warn!("[recovery] 已备份并重置配置：{}", bak.to_string_lossy());
+        Ok(format!("配置已备份到 {}，并重建默认配置", bak.to_string_lossy()))
+    } else {
+        Ok("配置文件不存在，无需重置".to_string())
+    }
+}

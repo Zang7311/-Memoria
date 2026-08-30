@@ -16,6 +16,12 @@ const masterPwd2 = ref('')
 const style = ref('daily')
 const msg = ref('')
 const busy = ref(false)
+// 折叠展开的模式（点击下划线人话展开技术说明）
+const modeExpanded = ref<string | null>(null)
+// 点人话展开技术说明（不切换模式）
+function toggleModeExpand(key: string) {
+  modeExpanded.value = modeExpanded.value === key ? null : key
+}
 
 // 形象风格预设：影响主题 / 语言浓度 / 自称 / 称呼
 const STYLES: Record<string, { label: string; emoji: string; theme: 'light' | 'dark'; mix: number; self: string; user: string; desc: string }> = {
@@ -93,6 +99,7 @@ async function finish() {
   <div class="onboard">
     <div class="onboard-card">
       <div class="logo">铃·记忆体</div>
+      <div class="slogan">我，与你交谈，为你存忆</div>
       <div class="subtitle">你的桌面猫娘伴侣，初次见面～</div>
 
       <!-- 步骤指示器 -->
@@ -112,23 +119,38 @@ async function finish() {
 
       <!-- 步 2：模式 + 主密码 -->
       <div v-else-if="step === 1" class="step-body">
-        <p class="hint">选择初始运行模式</p>
+        <p class="hint">选择铃的运行方式（之后随时可在设置里更改）</p>
         <div class="modes">
-          <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">
-            <div class="mode-icon">🧠</div>
-            <div class="mode-name">脚本模式</div>
-            <div class="mode-desc">无需配置，内置回复引擎，即开即用</div>
-          </div>
           <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">
             <div class="mode-icon">☁️</div>
-            <div class="mode-name">API 模式</div>
-            <div class="mode-desc">接入远程大模型（需地址 + 密钥）</div>
+            <div class="mode-name">云端AI<span class="mode-tag">推荐</span></div>
+            <div class="mode-tech">API 模式 · 需地址 + 密钥 · 联网</div>
+            <div class="mode-human" :class="{ open: modeExpanded === 'api' }" @click.stop="toggleModeExpand('api')">
+              <span v-if="modeExpanded !== 'api'" class="human-entry">人话 ▾</span>
+              <span v-else>像请了一位云端大脑，回复更聪明～</span>
+            </div>
           </div>
           <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">
             <div class="mode-icon">💻</div>
-            <div class="mode-name">本地模式</div>
-            <div class="mode-desc">调用本地模型（Ollama 等）</div>
+            <div class="mode-name">本地AI<span class="mode-tag">高级</span></div>
+            <div class="mode-tech">Ollama 本地模型 · 需先安装 · 离线可用</div>
+            <div class="mode-human" :class="{ open: modeExpanded === 'local' }" @click.stop="toggleModeExpand('local')">
+              <span v-if="modeExpanded !== 'local'" class="human-entry">人话 ▾</span>
+              <span v-else>模型跑在你自己电脑上，不吃网络～</span>
+            </div>
           </div>
+          <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">
+            <div class="mode-icon">📴</div>
+            <div class="mode-name">离线模式</div>
+            <div class="mode-tech">内置回复引擎 · 无需配置 · 基础聊天</div>
+            <div class="mode-human" :class="{ open: modeExpanded === 'script' }" @click.stop="toggleModeExpand('script')">
+              <span v-if="modeExpanded !== 'script'" class="human-entry">人话 ▾</span>
+              <span v-else>不用联网不用配置，即开即用～</span>
+            </div>
+          </div>
+        </div>
+        <div class="mode-legend">
+          点卡片上的 <span class="mode-legend-hint">下划线人话</span> 可展开人话解释
         </div>
 
         <div v-if="modelMode === 'api'" class="api-fields">
@@ -187,53 +209,81 @@ async function finish() {
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
   color: #2b2323;
 }
-.logo { font-size: 24px; font-weight: 800; color: #d4637f; }
-.subtitle { font-size: 13px; color: #8a8082; margin: 4px 0 18px; }
+.logo { font-size: var(--fs-24); font-weight: 800; color: #d4637f; }
+.slogan { margin-top: 4px; font-size: var(--fs-13); color: #a86a8a; letter-spacing: 1px; }
+.subtitle { font-size: var(--fs-13); color: #8a8082; margin: 4px 0 18px; }
 .steps { display: flex; gap: 8px; margin-bottom: 20px; }
 .step { display: flex; align-items: center; gap: 6px; flex: 1; }
 .dot {
   width: 22px; height: 22px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: #eee; color: #aaa; font-size: 12px; font-weight: 700;
+  background: #eee; color: #aaa; font-size: var(--fs-12); font-weight: 700;
 }
-.step.active .dot { background: #ff7a94; color: #fff; }
-.step.done .dot { background: #7bc47f; color: #fff; }
-.stitle { font-size: 12px; color: #8a8082; }
+.step.active .dot { background: var(--accent); color: var(--text-user); }
+.step.done .dot { background: #7bc47f; color: var(--text-user); }
+.stitle { font-size: var(--fs-12); color: #8a8082; }
 .step.active .stitle { color: #d4637f; font-weight: 600; }
 .step-body { min-height: 220px; }
-.hint { font-size: 13px; color: #8a8082; margin: 0 0 10px; }
+.hint { font-size: var(--fs-13); color: #8a8082; margin: 0 0 10px; }
 .input {
   padding: 9px 12px; border-radius: 9px; border: 1px solid #ddd;
-  font-size: 13px; width: 100%; box-sizing: border-box; margin-bottom: 8px;
+  font-size: var(--fs-13); width: 100%; box-sizing: border-box; margin-bottom: 8px;
 }
 .input.full { width: 100%; }
 .pwd-row { display: flex; gap: 8px; }
-.path-preview { font-size: 12px; color: #7bc47f; margin-top: 4px; }
-.warn { color: #d9534f; font-size: 12px; margin-top: 4px; }
+.path-preview { font-size: var(--fs-12); color: #7bc47f; margin-top: 4px; }
+.warn { color: var(--danger); font-size: var(--fs-12); margin-top: 4px; }
 .modes { display: flex; gap: 10px; }
 .mode {
   flex: 1; border: 2px solid #eee; border-radius: 12px; padding: 12px;
   cursor: pointer; transition: all 0.15s; text-align: center;
 }
-.mode.sel { border-color: #ff7a94; background: #fff0f5; }
-.mode-icon { font-size: 24px; }
+.mode.sel { border-color: var(--accent); background: #fff0f5; }
+.mode-icon { font-size: var(--fs-24); }
 .mode-name { font-weight: 700; margin: 6px 0 4px; }
-.mode-desc { font-size: 11px; color: #8a8082; }
+.mode-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;
+  font-size: var(--fs-10); font-weight: 600; background: var(--accent); color: #fff;
+  vertical-align: 2px;
+}
+.mode-tech {
+  margin: 2px auto 6px;
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 90%;
+}
+.mode-human {
+  font-size: var(--fs-11);
+  color: #8a8082;
+  cursor: help;
+  transition: color 0.15s;
+  display: block;
+}
+.human-entry {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  opacity: 0.8;
+}
+.mode-human.open { color: var(--accent); }
+.mode-human:hover .human-entry, .mode-human.open .human-entry { color: var(--accent); }
+.mode-legend { font-size: var(--fs-10); color: var(--text-secondary); margin-top: 6px; text-align: center; }
+.mode-legend-hint { text-decoration: underline dotted; text-underline-offset: 2px; }
 .api-fields { margin-top: 12px; }
 .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .style {
   border: 2px solid #eee; border-radius: 12px; padding: 14px; cursor: pointer; text-align: center;
 }
-.style.sel { border-color: #ff7a94; background: #fff0f5; }
-.style-emoji { font-size: 26px; }
+.style.sel { border-color: var(--accent); background: #fff0f5; }
+.style-emoji { font-size: var(--fs-26); }
 .style-name { font-weight: 700; margin: 4px 0; }
-.style-desc { font-size: 11px; color: #8a8082; }
-.msg { color: #d9534f; font-size: 13px; margin-top: 10px; }
+.style-desc { font-size: var(--fs-11); color: #8a8082; }
+.msg { color: var(--danger); font-size: var(--fs-13); margin-top: 10px; }
 .nav { display: flex; justify-content: space-between; margin-top: 20px; }
 .btn {
-  padding: 9px 20px; border-radius: 10px; border: none; cursor: pointer; font-size: 14px; font-weight: 600;
+  padding: 9px 20px; border-radius: 10px; border: none; cursor: pointer; font-size: var(--fs-14); font-weight: 600;
 }
-.btn.primary { background: #ff7a94; color: #fff; }
+.btn.primary { background: var(--accent); color: var(--text-user); }
 .btn.ghost { background: #eee; color: #555; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

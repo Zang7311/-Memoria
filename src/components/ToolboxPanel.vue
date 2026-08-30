@@ -4,6 +4,7 @@
 import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useSettingStore } from '../stores/settingStore'
+import { useMilestoneStore } from '../stores/milestoneStore'
 import { assetUrl, checkDependency, decodeQrcode, generateQrcode, ocrImage, openUrl } from '../utils/tauri'
 import type { ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
@@ -11,12 +12,54 @@ import RegexTester from './RegexTester.vue'
 
 const desktop = useDesktopStore()
 const setting = useSettingStore()
+const milestone = useMilestoneStore()
 
 // 关闭工具箱（父组件监听后隐藏）
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const executingId = ref<string | null>(null)
 const feedback = ref<{ ok: boolean; text: string } | null>(null)
+// —— D 批次：执行中"铃正在努力"动态提示 ——
+const executingText = ref<string | null>(null)
+const phaseText = ref<string | null>(null) // 真实阶段文本（有阶段输出的工具用）
+const phaseDots = ref('')
+let phaseTimer: ReturnType<typeof setInterval> | undefined
+// —— 格式化硬盘预填盘符（双确认后跳过通用输入框）——
+const formatDiskInput = ref<string | null>(null)
+// —— P2：错误恢复动作（失败弹窗的"下一步"建议）——
+const errorActions = ref<{ label: string; url?: string; kind: 'url' | 'hint' | 'admin' }[]>([])
+function buildErrorActions(title: string, text: string): { label: string; url?: string; kind: 'url' | 'hint' | 'admin' }[] {
+  const t = (title + ' ' + text).toLowerCase()
+  const acts: { label: string; url?: string; kind: 'url' | 'hint' | 'admin' }[] = []
+  // 常见命令缺失
+  if (/\b(ffmpeg|python|javac?|node|git|winget|ollama|tesseract|python3)\b/.test(t) && /(not recognized|not found|找不到|无法识别|未找到|no such|command not)/.test(t)) {
+    acts.push({ label: '查看安装教程', url: 'https://www.bing.com/search?q=Windows+安装+FFmpeg+教程', kind: 'url' })
+    acts.push({ label: '回工具箱重新检查', kind: 'hint' })
+  }
+  // 权限不足
+  if (/(access denied|denied|拒绝访问|权限不足|requires elevation|administrator)/.test(t)) {
+    acts.push({ label: '以管理员身份运行重试', kind: 'admin' })
+  }
+  // 文件/路径不存在
+  if (/(no such file|does not exist|找不到文件|路径不存在|无法找到)/.test(t)) {
+    acts.push({ label: '检查输入的路径是否正确', kind: 'hint' })
+  }
+  // 网络失败
+  if (/(timed? ?out|connection refused|网络|无法连接|failed to connect|离线)/.test(t)) {
+    acts.push({ label: '检查网络或代理后重试', kind: 'hint' })
+  }
+  return acts
+}
+function doErrorAction(a: { label: string; url?: string; kind: 'url' | 'hint' | 'admin' }) {
+  if (a.kind === 'url' && a.url) {
+    openGuideUrl(a.url)
+  } else if (a.kind === 'admin') {
+    showOutput.value = false
+    alert('请关闭本软件，右键「铃·记忆体.exe」→「以管理员身份运行」，再重试此工具。')
+  } else {
+    showOutput.value = false
+  }
+}
 // —— 像素画板（批次3，前端组件）——
 const showPixelArt = ref(false)
 // —— 正则测试器（批次4，前端组件）——
@@ -76,6 +119,16 @@ async function recheckDep() {
 
 async function runItem(item: ToolboxItem) {
   if (executingId.value) return
+  // 格式化硬盘：毁灭性操作，双确认（输入盘符 + 确认不可恢复）
+  if (item.id === 'format-disk') {
+    const drv = prompt('⚠️ 格式化硬盘（不可恢复！）\n\n输入要格式化的盘符（单个字母，如 D）：', 'D')
+    if (drv === null) return
+    const ok = confirm(`⚠️ 再次确认：将格式化 ${drv.trim().replace(/:$/, '')}: 盘\n该操作会删除磁盘上所有数据，且无法恢复！\n\n确定继续吗？`)
+    if (!ok) return
+    // 直接执行（命令内部读 TOOLBOX_INPUT），不再弹通用输入框
+    formatDiskInput.value = drv.trim().replace(/:$/, '')
+    item = { ...item, needs_input: true }
+  }
   // WiFi 密码工具：提前声明（仅解自己的 + 不上传）
   if (item.id === 'wifi-pwd') {
     const ok = confirm(
@@ -165,15 +218,28 @@ async function runItem(item: ToolboxItem) {
     }
     return
   }
-  // 需要输入参数的工具：先弹输入框
+  // 需要输入参数的工具：先弹输入框（格式化硬盘已双确认预填，跳过）
   let input: string | undefined
   if (item.needs_input) {
-    const v = window.prompt(item.input_label || `请输入「${item.name}」所需参数：`, item.input_placeholder || '')
-    if (v === null) return // 用户取消
-    input = v
+    if (formatDiskInput.value !== null) {
+      input = formatDiskInput.value
+      formatDiskInput.value = null
+    } else {
+      const v = window.prompt(item.input_label || `请输入「${item.name}」所需参数：`, item.input_placeholder || '')
+      if (v === null) return // 用户取消
+      input = v
+    }
   }
   executingId.value = item.id
-  feedback.value = null
+  // —— 过程感（P1 + D）：开始语 → 执行中"铃正在努力"动态提示 ——
+  feedback.value = { ok: true, text: `铃：好的，帮你执行「${item.name}」～` }
+  // 执行中提示（真实阶段数据暂缺时用动态努力语；有阶段输出的工具走 toolPhase）
+  phaseText.value = null
+  executingText.value = `铃正在努力${phaseDots.value}`
+  phaseTimer = setInterval(() => {
+    phaseDots.value = phaseDots.value.length >= 3 ? '' : phaseDots.value + '。'
+    if (executingText.value) executingText.value = `铃正在努力${phaseDots.value}`
+  }, 500)
   // —— 统一依赖检查（工具声明 dependencies，未装则弹引导后返回）——
   for (const depId of item.dependencies || []) {
     try {
@@ -190,6 +256,11 @@ async function runItem(item: ToolboxItem) {
   }
   const result = await desktop.executeToolboxItem(item.id, input)
   executingId.value = null
+  // 清理执行中动态提示
+  if (phaseTimer) { clearInterval(phaseTimer); phaseTimer = undefined }
+  executingText.value = null
+  phaseText.value = null
+  phaseDots.value = ''
   // 依赖缺失检测：输出含依赖关键词 → 弹安装引导（自动提示下载方法）
   const dep = detectDependency((result?.output || '') + ' ' + (result?.error || ''))
   if (dep) {
@@ -197,22 +268,31 @@ async function runItem(item: ToolboxItem) {
     showDepGuide.value = true
   }
   if (result?.error) {
-    feedback.value = { ok: false, text: result.error }
+    feedback.value = { ok: false, text: `✗ ${item.name} 没有完成` }
     // 失败也弹窗显示完整原因
     outputTitle.value = `✗ ${item.name} · 失败`
     outputContent.value = result.error
+    // P2：错误恢复——按错误类型生成"下一步"动作
+    errorActions.value = buildErrorActions(item.name, result.error)
     showOutput.value = true
   } else if (result?.output) {
-    feedback.value = { ok: true, text: `✓ ${item.name} 已执行（点查看输出）` }
+    feedback.value = { ok: true, text: `✓ ${item.name} 完成啦（点查看输出）` }
     // 有输出则弹独立窗口完整展示，避免顶部小区域视觉盲区
     outputTitle.value = `📄 ${item.name} · 输出`
     outputContent.value = result.output
+    errorActions.value = []
     showOutput.value = true
   } else {
-    feedback.value = { ok: true, text: `✓ ${item.name} 已执行` }
+    feedback.value = { ok: true, text: `✓ ${item.name} 完成啦` }
+    errorActions.value = []
   }
-  // 反馈 4 秒后消失（不影响弹窗）
-  setTimeout(() => (feedback.value = null), 4000)
+  // P3：第一次使用工具箱里程碑（幂等）+ 每日日记工具计数
+  if (!result?.error) {
+    milestone.record('first_toolbox', '第一次使用铃的工具箱').catch(() => {})
+    milestone.recordTool(item.name).catch(() => {})
+  }
+  // 反馈 6 秒后消失（开始语+完成语周期，不影响弹窗）
+  setTimeout(() => (feedback.value = null), 6000)
 }
 
 // —— 添加 ——
@@ -264,7 +344,7 @@ async function confirmDelete() {
     <!-- 正则测试器（批次4，全屏遮罩） -->
     <RegexTester v-if="showRegex" @close="showRegex = false" />
     <div class="panel-header">
-      <span class="panel-title">工具箱</span>
+      <span class="panel-title">铃的工具箱<span class="title-sub">（{{ desktop.toolboxItems.length }} 个工具）</span></span>
       <div class="header-btns">
         <button class="add-btn" title="添加工具" @click="openAdd">＋</button>
         <button class="close-btn" title="关闭工具箱" @click="emit('close')">✕</button>
@@ -274,6 +354,12 @@ async function confirmDelete() {
     <!-- 执行反馈 -->
     <div v-if="feedback" class="feedback" :class="feedback.ok ? 'ok' : 'err'">
       {{ feedback.text }}
+    </div>
+    <!-- D 批次：执行中动态提示（铃正在努力…） -->
+    <div v-if="executingText" class="executing-hint">
+      <span class="exec-spinner">⏳</span>
+      <span class="exec-text">{{ executingText }}</span>
+      <span v-if="phaseText" class="exec-phase">{{ phaseText }}</span>
     </div>
 
     <!-- 九宫格 -->
@@ -301,6 +387,13 @@ async function confirmDelete() {
         <div class="modal-title">{{ outputTitle }}</div>
         <img v-if="qrImageUrl && outputTitle.includes('二维码生成')" :src="qrImageUrl" class="qr-preview" alt="二维码预览" />
         <pre class="output-pre">{{ outputContent }}</pre>
+        <!-- P2：错误恢复动作（仅失败时显示） -->
+        <div v-if="errorActions.length > 0" class="error-actions">
+          <span class="error-actions-title">💡 可以试试：</span>
+          <button v-for="(a, i) in errorActions" :key="i" class="btn action-btn" @click="doErrorAction(a)">
+            {{ a.label }}
+          </button>
+        </div>
         <div class="modal-actions">
           <button class="btn confirm" @click="showOutput = false">关闭</button>
         </div>
@@ -386,16 +479,17 @@ async function confirmDelete() {
 .header-btns { display: flex; gap: 6px; }
 .panel-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
+.title-sub { font-size: var(--fs-11); color: var(--text-secondary); font-weight: 400; margin-left: 4px; }
 .add-btn {
   width: 26px;
   height: 26px;
   border-radius: 8px;
   border: none;
   background: var(--accent, #ff7a94);
-  color: #fff;
-  font-size: 16px;
+  color: var(--text-user);
+  font-size: var(--fs-16);
   cursor: pointer;
 }
 .close-btn {
@@ -405,22 +499,52 @@ async function confirmDelete() {
   border: none;
   background: rgba(128, 128, 128, 0.2);
   color: var(--text-main, #eee6e7);
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1;
   cursor: pointer;
 }
-.close-btn:hover { background: rgba(255, 107, 107, 0.35); color: #ff8b8b; }
+.close-btn:hover { background: var(--danger-bg); color: var(--danger); }
 .feedback {
+  flex-shrink: 0; /* 防止被九宫格挤压，保证文字完整显示 */
+  min-height: 32px;
+  display: flex;
+  align-items: center;
   margin-bottom: 8px;
   padding: 6px 10px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   word-break: break-all;
-  max-height: 60px;
-  overflow: auto;
+  max-height: 80px;
+  overflow-y: auto;
 }
-.feedback.ok { background: rgba(90, 200, 120, 0.18); color: #7fd99a; }
-.feedback.err { background: rgba(255, 107, 107, 0.18); color: #ff8b8b; }
+.feedback.ok { background: var(--success-bg); color: var(--success); }
+.feedback.err { background: var(--danger-bg); color: var(--danger); }
+/* —— D 批次：执行中"铃正在努力"动态提示 —— */
+.executing-hint {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(255, 122, 148, 0.08);
+  border: 1px solid rgba(255, 122, 148, 0.2);
+  font-size: var(--fs-12);
+  color: var(--text-main);
+  min-height: 32px;
+}
+.exec-spinner {
+  display: inline-block;
+  animation: exec-rotate 1s linear infinite;
+  font-size: var(--fs-13);
+}
+.exec-text { color: var(--accent, #ff7a94); font-weight: 500; }
+.exec-phase { color: var(--text-secondary); font-size: var(--fs-11); }
+@keyframes exec-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -451,11 +575,11 @@ async function confirmDelete() {
 .cell.running { opacity: 0.6; }
 .cell.disabled { opacity: 0.4; }
 .cell-icon {
-  font-size: 32px;
+  font-size: var(--fs-32);
   line-height: 1;
 }
 .cell-name {
-  font-size: 13px;
+  font-size: var(--fs-13);
   text-align: center;
   word-break: break-all;
 }
@@ -463,16 +587,16 @@ async function confirmDelete() {
   position: absolute;
   top: 4px;
   right: 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .loading-cell {
   color: var(--text-secondary, #9a9294);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .panel-footer {
   margin-top: 10px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-secondary, #9a9294);
 }
 .modal-mask {
@@ -498,6 +622,34 @@ async function confirmDelete() {
 }
 .modal.small { width: 240px; }
 .output-modal { width: 560px; max-width: 90vw; }
+/* P2：错误恢复动作栏 */
+.error-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 152, 0, 0.08);
+  border: 1px solid rgba(255, 152, 0, 0.25);
+}
+.error-actions-title {
+  font-size: var(--fs-12);
+  color: var(--warning, #f0ad4e);
+  font-weight: 600;
+}
+.action-btn {
+  font-size: var(--fs-11);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.action-btn:hover { border-color: var(--accent, #ff7a94); color: var(--accent, #ff7a94); }
 .qr-preview {
   display: block;
   margin: 0 auto 12px;
@@ -506,7 +658,7 @@ async function confirmDelete() {
   border-radius: 8px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   image-rendering: pixelated;
-  background: #fff;
+  background: #ffffff; /* 输出预览区固定白色 */
 }
 .output-pre {
   margin: 0 0 12px;
@@ -517,7 +669,7 @@ async function confirmDelete() {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 8px;
   font-family: Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.6;
   color: var(--text-main, #eee6e7);
   white-space: pre-wrap;
@@ -533,7 +685,7 @@ async function confirmDelete() {
 }
 .field span {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-secondary, #9a9294);
   margin-bottom: 4px;
 }
@@ -546,17 +698,17 @@ async function confirmDelete() {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
   background: var(--input-bg, #2a272b);
   color: var(--text-main, #eee6e7);
-  font-size: 13px;
+  font-size: var(--fs-13);
   resize: vertical;
 }
 .editor-error {
-  color: #ff8b8b;
-  font-size: 12px;
+  color: var(--danger);
+  font-size: var(--fs-12);
   margin-bottom: 10px;
 }
 .dep-box { text-align: left; }
-.dep-title { margin: 0 0 10px; color: var(--text-main, #eee); font-size: 16px; }
-.dep-hint { margin: 0 0 8px; color: var(--text-secondary, #aaa); font-size: 13px; }
+.dep-title { margin: 0 0 10px; color: var(--text-main, #eee); font-size: var(--fs-16); }
+.dep-hint { margin: 0 0 8px; color: var(--text-secondary, #aaa); font-size: var(--fs-13); }
 .dep-install {
   margin: 0 0 14px;
   padding: 10px 12px;
@@ -564,7 +716,7 @@ async function confirmDelete() {
   background: rgba(128, 128, 128, 0.12);
   color: var(--text-main, #eee);
   font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--fs-12);
   word-break: break-all;
   white-space: pre-wrap;
 }
@@ -579,9 +731,9 @@ async function confirmDelete() {
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .btn.cancel { background: rgba(128, 128, 128, 0.2); color: var(--text-main); }
-.btn.confirm { background: var(--accent, #ff7a94); color: #fff; }
-.btn.danger { background: #d9534f; color: #fff; }
+.btn.confirm { background: var(--accent, #ff7a94); color: var(--text-user); }
+.btn.danger { background: var(--danger); color: var(--text-user); }
 </style>

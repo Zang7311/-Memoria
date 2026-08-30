@@ -528,6 +528,9 @@ pub struct AppConfig {
     /// 主色 accent（十六进制，如 #ff7a94）
     #[serde(default)]
     pub accent_color: Option<String>,
+    /// 危险/错误色 danger（十六进制，如 #ff453a；不设置则随主题/主色联动）
+    #[serde(default)]
+    pub danger_color: Option<String>,
     /// 主界面背景色（十六进制）
     #[serde(default)]
     pub bg_color: Option<String>,
@@ -572,6 +575,8 @@ pub struct UiThemePreset {
     pub name: String,
     #[serde(default)]
     pub accent_color: String,
+    #[serde(default)]
+    pub danger_color: Option<String>,
     #[serde(default)]
     pub bg_color: String,
     #[serde(default)]

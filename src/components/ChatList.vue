@@ -27,7 +27,9 @@ watch(
 <template>
   <div ref="scrollRef" class="chat-list">
     <div v-if="chat.messages.length === 0" class="empty-hint">
-      <p>和铃说点什么吧～</p>
+      <p class="empty-slogan">我，与你交谈，为你存忆</p>
+      <p class="empty-sub">你好，我是铃～可以陪你聊天，也可以帮你打理电脑。</p>
+      <p class="empty-tip">试试对我说「你好」或「铃，清理一下内存」</p>
     </div>
     <template v-for="msg in chat.messages" :key="msg.id">
       <ChatBubble :message="msg" />
@@ -49,8 +51,25 @@ watch(
   text-align: center;
   color: var(--text-secondary, #aaa);
 }
+.empty-slogan {
+  font-size: var(--fs-20);
+  font-weight: 600;
+  color: var(--accent, #ff7a94);
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+}
+.empty-sub {
+  font-size: var(--fs-13);
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 8px;
+}
+.empty-tip {
+  font-size: var(--fs-12);
+  color: var(--text-secondary, #888);
+  opacity: 0.8;
+}
 .empty-hint .paw {
-  font-size: 40px;
+  font-size: var(--fs-40);
   display: block;
   margin-bottom: 8px;
 }

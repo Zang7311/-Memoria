@@ -10,6 +10,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
+import { useMilestoneStore } from '../stores/milestoneStore'
 import { sendMessage, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
 import type { ChatUsage, QuickCommand } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
@@ -22,6 +23,7 @@ export function useStreamRender() {
   const setting = useSettingStore()
   const desktop = useDesktopStore()
   const quickCmd = useQuickCommandStore()
+  const milestone = useMilestoneStore()
   const unlisteners = ref<UnlistenFn[]>([])
   // 当前正在流式的消息 id
   let activeId: string | null = null
@@ -95,6 +97,9 @@ export function useStreamRender() {
   // 发送一条消息：追加用户消息 -> 创建空的铃回复 -> 触发后端/ mock 流式
   async function send(content: string, depth = 2) {
     if (chat.isLoading) return
+    // P3：每日日记——记录聊天（当日累积句数+话题）；第一次聊天顺带记里程碑（幂等）
+    milestone.recordChat(content).catch(() => {})
+    milestone.record('first_chat', '和铃说的第一句话').catch(() => {})
     // 确保有活跃会话（多会话模式下首次发送前自动建一个）
     if (!chat.activeSessionId) {
       await chat.createSession()
@@ -177,7 +182,7 @@ export function useStreamRender() {
     }
 
     try {
-      await sendMessage(content, depth)
+      await sendMessage(content, depth, chat.activeSessionId)
     } catch (e) {
       // 后端未实现或 IPC 异常：退化为 mock，保证 UI 可演示
       console.warn('[send_message] 调用失败，回退 mock：', e)
