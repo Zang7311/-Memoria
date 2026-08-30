@@ -1,36 +1,125 @@
 # 铃·记忆体（Memoria）
 
-Windows 桌面猫娘伴侣 —— 离线优先，具备对话、记忆、屏幕感知、本地 AI 推理能力。
+> 我，与你交谈，为你存忆。
 
-技术栈：**Tauri 2 + Rust + Vue 3 + TypeScript + Pinia + Vite**（原生 CSS，不引入大型 UI 库）。
+**铃·记忆体** 是一款开源、离线优先的 **Windows 桌面猫娘伴侣**。她不只是一个聊天 AI——她会记住你、看懂屏幕、调用 49 个系统工具、在局域网设备间同步记忆，真正"生活"在你的电脑里。
 
-## 环境要求
+第一眼，她是"我的铃"；相处久了你会发现，她还能帮你管理电脑。
 
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.4.6-ff7a94" alt="version">
+  <img src="https://img.shields.io/badge/platform-Windows-blue" alt="platform">
+  <img src="https://img.shields.io/badge/license-open--source-green" alt="license">
+  <img src="https://img.shields.io/badge/offline--first-yes-success" alt="offline-first">
+</p>
+
+---
+
+## ✨ 核心特性
+
+| 能力 | 说明 |
+|------|------|
+| 💬 对话 | 三种模式：云端 API（DeepSeek / OpenAI 兼容）/ 本地 Ollama / 离线内置文库；4 种人格（日常/中二/治愈/涩涩）；思考深度 4 档；流式打字机输出 |
+| 🧠 记忆 | 长期记忆自动写入，本地 JSON 存储；**记忆中心**（分类筛选 / 批量删除 / 标重要 / 编辑 / 容量统计 / 重复检测）；6 类自动分类；主密码加密（PBKDF2 + AES-256-GCM）；记忆透明页、可看可改可删 |
+| 🧰 工具箱 | **49 个工具**（系统/网络/性能/文件安全/媒体/二维码/OCR/开发环境等），危险操作执行前确认 |
+| 🔌 插件 | 纯 Rust JS 引擎（boa_engine）；安装时强制权限确认（最小权限原则） |
+| 🔄 同步 | 局域网多设备同步（UDP 发现 + TCP 传输 + AES 加密 + SHA-256 校验），增量同步、冲突策略、跨版本兼容 |
+| 📟 快捷指令 | 自定义组合指令（如"晚安模式"），一条指令按序执行一串动作，聊天里说指令名直接触发 |
+| 📷 OCR / 二维码 | OCR 双引擎（Windows 内置优先，Tesseract 降级）；二维码生成/识别（纯 Rust，离线可用） |
+| 🖥️ 系统集成 | 系统托盘 / 悬浮球 / 屏幕监测+气泡 / 全局快捷键 / 开机自启 / 管理员自选 |
+| 🎨 外观 | 主色/背景图/头像/圆角/气泡色自定义（软件内选图）；多套主题；SVG 矢量图标；Emoji 三级开关 |
+| 💝 陪伴 | 陪伴日记（1-3 天一记）；特殊事件集（节日祝福 8 + 陪伴里程碑 7/30/100/365 + 关键词彩蛋 10） |
+| 🛟 兜底 | 救援模式（--recovery）；诊断报告导出；DependencyManager 统一依赖引导 |
+
+## 📊 一图速览
+
+- **离线文库**：1656 条回复，21 个分组（日常/安慰/吐槽/撒娇/日语/古风/情话…）
+- **记忆分类**：兴趣爱好 / 工作学习 / 健康生活 / 家庭亲友 / 设备网络 / 日常对话
+- **单测**：76 passed / 0 failed
+
+---
+
+## 🛠️ 技术栈
+
+**Tauri 2 + Rust + Vue 3 + TypeScript + Pinia + Vite**（原生 CSS，不引入大型 UI 库）
+
+- 后端：Rust（Tauri 2、reqwest、tokio、boa_engine JS 插件引擎、aes-gcm、qrcode/rqrr）
+- 前端：Vue 3 + Pinia + vue-router，pnpm 管理依赖
+
+## 📦 环境要求
+
+- Windows 10/11（x64）
 - Node.js 18+ 与 pnpm
 - Rust（最新稳定版，含 Cargo）
 
-## 启动开发
+## 🚀 快速开始
 
 ```bash
-pnpm install      # 安装依赖
-pnpm tauri dev    # 启动 Tauri 开发窗口
+# 1. 安装依赖
+pnpm install
+
+# 2. 启动开发窗口
+pnpm tauri dev
 ```
 
 首次运行会编译 Rust 后端，耗时较长属正常现象。
 
-## 目录结构
+### 打包
 
-```
-src/
-├── components/        组件（后续填充）
-├── views/             页面（MainLayout / SettingView）
-├── stores/            Pinia Store（chat / memory / setting）
-├── utils/tauri.ts     Tauri IPC 封装
-├── types/index.ts     全局类型定义
-└── App.vue            根组件（验证 greet IPC）
-src-tauri/            Rust 后端（greet 命令在此）
+```bash
+# 生成 NSIS 安装包 + MSI 安装包
+pnpm tauri build --bundles nsis msi
 ```
 
-## 验证
+产物在 `src-tauri/target/release/bundle/` 下。
 
-启动后窗口应显示「你好，主人！铃已经准备好了。」—— 表示前后端 IPC 通信正常。
+## 🧪 验证
+
+```bash
+pnpm run build          # 前端构建（vue-tsc + vite）
+cd src-tauri && cargo check      # 后端检查
+cd src-tauri && cargo test --lib # 单元测试
+```
+
+## 📁 目录结构
+
+```
+src/                        # 前端
+├── components/             组件（ChatBubble / ToolboxPanel / SyncPanel / MemoryPanel / …）
+├── views/                  页面（MainLayout / SettingView / RecoveryView）
+├── stores/                 Pinia Store（chat / memory / setting / sync / …）
+├── utils/tauri.ts          Tauri IPC 封装
+└── types/index.ts          全局类型定义
+src-tauri/                  # Rust 后端
+├── src/
+│   ├── commands/           Tauri 命令层
+│   ├── engine/             对话引擎（script / api / local）
+│   ├── memory/             记忆系统 + 分类引擎
+│   ├── sync/               局域网同步（发现/传输/冲突/加密）
+│   ├── plugin/             插件系统（boa_engine）
+│   ├── update/             GitHub 更新检查
+│   └── config/             配置中心（加密 / 存储 / 迁移）
+└── resources/              内置资源（工具箱预设 / 离线文库 / 插件）
+```
+
+## 🔐 隐私与数据
+
+- 所有记忆**只保存在本机**，不上传云端
+- 数据目录：`~/.铃记忆体/`（配置 + 记忆 + 图片资源）
+- 记忆主密码加密可选（PBKDF2-SHA256 10 万次 → AES-256-GCM）
+- 三条代码契约：密钥唯一、配置唯一、记忆写锁唯一
+
+## 🏷️ 版本历史
+
+| 版本 | 内容 |
+|------|------|
+| v0.4.6 | 修复同步设备发现（UDP 广播响应器）+ 更新检查（代理支持 + 失败如实提示） |
+| v0.4.5 | 记忆中心大项目第二阶段：特殊事件集 + 能力面板 + 记忆×工具联动 |
+| v0.4.0 | 快捷指令 / 二维码 / OCR 双引擎 / 依赖管理器 / MSI 打包修复 / 旧数据迁移 / 主题系统 |
+| v0.3.0 | 核心对话 + 记忆 + 工具箱批次 |
+
+完整历史见 [Releases](https://github.com/Zang7311/-Memoria/releases)。
+
+## 📄 License
+
+开源项目，欢迎 Star / Fork / 提 Issue。
