@@ -83,6 +83,8 @@ async fn generate_and_emit(
                             timestamp: m.timestamp.clone(),
                             tags: None,
                             summary: None,
+                            category: Some(crate::memory::category::classify(&m.content)),
+                            use_count: 0,
                         });
                     }
                     log::info!("[send_message] 会话 {sid} 上下文 {0} 条", ctx.len());

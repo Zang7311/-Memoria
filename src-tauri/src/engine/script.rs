@@ -298,6 +298,8 @@ pub fn to_memory(id: &str, reply: &str) -> Memory {
         timestamp: crate::utils::now_str(),
         tags: None,
         summary: None,
+        category: None,
+        use_count: 0,
     }
 }
 

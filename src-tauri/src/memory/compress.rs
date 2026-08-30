@@ -1,4 +1,4 @@
-// 《铃·记忆体》记忆自动压缩（memory/compress.rs）
+﻿// 《铃·记忆体》记忆自动压缩（memory/compress.rs）
 // 当一个记忆集超过阈值（默认 20 条）时，将最早的一批合并为一条“摘要记忆”。
 // 摘要生成：优先调用对话引擎摘要 API；不可用时用简单拼接。
 // 压缩后删除被合并的原记忆，写入新的摘要记忆（需获取写锁）。
@@ -72,6 +72,8 @@ pub fn maybe_compress(index_path: &PathBuf, set_name: Option<&str>) -> Result<()
         timestamp: crate::utils::now_str(),
         tags: Some(vec!["summary".to_string()]),
         summary: Some(summary_text),
+        category: None,
+        use_count: 0,
     };
 
     // 移除被合并的普通记忆，插入摘要记忆
@@ -104,6 +106,8 @@ mod tests {
             timestamp: String::new(),
             tags: None,
             summary: None,
+                    category: None,
+            use_count: 0,
         }
     }
 
@@ -133,6 +137,8 @@ mod tests {
             timestamp: ts.to_string(),
             tags: None,
             summary: None,
+                    category: None,
+            use_count: 0,
         }
     }
 

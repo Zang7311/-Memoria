@@ -86,6 +86,8 @@ mod tests {
             timestamp: String::new(),
             tags: None,
             summary: None,
+            category: None,
+            use_count: 0,
         }
     }
 

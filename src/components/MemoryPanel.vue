@@ -22,8 +22,10 @@ interface DayGroup {
   items: Memory[]
 }
 const groups = computed<DayGroup[]>(() => {
+  // 记忆中心：按分类筛选后的列表分组
+  const list = store.filteredMemories
   const map = new Map<string, Memory[]>()
-  for (const m of store.memories) {
+  for (const m of list) {
     const date = (m.timestamp || '').slice(0, 10) || '未知日期'
     if (!map.has(date)) map.set(date, [])
     map.get(date)!.push(m)
@@ -86,6 +88,23 @@ function onDelete(m: Memory) {
   }
 }
 
+// 编辑（记忆中心：改内容后重新分类）
+function onEdit(m: Memory) {
+  const newContent = prompt('编辑这条记忆：', m.content)
+  if (newContent !== null && newContent.trim() && newContent !== m.content) {
+    store.editMemory(m.id, newContent.trim())
+  }
+}
+
+// 批量删除（带确认）
+function batchDelete() {
+  const n = store.selectedIds.size
+  if (n === 0) return
+  if (confirm(`确定删除选中的 ${n} 条记忆吗？`)) {
+    store.deleteSelected()
+  }
+}
+
 // 收藏
 function onMark(m: Memory) {
   store.markImportant(m.id)
@@ -122,6 +141,7 @@ async function onCreateSet() {
 onMounted(() => {
   store.loadSets()
   store.loadMemories()
+  store.loadStats()
 })
 </script>
 
@@ -188,6 +208,36 @@ onMounted(() => {
         <div class="privacy-hint">🔒 本机存储 · 不上传 · 可随时删除</div>
       </div>
 
+      <!-- 记忆中心（大项目）：容量 + 分类筛选 + 批量操作 -->
+      <div class="center-bar">
+        <div v-if="store.stats" class="cap-row">
+          <span class="cap-item">🧠 {{ store.stats.total }} 条</span>
+          <span class="cap-item">💾 {{ store.stats.size_mb.toFixed(1) }} MB</span>
+          <span v-if="store.stats.duplicate_count > 0" class="cap-item warn" :title="'发现 ' + store.stats.duplicate_count + ' 条重复记忆'">⚠️ 重复 {{ store.stats.duplicate_count }}</span>
+        </div>
+        <!-- 分类标签 -->
+        <div class="cat-bar">
+          <button class="cat-chip" :class="{ on: store.categoryFilter === '' }" @click="store.setCategory('')">全部</button>
+          <button
+            v-for="c in store.stats?.categories.slice(0, 6) || []"
+            :key="c.name"
+            class="cat-chip"
+            :class="{ on: store.categoryFilter === c.name }"
+            @click="store.setCategory(store.categoryFilter === c.name ? '' : c.name)"
+          >
+            {{ c.name }}({{ c.count }})
+          </button>
+        </div>
+        <!-- 批量操作条 -->
+        <div v-if="store.selectedIds.size > 0" class="batch-bar">
+          <span class="batch-count">已选 {{ store.selectedIds.size }} 条</span>
+          <button class="batch-btn" @click="store.markSelectedImportant(true)">⭐ 标重要</button>
+          <button class="batch-btn" @click="store.markSelectedImportant(false)">取消重要</button>
+          <button class="batch-btn danger" @click="batchDelete">🗑 删除</button>
+          <button class="batch-btn" @click="store.selectedIds = new Set()">取消</button>
+        </div>
+      </div>
+
       <!-- 搜索框 -->
       <div class="search-box">
         <input
@@ -212,11 +262,20 @@ onMounted(() => {
             v-for="m in g.items"
             :key="m.id"
             class="mem-item"
-            :class="{ expanded: isExpanded(m.id) }"
+            :class="{ expanded: isExpanded(m.id), selected: store.selectedIds.has(m.id) }"
           >
             <div class="mem-row" @click="toggleExpand(m.id)">
+              <input
+                type="checkbox"
+                class="mem-check"
+                :checked="store.selectedIds.has(m.id)"
+                @click.stop="store.toggleSelect(m.id)"
+                title="选择（批量操作）"
+              />
               <span class="mem-time">{{ timeOf(m) }}</span>
               <span class="mem-role" :class="m.role">{{ roleLabel(m) }}</span>
+              <span v-if="m.category" class="mem-cat">{{ m.category }}</span>
+              <span v-if="(m.use_count || 0) > 0" class="mem-uses" title="铃想起它的次数">×{{ m.use_count }}</span>
               <span class="mem-preview">{{ isExpanded(m.id) ? m.content : summaryOf(m) }}</span>
             </div>
             <div v-if="isExpanded(m.id)" class="mem-full">
@@ -230,6 +289,7 @@ onMounted(() => {
                 >
                   ⭐
                 </button>
+                <button class="act-btn" title="编辑" @click="onEdit(m)">✏️</button>
                 <button class="act-btn danger" title="删除" @click="onDelete(m)">🗑️</button>
               </div>
             </div>
@@ -408,6 +468,70 @@ onMounted(() => {
   font-size: var(--fs-10);
   color: var(--success, #4caf50);
   text-align: center;
+}
+/* —— 记忆中心（大项目）样式 —— */
+.center-bar { padding: 0 10px 4px; }
+.cap-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  padding: 2px 2px 6px;
+}
+.cap-item.warn { color: var(--warning, #f0ad4e); }
+.cat-bar { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.cat-chip {
+  font-size: var(--fs-10);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cat-chip.on { background: var(--accent, #ff7a94); border-color: var(--accent, #ff7a94); color: #fff; }
+.cat-chip:hover { border-color: var(--accent, #ff7a94); }
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 122, 148, 0.08);
+  border: 1px solid rgba(255, 122, 148, 0.25);
+  margin-bottom: 6px;
+}
+.batch-count { font-size: var(--fs-11); color: var(--accent, #ff7a94); font-weight: 600; }
+.batch-btn {
+  font-size: var(--fs-10);
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+}
+.batch-btn:hover { border-color: var(--accent, #ff7a94); }
+.batch-btn.danger { color: var(--danger, #d9534f); }
+.batch-btn.danger:hover { border-color: var(--danger, #d9534f); }
+.mem-check { accent-color: var(--accent, #ff7a94); cursor: pointer; flex-shrink: 0; }
+.mem-item.selected { background: rgba(255, 122, 148, 0.08); border-radius: 8px; }
+.mem-cat {
+  font-size: var(--fs-9);
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.mem-uses {
+  font-size: var(--fs-9);
+  color: var(--info, #1a56a8);
+  flex-shrink: 0;
 }
 .set-select {
   flex: 1;

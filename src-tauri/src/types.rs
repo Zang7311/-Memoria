@@ -22,6 +22,12 @@ pub struct Memory {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub summary: Option<String>,
+    /// 记忆分类（记忆中心：兴趣/游戏/工作/健康/家庭/日常对话等，空=未分类）
+    #[serde(default)]
+    pub category: Option<String>,
+    /// 使用次数（被上下文引用的次数，记忆中心展示"铃常想起")
+    #[serde(default)]
+    pub use_count: u32,
 }
 
 // ==================== 多会话管理（收尾工程师批次3） ====================

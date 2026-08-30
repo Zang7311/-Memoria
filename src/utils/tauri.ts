@@ -142,6 +142,34 @@ export function getMemories(req: GetMemoriesRequest = {}): Promise<GetMemoriesRe
   return invoke('get_memories', { req })
 }
 
+// ==================== 记忆中心（大项目） ====================
+
+/** 记忆中心统计（条数/容量/分类分布/重复数） */
+export function memoryStats(setName?: string | null): Promise<{
+  total: number
+  size_mb: number
+  important_count: number
+  duplicate_count: number
+  categories: { name: string; count: number }[]
+}> {
+  return invoke('memory_stats', { setName: setName ?? null })
+}
+
+/** 批量删除记忆 */
+export function deleteMemoriesBatch(ids: string[], setName?: string | null): Promise<number> {
+  return invoke('delete_memories_batch', { ids, setName: setName ?? null })
+}
+
+/** 批量标记重要/取消 */
+export function markImportantBatch(ids: string[], important: boolean, setName?: string | null): Promise<number> {
+  return invoke('mark_important_batch', { ids, important, setName: setName ?? null })
+}
+
+/** 编辑记忆内容 */
+export function editMemoryContent(id: string, content: string, setName?: string | null): Promise<void> {
+  return invoke('edit_memory_content', { id, content, setName: setName ?? null })
+}
+
 /** 删除单条记忆 */
 export function deleteMemory(memory_id: string, set_name?: string): Promise<DeleteMemoryResponse> {
   return invoke('delete_memory', { req: { memory_id, set_name } })
