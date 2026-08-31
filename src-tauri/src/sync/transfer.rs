@@ -20,12 +20,15 @@ use crate::types::{
     Memory, StartSyncRequest, StartSyncResponse, SyncDevice, SyncHistoryEntry, SyncPayload,
     SyncProgressEvent, SyncRequest, SyncResponse,
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Mutex as TokioMutex, Semaphore};
 use tokio::time::timeout;
 
 /// 数据传输端口（任务书固定 54546）
@@ -34,9 +37,36 @@ pub const DATA_TRANSFER_PORT: u16 = 54546;
 const FRAME_TIMEOUT_SECS: u64 = 60;
 /// 连接超时（秒）
 const CONNECT_TIMEOUT_SECS: u64 = 5;
+/// 最大并发同步连接数
+const MAX_CONCURRENT_CONNECTIONS: usize = 4;
+/// 每 IP 每分钟最多允许的连接次数
+const RATE_LIMIT_PER_MIN: u32 = 10;
 
 /// 监听中标志（防止重复启动）
 static LISTENING: AtomicBool = AtomicBool::new(false);
+
+/// 每 IP 速率状态：(本分钟内连接次数, 分钟起始时刻)
+type RateMap = Arc<TokioMutex<HashMap<String, (u32, std::time::Instant)>>>;
+
+fn make_rate_map() -> RateMap {
+    Arc::new(TokioMutex::new(HashMap::new()))
+}
+
+/// 检查并更新速率限制；返回 true 表示允许，false 表示拒绝
+async fn rate_check(map: &RateMap, ip: &str) -> bool {
+    let mut guard = map.lock().await;
+    let now = std::time::Instant::now();
+    let entry = guard.entry(ip.to_string()).or_insert((0, now));
+    // 新的一分钟窗口则重置计数
+    if entry.1.elapsed() >= Duration::from_secs(60) {
+        *entry = (0, now);
+    }
+    if entry.0 >= RATE_LIMIT_PER_MIN {
+        return false;
+    }
+    entry.0 += 1;
+    true
+}
 
 // ==================== 服务端：常驻监听 ====================
 
@@ -55,11 +85,35 @@ pub fn spawn_listener(app: AppHandle) {
             }
         };
         log::info!("[sync] 同步服务已监听 0.0.0.0:{DATA_TRANSFER_PORT}");
+
+        // 并发连接限制：最多同时处理 MAX_CONCURRENT_CONNECTIONS 个同步请求
+        let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
+        // 每 IP 速率限制
+        let rate_map = make_rate_map();
+
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
+                    let ip = addr.ip().to_string();
+
+                    // 速率检查（每 IP 每分钟最多 RATE_LIMIT_PER_MIN 次）
+                    if !rate_check(&rate_map, &ip).await {
+                        log::warn!("[sync] 速率限制：拒绝来自 {ip} 的连接");
+                        continue;
+                    }
+
+                    // 尝试获取并发槽位（非阻塞：满了直接拒绝，不排队）
+                    let permit = match Arc::clone(&sem).try_acquire_owned() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            log::warn!("[sync] 并发上限（{MAX_CONCURRENT_CONNECTIONS}），拒绝来自 {ip} 的连接");
+                            continue;
+                        }
+                    };
+
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
+                        let _permit = permit; // 连接处理完后自动释放槽位
                         if let Err(e) = handle_incoming(stream, addr, app).await {
                             log::warn!("[sync] 处理来自 {addr} 的连接失败：{e}");
                         }

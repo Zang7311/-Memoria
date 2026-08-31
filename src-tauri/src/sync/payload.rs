@@ -70,6 +70,7 @@ mod tests {
             device_id: "dev-1".into(),
             set_name: "default".into(),
             last_sync_time: None,
+            pairing_code: Some("test-pairing".into()),
         }
     }
 

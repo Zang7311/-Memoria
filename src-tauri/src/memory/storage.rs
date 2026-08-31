@@ -7,7 +7,58 @@
 use crate::context::MEMORY_WRITER_LOCK;
 use crate::error::AppError;
 use crate::types::Memory;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// 读缓存条目：(写入时刻, 数据快照)
+struct CacheEntry {
+    at: Instant,
+    data: Vec<Memory>,
+}
+
+/// 按 index_path 字符串键的读缓存，TTL = 5 秒
+static READ_CACHE: Mutex<Option<HashMap<String, CacheEntry>>> = Mutex::new(None);
+
+const CACHE_TTL: Duration = Duration::from_secs(5);
+
+fn cache_key(path: &PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// 从缓存读取；若缓存命中且未过期则返回 Some(克隆数据)
+fn cache_get(path: &PathBuf) -> Option<Vec<Memory>> {
+    let key = cache_key(path);
+    let mut guard = READ_CACHE.lock().ok()?;
+    let map = guard.get_or_insert_with(HashMap::new);
+    if let Some(entry) = map.get(&key) {
+        if entry.at.elapsed() < CACHE_TTL {
+            return Some(entry.data.clone());
+        }
+        map.remove(&key);
+    }
+    None
+}
+
+/// 写入缓存
+fn cache_set(path: &PathBuf, data: Vec<Memory>) {
+    let key = cache_key(path);
+    if let Ok(mut guard) = READ_CACHE.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.insert(key, CacheEntry { at: Instant::now(), data });
+    }
+}
+
+/// 使指定路径的缓存失效（写/删/压缩后调用）
+pub(crate) fn cache_invalidate(path: &PathBuf) {
+    let key = cache_key(path);
+    if let Ok(mut guard) = READ_CACHE.lock() {
+        if let Some(map) = guard.as_mut() {
+            map.remove(&key);
+        }
+    }
+}
 
 /// 默认记忆集名称（即 AI-3 现有的单集）
 pub const DEFAULT_SET: &str = "default";
@@ -40,21 +91,28 @@ pub fn set_index_path(set_name: Option<&str>) -> PathBuf {
     }
 }
 
-/// 读取全部记忆（指定记忆集），文件不存在视为空，不报错
+/// 读取全部记忆（指定记忆集），5 秒内重复读直接返回缓存，不再磁盘 I/O。
 /// 索引损坏时自动重建（备份旧文件后重置为空），不丢现场
 pub fn read_all(index_path: &PathBuf) -> Result<Vec<Memory>, AppError> {
-    match crate::memory::index::load_index(index_path) {
+    if let Some(cached) = cache_get(index_path) {
+        return Ok(cached);
+    }
+    let result = match crate::memory::index::load_index(index_path) {
         Ok(m) => Ok(m),
         Err(AppError::IndexCorrupted(_)) => {
             crate::memory::index::rebuild_index(index_path)?;
             Ok(Vec::new())
         }
         Err(e) => Err(e),
+    };
+    if let Ok(ref data) = result {
+        cache_set(index_path, data.clone());
     }
+    result
 }
 
 /// 原子写入 Memory[] 到 index.json（先写临时文件再重命名，防中途崩溃损坏索引）
-/// 调用方必须已持有 MEMORY_WRITER_LOCK
+/// 调用方必须已持有 MEMORY_WRITER_LOCK；写完后失效读缓存。
 pub(crate) fn atomic_write_index(index_path: &PathBuf, memories: &[Memory]) -> Result<(), AppError> {
     if let Some(parent) = index_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -63,6 +121,7 @@ pub(crate) fn atomic_write_index(index_path: &PathBuf, memories: &[Memory]) -> R
     let tmp = index_path.with_extension("json.tmp");
     std::fs::write(&tmp, &json)?;
     std::fs::rename(&tmp, index_path)?;
+    cache_invalidate(index_path);
     Ok(())
 }
 
@@ -87,16 +146,27 @@ pub fn append_memory(index_path: &PathBuf, memory: &Memory) -> Result<usize, App
     }
     memories.push(memory.clone());
     atomic_write_index(index_path, &memories)?;
+    // WAL 追加：在原子写成功后同步追加，供下次启动回放校验
+    if let Err(e) = crate::memory::wal::append_to_wal(index_path, memory) {
+        log::warn!("WAL 追加失败（不影响本次写入）：{e}");
+    }
     log::info!("记忆写入：id={} role={} 当前共 {} 条", memory.id, memory.role, memories.len());
     Ok(memories.len())
 }
 
 /// 写入一条记忆到指定记忆集（带锁、去重、自动压缩检查）
+/// 压缩任务在后台线程执行，写入路径立即返回，不阻塞调用方。
 pub fn write_memory(memory: Memory, set_name: Option<&str>) -> Result<(), AppError> {
     let path = set_index_path(set_name);
     append_memory(&path, &memory)?;
-    // 超过阈值触发自动压缩（默认 20 条）
-    crate::memory::compress::maybe_compress(&path, set_name)?;
+    // 压缩在后台线程执行，避免阻塞写入路径（maybe_compress 最坏约 50ms）
+    let path_bg = path.clone();
+    let set_bg = set_name.map(|s| s.to_string());
+    std::thread::spawn(move || {
+        if let Err(e) = crate::memory::compress::maybe_compress(&path_bg, set_bg.as_deref()) {
+            log::warn!("后台压缩失败：{e}");
+        }
+    });
     Ok(())
 }
 
