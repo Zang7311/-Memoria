@@ -6,8 +6,11 @@ import {
   setSearchMode,
   checkVectorModelStatus,
   getSystemInfo,
+  scanModelFiles,
+  installModel,
   type SearchMode,
   type VectorModelStatus,
+  type ModelCandidate,
 } from '../utils/tauri'
 
 const expanded = ref(false)
@@ -18,6 +21,12 @@ const saving = ref(false)
 const memoryWarning = ref<string | null>(null)
 const modelStatus = ref<VectorModelStatus | null>(null)
 const checkingModel = ref(false)
+
+// 模型扫描状态
+const scanning = ref(false)
+const candidates = ref<ModelCandidate[] | null>(null)
+const installing = ref<string | null>(null)  // 正在安装的 path
+const installMsg = ref<string | null>(null)
 
 async function toggle() {
   expanded.value = !expanded.value
@@ -33,6 +42,8 @@ async function selectMode(mode: SearchMode) {
   } else {
     memoryWarning.value = null
     modelStatus.value = null
+    candidates.value = null
+    installMsg.value = null
   }
   saving.value = true
   try {
@@ -48,7 +59,7 @@ async function handleVectorCheck() {
   let ram = 0
   try {
     const sys = await getSystemInfo()
-    ram = (sys.memory_total_mb ?? 0) / 1024
+    ram = (sys.info.memory_total_mb ?? 0) / 1024
   } catch {
     // 后端拿不到则回退 navigator.deviceMemory（可能不准确）
     ram = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0
@@ -73,6 +84,34 @@ async function handleVectorCheck() {
   }
 }
 
+async function handleScan() {
+  scanning.value = true
+  candidates.value = null
+  installMsg.value = null
+  try {
+    candidates.value = await scanModelFiles()
+  } finally {
+    scanning.value = false
+  }
+}
+
+async function handleInstall(candidate: ModelCandidate) {
+  installing.value = candidate.path
+  installMsg.value = null
+  try {
+    const result = await installModel(candidate.path)
+    installMsg.value = result.message
+    if (result.success) {
+      // 刷新模型状态
+      modelStatus.value = await checkVectorModelStatus()
+      // 刷新候选列表（已安装的会变成 exists_in_target=true）
+      candidates.value = await scanModelFiles()
+    }
+  } finally {
+    installing.value = null
+  }
+}
+
 // 打开时若当前已是 vector 模式，也执行一次检测
 watch(expanded, async (v) => {
   if (v) {
@@ -89,6 +128,10 @@ function memWarningClass(msg: string | null) {
   if (msg.includes('可流畅')) return 'warn-ok'
   if (msg.includes('可能卡顿') && msg.includes('建议')) return 'warn-bad'
   return 'warn-mid'
+}
+
+function sizeFmt(mb: number) {
+  return mb >= 1 ? `${mb.toFixed(0)} MB` : `${(mb * 1024).toFixed(0)} KB`
 }
 </script>
 
@@ -150,10 +193,47 @@ function memWarningClass(msg: string | null) {
         <p v-if="checkingModel" class="smp-checking">检测模型文件中…</p>
         <template v-else-if="modelStatus">
           <p v-if="modelStatus.available" class="smp-model-ok">已检测到模型文件。</p>
-          <p v-else class="smp-model-missing">
-            未检测到模型文件，请放入 ~/.铃记忆体/models/ 目录（支持 embedding.bin / model.onnx / embedding.gguf / model.safetensors）。
-          </p>
+          <template v-else>
+            <p class="smp-model-missing">
+              未检测到模型文件，请放入 ~/.铃记忆体/models/ 目录（支持 embedding.bin / model.onnx / embedding.gguf / model.safetensors）。
+            </p>
+            <!-- 检索模型入口 -->
+            <button
+              class="smp-scan-btn"
+              :disabled="scanning"
+              @click="handleScan"
+            >{{ scanning ? '检索中…' : '检索模型' }}</button>
+          </template>
         </template>
+
+        <!-- 扫描结果列表 -->
+        <template v-if="candidates !== null">
+          <div v-if="candidates.length === 0" class="smp-no-candidates">
+            未在常见位置找到模型文件，请手动将 model.safetensors 放入 ~/.铃记忆体/models/
+          </div>
+          <div v-else class="smp-candidates">
+            <div
+              v-for="c in candidates"
+              :key="c.path"
+              class="smp-candidate-row"
+            >
+              <span class="smp-cand-name" :title="c.path">{{ c.filename }}</span>
+              <span class="smp-cand-size">{{ sizeFmt(c.size_mb) }}</span>
+              <span v-if="c.exists_in_target" class="smp-cand-installed">已安装</span>
+              <button
+                v-else
+                class="smp-install-btn"
+                :disabled="installing === c.path"
+                @click="handleInstall(c)"
+              >{{ installing === c.path ? '安装中…' : '一键安装' }}</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 安装结果提示 -->
+        <p v-if="installMsg" class="smp-install-msg" :class="modelStatus?.available ? 'warn-ok' : 'warn-mid'">
+          {{ installMsg }}
+        </p>
       </div>
     </div>
   </div>
@@ -284,6 +364,96 @@ function memWarningClass(msg: string | null) {
   margin: 0;
   font-size: var(--fs-11, 11px);
   color: var(--danger, #d9534f);
+  line-height: 1.5;
+}
+
+.smp-scan-btn {
+  margin-top: 4px;
+  padding: 3px 10px;
+  font-size: var(--fs-11, 11px);
+  border: 1px solid var(--accent, #a78bba);
+  border-radius: 5px;
+  background: none;
+  color: var(--accent, #6b3f8a);
+  cursor: pointer;
+  transition: background 0.15s;
+  align-self: flex-start;
+}
+.smp-scan-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #a78bba) 12%, transparent);
+}
+.smp-scan-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.smp-no-candidates {
+  margin-top: 4px;
+  font-size: var(--fs-11, 11px);
+  color: var(--text-secondary, #888);
+  line-height: 1.5;
+}
+
+.smp-candidates {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smp-candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 5px;
+  background: var(--bg-main, #fff);
+  font-size: var(--fs-11, 11px);
+}
+
+.smp-cand-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main, #333);
+}
+
+.smp-cand-size {
+  color: var(--text-secondary, #888);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.smp-cand-installed {
+  flex-shrink: 0;
+  color: var(--success, #4caf50);
+  font-size: var(--fs-10, 10px);
+}
+
+.smp-install-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: var(--fs-10, 10px);
+  border: 1px solid var(--accent, #a78bba);
+  border-radius: 4px;
+  background: none;
+  color: var(--accent, #6b3f8a);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.smp-install-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #a78bba) 12%, transparent);
+}
+.smp-install-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.smp-install-msg {
+  margin: 2px 0 0;
+  font-size: var(--fs-11, 11px);
   line-height: 1.5;
 }
 </style>
