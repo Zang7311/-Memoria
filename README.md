@@ -7,7 +7,7 @@
 第一眼，她是"我的铃"；相处久了你会发现，她还能帮你管理电脑。
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.4.9-ff7a94" alt="version">
+  <img src="https://img.shields.io/badge/version-0.5.0-ff7a94" alt="version">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="platform">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/offline--first-yes-success" alt="offline-first">
@@ -138,6 +138,7 @@ src-tauri/                  # Rust 后端
 
 | 版本 | 内容 |
 |------|------|
+| v0.5.0 | 离线语义检索（bigram 默认 / jieba+BM25 / 93MB 向量）+ 检索模型一键安装 + 完整版内置模型 + 轻量版/完整版双版本 |
 | v0.4.9 | 架构优化：记忆读缓存（5s TTL）/ 压缩脱锁 / WAL 追加写 / 同步限速（80 单测全过） |
 | v0.4.8 | 离线检索增强三方案：bigram 倒排索引（默认）/ jieba+BM25 / 93MB 向量模型可选 + 离线增强方案面板（三档切换 + 内存检测） |
 | v0.4.7 | 安全审查修复：logs 模块补全 / 主密码校验 / 同步配对码认证 / format-disk 二次确认 / JS 沙箱限制 / 密钥清零 / 低危 7 项 |
