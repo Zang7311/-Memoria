@@ -127,9 +127,12 @@ pub fn get_memories(
     let path = set_index_path(set_name);
     let all = read_all(&path)?;
 
-    // 搜索过滤
+    // 搜索过滤（读取配置中的 search_mode，默认 bigram）
+    let mode = crate::config::store::get_config().search_mode;
     let mut list = match keyword {
-        Some(kw) if !kw.trim().is_empty() => crate::memory::search::search(&all, kw),
+        Some(kw) if !kw.trim().is_empty() => {
+            crate::memory::search::search_with_mode(&all, kw, &mode)
+        }
         _ => all,
     };
 

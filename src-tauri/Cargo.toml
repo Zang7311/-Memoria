@@ -67,3 +67,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 qrcode = { version = "0.14", default-features = false }
 image = "0.25"
 rqrr = "0.7"
+# ==================== 离线检索增强（方案2 BM25 分词）====================
+# jieba-rs 内置词典（编译期内嵌 include_bytes!），无运行时下载，纯离线
+jieba-rs = "0.7"

@@ -50,5 +50,6 @@ pub fn default_config() -> AppConfig {
         ai_toolbox: false,
         // —— AI-9 快捷指令（默认空，用户自行创建）——
         quick_commands: Vec::new(),
+        search_mode: "bigram".to_string(),
     }
 }

@@ -245,6 +245,10 @@ pub fn run() {
             commands::qrcode::decode_qrcode,
             // —— moon11 OCR 文字识别 ——
             commands::ocr::ocr_image,
+            // —— 离线检索增强：搜索引擎模式配置 ——
+            commands::search_mode::get_search_mode,
+            commands::search_mode::set_search_mode,
+            commands::search_mode::check_vector_model_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
