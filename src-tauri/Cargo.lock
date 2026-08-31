@@ -2191,7 +2191,7 @@ dependencies = [
  "futures-util",
  "h2",
  "http 0.2.12",
- "http-body 0.4.7",
+ "http-body 0.4.6",
  "httparse",
  "httpdate",
  "itoa",
@@ -3208,7 +3208,7 @@ dependencies = [
 
 [[package]]
 name = "num-complex"
-version = "0.4.7"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
@@ -4289,7 +4289,7 @@ dependencies = [
  "futures-util",
  "h2",
  "http 0.2.12",
- "http-body 0.4.7",
+ "http-body 0.4.6",
  "hyper 0.14.32",
  "hyper-tls",
  "ipnet",
