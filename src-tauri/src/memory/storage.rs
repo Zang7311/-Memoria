@@ -184,6 +184,8 @@ pub fn delete_memory(memory_id: &str, set_name: Option<&str>) -> Result<(), AppE
         return Err(AppError::MemoryNotFound(memory_id.to_string()));
     }
     atomic_write_index(&path, &memories)?;
+    // 被删除记忆的向量缓存一并失效，避免残留孤儿向量
+    crate::memory::vector::invalidate(memory_id);
     log::info!("记忆删除：id={} 当前共 {} 条", memory_id, memories.len());
     Ok(())
 }

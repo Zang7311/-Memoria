@@ -177,14 +177,14 @@ function sizeFmt(mb: number) {
           @click="selectMode('vector')"
         >
           <span class="smp-mode-name">方案3</span>
-          <span class="smp-mode-label">93MB 向量模型</span>
+          <span class="smp-mode-label">约 91MB 向量模型</span>
           <span class="smp-mode-sub">语义增强</span>
         </button>
       </div>
 
       <!-- 方案3 附加信息 -->
       <div v-if="currentMode === 'vector'" class="smp-vector-info">
-        <p class="smp-req">至少需要 4GB 内存才能开启 93MB 模型，否则卡顿；8GB 可较流畅运行。</p>
+        <p class="smp-req">至少需要 4GB 内存才能开启约 91MB 模型，否则卡顿；8GB 可较流畅运行。</p>
 
         <p v-if="memoryWarning" class="smp-mem-warn" :class="memWarningClass(memoryWarning)">
           {{ memoryWarning }}
@@ -195,7 +195,7 @@ function sizeFmt(mb: number) {
           <p v-if="modelStatus.available" class="smp-model-ok">已检测到模型文件。</p>
           <template v-else>
             <p class="smp-model-missing">
-              未检测到模型文件，请放入 ~/.铃记忆体/models/ 目录（支持 embedding.bin / model.onnx / embedding.gguf / model.safetensors）。
+              未检测到完整模型文件（需 model.safetensors + config.json + tokenizer.json），请放入 ~/.铃记忆体/models/ 目录。
             </p>
             <!-- 检索模型入口 -->
             <button
