@@ -6,6 +6,7 @@
 //
 // 安全：JS 在独立线程运行，崩溃/死循环不影响主程序；超时强制返回错误；
 // 沙箱不注入 process/require 等危险全局对象，白名单 IPC 见 sandbox.rs。
+// command: 动作默认不经任何 shell（argv 数组直接 exec），详见 run_system_command。
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -69,30 +70,138 @@ pub async fn execute_skill(
     }
 }
 
-/// 执行系统命令（Windows 下通过 cmd /C；支持 {参数名} 占位符替换；30s 超时）
-async fn run_system_command(cmd: &str, params: &HashMap<String, Value>) -> Result<String, AppError> {
-    let mut expanded = cmd.to_string();
-    for (k, v) in params {
-        let placeholder = format!("{{{k}}}");
-        if expanded.contains(&placeholder) {
-            let val = match v {
-                Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            expanded = expanded.replace(&placeholder, &val);
+/// 命令模板分词：按空白切分，支持单/双引号包裹含空格的整体参数。
+///
+/// 只对**插件作者写死的模板**分词，不对用户传入的参数值分词，
+/// 因此参数值里的引号/空格不会改变 argv 结构。
+fn tokenize_template(template: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut has_cur = false;
+    let mut quote: Option<char> = None;
+
+    for ch in template.chars() {
+        match quote {
+            Some(q) => {
+                if ch == q {
+                    quote = None;
+                } else {
+                    cur.push(ch);
+                }
+            }
+            None if ch == '"' || ch == '\'' => {
+                quote = Some(ch);
+                has_cur = true; // 支持空字符串参数 ""
+            }
+            None if ch.is_whitespace() => {
+                if has_cur {
+                    tokens.push(std::mem::take(&mut cur));
+                    has_cur = false;
+                }
+            }
+            None => {
+                cur.push(ch);
+                has_cur = true;
+            }
         }
     }
+    if has_cur {
+        tokens.push(cur);
+    }
+    tokens
+}
 
-    let command = tokio::process::Command::new("cmd")
-        .args(["/C", &expanded])
-        .output();
+/// 参数值转字符串（字符串取原值，其余走 JSON 表示）
+fn param_to_string(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
 
-    let output = match tokio::time::timeout(Duration::from_secs(EXEC_TIMEOUT_SECS), command).await {
+/// 在**单个 token 内**替换 {参数名} 占位符。
+///
+/// 关键安全性质：替换后的结果始终作为一个独立 argv 元素传递，
+/// 值里的 `& | > < ; $` 等 shell 元字符不再具有任何语法含义。
+fn substitute_token(token: &str, params: &HashMap<String, Value>) -> String {
+    let mut out = token.to_string();
+    for (k, v) in params {
+        let placeholder = format!("{{{k}}}");
+        if out.contains(&placeholder) {
+            out = out.replace(&placeholder, &param_to_string(v));
+        }
+    }
+    out
+}
+
+/// 把命令模板 + 参数展开为 argv 数组（不经 shell）
+///
+/// 返回 (程序名, 参数列表)。模板为空时报错。
+fn build_argv(
+    template: &str,
+    params: &HashMap<String, Value>,
+) -> Result<(String, Vec<String>), AppError> {
+    let tokens = tokenize_template(template);
+    let mut argv: Vec<String> = tokens
+        .iter()
+        .map(|t| substitute_token(t, params))
+        .collect();
+    if argv.is_empty() {
+        return Err(AppError::PluginExecutionError(
+            "command: 动作为空，没有可执行的命令".into(),
+        ));
+    }
+    let program = argv.remove(0);
+    if program.trim().is_empty() {
+        return Err(AppError::PluginExecutionError(
+            "command: 动作的可执行程序名为空".into(),
+        ));
+    }
+    Ok((program, argv))
+}
+
+/// 执行系统命令（支持 {参数名} 占位符替换；30s 超时）
+///
+/// 安全（修复命令注入）：**不经 shell**。命令模板先分词为 argv，
+/// 用户参数只填入单个 argv 槽位，再用 Command::arg 逐个传递。
+/// 因此参数中的 `&` `|` `>` `;` 等元字符只是普通字符，无法拼出新命令。
+///
+/// 代价：`command:` 动作不再支持管道/重定向/`del` 等 shell 内置命令。
+/// 需要这类能力的插件应把脚本写成 `.bat`/`.ps1` 文件并直接调用该文件。
+async fn run_system_command(cmd: &str, params: &HashMap<String, Value>) -> Result<String, AppError> {
+    let (program, args) = build_argv(cmd, params)?;
+
+    let mut builder = tokio::process::Command::new(&program);
+    // 逐个 arg 传参：由操作系统直接 exec，不经 cmd/sh 解析
+    for a in &args {
+        builder.arg(a);
+    }
+    builder.kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        builder.creation_flags(0x08000000); // CREATE_NO_WINDOW 隐藏控制台
+    }
+
+    let display = if args.is_empty() {
+        program.clone()
+    } else {
+        format!("{program} {}", args.join(" "))
+    };
+
+    let output = match tokio::time::timeout(
+        Duration::from_secs(EXEC_TIMEOUT_SECS),
+        builder.output(),
+    )
+    .await
+    {
         Ok(Ok(out)) => out,
         Ok(Err(e)) => {
-            return Err(AppError::PluginExecutionError(format!("命令启动失败：{e}")));
+            return Err(AppError::PluginExecutionError(format!(
+                "命令「{program}」启动失败：{e}（提示：command: 动作不经 shell，无法直接使用 del/dir/copy 等 cmd 内置命令，请改为调用 .bat/.ps1 脚本）"
+            )));
         }
-        Err(_) => return Err(AppError::PluginTimeout(expanded.clone())),
+        Err(_) => return Err(AppError::PluginTimeout(display)),
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -328,5 +437,119 @@ mod tests {
         let r = run_js_blocking(code, "go", "{}", &[]);
         assert!(r.is_err());
         assert!(r.unwrap_err().to_string().contains("权限"));
+    }
+
+    // ==================== 命令注入修复回归测试 ====================
+
+    fn p(pairs: &[(&str, &str)]) -> HashMap<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), Value::from(*v)))
+            .collect()
+    }
+
+    #[test]
+    fn 分词_基础与引号() {
+        assert_eq!(tokenize_template("ping -n 1 host"), vec!["ping", "-n", "1", "host"]);
+        // 双引号包裹含空格的整体参数
+        assert_eq!(
+            tokenize_template(r#"prog "a b" c"#),
+            vec!["prog", "a b", "c"]
+        );
+        // 单引号同理
+        assert_eq!(tokenize_template("prog 'x y'"), vec!["prog", "x y"]);
+        // 多余空白被折叠
+        assert_eq!(tokenize_template("  prog   a  "), vec!["prog", "a"]);
+    }
+
+    #[test]
+    fn 注入_shell元字符不再拆出新命令() {
+        // 经典注入 payload：& 想串接第二条命令
+        let params = p(&[("host", "127.0.0.1 & calc.exe")]);
+        let (program, args) = build_argv("ping {host}", &params).unwrap();
+        assert_eq!(program, "ping");
+        // 整个恶意串仍是**一个** argv 元素，不会被解释为命令分隔
+        assert_eq!(args, vec!["127.0.0.1 & calc.exe"]);
+        assert!(!args.iter().any(|a| a == "calc.exe"));
+    }
+
+    #[test]
+    fn 注入_管道与重定向被当作纯数据() {
+        for payload in [
+            "x | whoami",
+            "x > C:\\Windows\\System32\\evil.txt",
+            "x && shutdown /s",
+            "x; rm -rf /",
+            "$(whoami)",
+            "`whoami`",
+        ] {
+            let params = p(&[("q", payload)]);
+            let (program, args) = build_argv("findstr {q}", &params).unwrap();
+            assert_eq!(program, "findstr");
+            // 参数值原样保留为单个 token，未被切分成额外 argv
+            assert_eq!(args, vec![payload.to_string()], "payload 被拆分：{payload}");
+        }
+    }
+
+    #[test]
+    fn 注入_参数无法篡改程序名() {
+        // 参数值即使含空格，也只能落在它自己的槽位里，改不了 argv[0]
+        let params = p(&[("arg", "calc.exe /c evil")]);
+        let (program, _args) = build_argv("ping {arg}", &params).unwrap();
+        assert_eq!(program, "ping");
+    }
+
+    #[test]
+    fn 注入_参数中的引号不改变argv结构() {
+        // 参数值自带引号：不参与分词，原样保留
+        let params = p(&[("q", r#"a" "b"#)]);
+        let (_program, args) = build_argv("findstr {q}", &params).unwrap();
+        assert_eq!(args, vec![r#"a" "b"#.to_string()]);
+    }
+
+    #[test]
+    fn 占位符_多参数与非字符串值() {
+        let mut params = HashMap::new();
+        params.insert("n".to_string(), Value::from(3));
+        params.insert("host".to_string(), Value::from("example.com"));
+        let (program, args) = build_argv("ping -n {n} {host}", &params).unwrap();
+        assert_eq!(program, "ping");
+        assert_eq!(args, vec!["-n", "3", "example.com"]);
+    }
+
+    #[test]
+    fn 空模板报错() {
+        assert!(build_argv("", &HashMap::new()).is_err());
+        assert!(build_argv("   ", &HashMap::new()).is_err());
+    }
+
+    #[tokio::test]
+    async fn 执行_未授权system权限被拒绝() {
+        let plugin = Plugin {
+            id: "t".into(),
+            name: "测试插件".into(),
+            version: "0.1.0".into(),
+            author: "test".into(),
+            description: String::new(),
+            enabled: true,
+            path: ".".into(),
+            granted: vec![],
+            manifest: crate::types::PluginManifest {
+                main: String::new(),
+                skills: vec![],
+                permissions: vec!["system".into()],
+                hermes_compatible: false,
+            },
+        };
+        let skill = Skill {
+            name: "danger".into(),
+            description: String::new(),
+            parameters: vec![],
+            action: "command:ping 127.0.0.1".into(),
+        };
+        // granted 为空 → system 未授予 → 必须拒绝执行
+        let resp = execute_skill(&plugin, &skill, &[], HashMap::new()).await;
+        assert!(!resp.success);
+        assert!(resp.error.unwrap_or_default().contains("权限"));
     }
 }

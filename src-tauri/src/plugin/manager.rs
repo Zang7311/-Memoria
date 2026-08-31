@@ -13,12 +13,9 @@ use crate::error::AppError;
 use crate::types::{Plugin, PluginManifest, Skill, SkillParam};
 use crate::plugin::{hermes_compat, loader};
 
-/// 应用数据根目录（与 AI-3/AI-4 保持一致）
+/// 应用数据根目录（与 AI-3/AI-4 保持一致；v1.0 起走 config::app_dir()，与主线隔离）
 pub fn app_data_dir() -> PathBuf {
-    std::env::var("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("ling-memoria")
+    crate::config::app_dir()
 }
 
 /// 注册表中每个插件的运行时状态

@@ -20,13 +20,18 @@ pub struct VectorModelStatus {
 }
 
 /// 检测向量模型三件套是否完整：model.safetensors + config.json + tokenizer.json
-/// 探测路径：~/.铃记忆体/models/ 及 ~/.ling-memoria/models/
+/// 探测路径：~/.铃记忆体-v10/models/（本版本）→ ~/.铃记忆体/models/ → ~/.ling-memoria/models/
 pub fn check_vector_model() -> VectorModelStatus {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
 
+    // v1.0：本版本目录优先，再只读复用主线 / 更早的目录
     let model_dirs = [
+        crate::config::data_dir()
+            .join("models")
+            .to_string_lossy()
+            .to_string(),
         format!("{home}/.铃记忆体/models"),
         format!("{home}/.ling-memoria/models"),
     ];
@@ -45,7 +50,8 @@ pub fn check_vector_model() -> VectorModelStatus {
     VectorModelStatus {
         available: false,
         message: format!(
-            "向量模型未完整安装。请将 model.safetensors + config.json + tokenizer.json 放入 {home}/.铃记忆体/models/"
+            "向量模型未完整安装。请将 model.safetensors + config.json + tokenizer.json 放入 {}/models/",
+            crate::config::data_dir().display()
         ),
     }
 }

@@ -12,7 +12,8 @@ import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
 import { MODEL_MODE_LABEL } from '../types'
 import TheIcon from '../components/TheIcon.vue'
-import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate } from '../utils/tauri'
+import { detectGpuVram, detectLocalModels, getAutostart, isAdmin, openUrl, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate } from '../utils/tauri'
+import type { LocalModelStatus, ModelMode } from '../types'
 
 const setting = useSettingStore()
 const milestone = useMilestoneStore()
@@ -89,7 +90,7 @@ const generalMsg = ref('')
 const exportPath = ref('')
 
 // —— 模型/加密 ——
-const modelMode = ref<'script' | 'api' | 'local'>('script')
+const modelMode = ref<ModelMode>('local_0b')
 const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
 const apiKeyInput = ref('')
@@ -146,7 +147,7 @@ const DEPTH_LABEL: Record<number, string> = {
   4: '🔥 认真思考',
 }
 // 快速选择（P1：人话分层，一键填入推荐配置）
-function pickQuick(kind: 'deepseek' | 'openai' | 'local' | 'script') {
+function pickQuick(kind: 'deepseek' | 'openai' | 'local_0b' | 'local_1b') {
   if (kind === 'deepseek') {
     modelMode.value = 'api'
     apiBaseUrl.value = 'https://api.deepseek.com'
@@ -155,10 +156,8 @@ function pickQuick(kind: 'deepseek' | 'openai' | 'local' | 'script') {
     modelMode.value = 'api'
     if (!apiBaseUrl.value) apiBaseUrl.value = 'https://api.openai.com/v1'
     if (!apiModel.value) apiModel.value = 'gpt-4o-mini'
-  } else if (kind === 'local') {
-    modelMode.value = 'local'
   } else {
-    modelMode.value = 'script'
+    modelMode.value = kind
   }
 }
 const masterPwd = ref('')
@@ -169,72 +168,33 @@ const testMsg = ref('')
 const testing = ref(false)
 // 管理员权限状态（null 检测中 / true 已管理员 / false 普通）
 const adminState = ref<boolean | null>(null)
-// —— 一键本地部署 AI ——
-const ollama = ref<{ installed: boolean; models: string[] }>({ installed: false, models: [] })
-const ollamaChecked = ref(false)
-const pullModelName = ref('qwen2.5:3b')
-const localAiMsg = ref('')
+// —— v1.0：内置 Qwen2.5 双模型状态（替代旧的 Ollama 一键部署）——
+const localModels = ref<LocalModelStatus | null>(null)
+const localModelsChecked = ref(false)
 const gpuVram = ref<{ name: string; vram_mb: number }[]>([])
-const modelsPath = ref('')
-const pathMsg = ref('')
 
 async function detectLocalAI() {
   try {
-    ollama.value = await detectOllama()
+    localModels.value = await detectLocalModels()
   } catch {
-    ollama.value = { installed: false, models: [] }
+    localModels.value = null
   }
-  ollamaChecked.value = true
-  await detectVramOnly()
-}
-async function detectVramOnly() {
+  localModelsChecked.value = true
   try { gpuVram.value = await detectGpuVram() } catch { gpuVram.value = [] }
 }
-// 部署前检查显存，不合适弹温馨提示（含「我偏不」强制继续按钮）
-const vramWarn = ref(false)
-const vramWarnText = ref('')
-const vramForceOk = ref(false)
-async function checkVram(): Promise<boolean> {
-  try {
-    const gpus = await detectGpuVram()
-    gpuVram.value = gpus
-    if (gpus.length === 0) return true
-    const maxVram = Math.max(...gpus.map((g) => g.vram_mb))
-    if (maxVram < 4000 && !vramForceOk.value) {
-      vramWarnText.value = `你的显卡显存只有 ${(maxVram / 1024).toFixed(1)}GB，跑本地 AI 会比较吃力哦 😿`
-      vramWarn.value = true
-      return false
-    }
-    return true
-  } catch {
-    return true
-  }
+/** 某一档模型是否就位（模型缺失时对应模式卡片给出提示，但不禁用——后端会降级离线文库） */
+function modelInfo(size: '0.5b' | '1.5b') {
+  return localModels.value?.models.find((m) => m.size === size) ?? null
 }
-function vramIgnore() {
-  vramForceOk.value = true
-  vramWarn.value = false
-  doPullModel()
-}
-async function doPullModel() {
-  if (!pullModelName.value.trim()) return
-  if (!(await checkVram())) return
-  localAiMsg.value = `⏳ 正在拉取 ${pullModelName.value.trim()}…（首次可能需几分钟，取决于网速）`
-  try {
-    const r = await pullModel(pullModelName.value.trim())
-    localAiMsg.value = `✅ ${r}`
-    await detectLocalAI()
-  } catch (e) {
-    localAiMsg.value = `✗ ${e}`
-  }
-}
-async function doSaveModelsPath() {
-  if (!modelsPath.value.trim()) return
-  try {
-    pathMsg.value = await setOllamaModelsPath(modelsPath.value.trim())
-  } catch (e) {
-    pathMsg.value = `✗ ${e}`
-  }
-}
+const model0bReady = computed(() => modelInfo('0.5b')?.available ?? false)
+const model1bReady = computed(() => modelInfo('1.5b')?.available ?? false)
+/** 内存是否够跑 1.5B（不够时给温馨提示，仍允许强上） */
+const ramWarn1b = computed(() => {
+  const s = localModels.value
+  if (!s || s.memory_total_mb === 0) return null
+  if (s.can_run_1b) return null
+  return `你的物理内存约 ${(s.memory_total_mb / 1024).toFixed(1)}GB，跑内置 1.5B 会比较吃力（常驻约 1.6GB），建议用 0.5B 😿`
+})
 
 // 常见 OpenAI 兼容模型预设（可下拉选择，也可手填自定义）
 const MODEL_PRESETS = [
@@ -264,18 +224,23 @@ const VISION_MODELS = ['vl', 'vision', '4o', '4.1', 'llava', 'gemini', 'gpt-4', 
 // 能力矩阵（computed，跟随当前模式/模型实时变化）
 const abilityMatrix = computed(() => {
   const mode = setting.modelMode
-  const model = (mode === 'api' ? setting.apiModel : mode === 'local' ? (ollama.value.models[0] || '') : '').toLowerCase()
-  const isVision = VISION_MODELS.some((k) => model.includes(k))
+  const isApi = mode === 'api'
+  const isLocalLlm = mode === 'local_0b' || mode === 'local_1b'
+  const model = (isApi ? setting.apiModel : '').toLowerCase()
+  const isVision = isApi && VISION_MODELS.some((k) => model.includes(k))
+  const localName = mode === 'local_1b'
+    ? (model1bReady.value ? 'Qwen2.5-1.5B-Instruct（内置）' : '模型未就位 · 将降级离线文库')
+    : (model0bReady.value ? 'Qwen2.5-0.5B-Instruct（内置）' : '模型未就位 · 将降级离线文库')
   return {
     modeLabel: MODEL_MODE_LABEL[mode] || mode,
-    modelName: mode === 'api' ? (setting.apiModel || '未设置') : mode === 'local' ? (ollama.value.models[0] || '未拉取模型') : '内置回复库',
+    modelName: isApi ? (setting.apiModel || '未设置') : isLocalLlm ? localName : '内置回复库',
     rows: [
-      { name: '文字对话', ok: true, detail: '基础能力，始终可用' },
-      { name: '图片理解', ok: mode === 'script' ? false : isVision, unknown: mode !== 'script' && !isVision && mode === 'api', detail: mode === 'script' ? '离线模式不支持' : isVision ? `「${model}」支持视觉` : '当前模型不支持' },
-      { name: '联网能力', ok: mode !== 'script', detail: mode === 'script' ? '完全离线' : mode === 'local' ? '模型本地，联网可选' : '云端调用，需联网' },
+      { name: '文字对话', ok: true, detail: isLocalLlm ? '内置模型本地推理，真离线对话' : '基础能力，始终可用' },
+      { name: '图片理解', ok: isVision, unknown: isApi && !isVision, detail: isApi ? (isVision ? `「${model}」支持视觉` : '当前模型不支持') : '内置模型为纯文本模型' },
+      { name: '联网能力', ok: isApi, detail: isApi ? '云端调用，需联网' : '完全本地，无需联网' },
       { name: '记忆存储', ok: true, detail: '铃的本体能力，所有模式可用' },
       { name: '工具箱', ok: true, detail: '44 个工具，所有模式可用' },
-      { name: '离线可用', ok: mode !== 'api', detail: mode === 'api' ? '云端模式需联网' : '完全离线可用' },
+      { name: '离线可用', ok: !isApi, detail: isApi ? '云端模式需联网' : '完全离线可用' },
     ],
   }
 })
@@ -303,7 +268,7 @@ onMounted(async () => {
   } catch { /* 忽略 */ }
   // 检测管理员权限
   try { adminState.value = await isAdmin() } catch { adminState.value = false }
-  // 检测本地 Ollama
+  // 检测内置 Qwen2.5 双模型是否就位
   await detectLocalAI()
   // 检测离线语义检索模型（方案3）
   await checkVectorModel()
@@ -817,16 +782,16 @@ async function toggleAiToolbox() {
         <section class="card">
           <div class="card-title">快速接入向导</div>
           <div class="steps">
-            <span class="step" :class="{ on: modelMode !== 'script' }">① 选运行模式</span>
+            <span class="step" :class="{ on: !!modelMode }">① 选运行模式</span>
             <span class="arrow">→</span>
             <span class="step" :class="{ on: modelMode === 'api' && !!apiBaseUrl }">② 填地址与模型</span>
             <span class="arrow">→</span>
             <span class="step" :class="{ on: testMsg.includes('✅') }">③ 测试连接</span>
           </div>
           <p class="hint">
-            {{ modelMode === 'script' ? '当前：脚本模式（开箱即用，预设回复库，无需联网）' :
-               modelMode === 'api' ? '当前：API 模式（接入 OpenAI 兼容大模型，如 DeepSeek / Qwen / GPT）' :
-               '当前：本地模式（需自行安装 Ollama 并下载模型）' }}
+            {{ modelMode === 'api' ? '当前：云端模式（接入 OpenAI 兼容大模型，如 DeepSeek / Qwen / GPT）' :
+               modelMode === 'local_1b' ? '当前：内置 1.5B（真离线对话，无需联网，内存约 1.6GB）' :
+               '当前：内置 0.5B（真离线对话，无需联网，轻量省内存）' }}
           </p>
         </section>
 
@@ -839,17 +804,22 @@ async function toggleAiToolbox() {
               <div class="qmode-name">DeepSeek<span class="qmode-tag">推荐</span></div>
               <div class="qmode-desc">云端智能，性价比高，中文好</div>
             </div>
-            <div class="qmode" :class="{ sel: modelMode === 'local' }" @click="pickQuick('local')">
+            <div class="qmode" :class="{ sel: modelMode === 'local_0b' }" @click="pickQuick('local_0b')">
               <div class="qmode-icon">💻</div>
-              <div class="qmode-name">本地 AI</div>
-              <div class="qmode-desc">模型跑在自己电脑，离线可用</div>
+              <div class="qmode-name">内置 0.5B<span class="qmode-tag">轻量</span></div>
+              <div class="qmode-desc">
+                {{ !localModelsChecked ? '检测中…' : model0bReady ? '✅ 模型已就位，真离线可用' : '模型未就位 · 将降级离线文库' }}
+              </div>
             </div>
-            <div class="qmode" :class="{ sel: modelMode === 'script' }" @click="pickQuick('script')">
-              <div class="qmode-icon">📴</div>
-              <div class="qmode-name">离线模式</div>
-              <div class="qmode-desc">零配置，内置回复库，即开即用</div>
+            <div class="qmode" :class="{ sel: modelMode === 'local_1b' }" @click="pickQuick('local_1b')">
+              <div class="qmode-icon">🧠</div>
+              <div class="qmode-name">内置 1.5B</div>
+              <div class="qmode-desc">
+                {{ !localModelsChecked ? '检测中…' : model1bReady ? '✅ 模型已就位，更聪明' : '模型未就位 · 将降级离线文库' }}
+              </div>
             </div>
           </div>
+          <p v-if="ramWarn1b" class="hint">⚠️ {{ ramWarn1b }}</p>
           <p class="hint">点击卡片会自动切换模式并填入推荐配置；下方「运行模式」可手调高级参数。</p>
           <p class="hint" style="margin-top:6px;color:var(--text-secondary)">
             💡 OpenAI 兼容：支持任意 OpenAI 兼容服务（中转站 / Qwen / 混元等）。在下方「运行模式」填 API 地址即可；DeepSeek 卡片已填好官方示例，无需联网的海外 OpenAI 官方（需翻墙+付费 key）不做默认推荐。
@@ -859,9 +829,9 @@ async function toggleAiToolbox() {
         <section class="card">
           <div class="card-title">运行模式<span class="card-sub">高级参数</span></div>
           <div class="modes">
-            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">离线</div>
+            <div class="mode" :class="{ sel: modelMode === 'local_0b' }" @click="modelMode = 'local_0b'">内置 0.5B</div>
+            <div class="mode" :class="{ sel: modelMode === 'local_1b' }" @click="modelMode = 'local_1b'">内置 1.5B</div>
             <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">云端</div>
-            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">本地 AI</div>
           </div>
           <template v-if="modelMode === 'api'">
             <div class="field">
@@ -883,63 +853,39 @@ async function toggleAiToolbox() {
             </div>
             <div v-if="testMsg" class="msg">{{ testMsg }}</div>
           </template>
-          <template v-if="modelMode !== 'script'">
-            <div class="field">
-              <label>回复速度</label>
-              <input v-model.number="depth" type="range" min="1" max="4" step="1" class="range" />
-              <div class="depth-labels">
-                <span>⚡ 快速</span><span>⚖️ 平衡</span><span>🧠 深入</span><span>🔥 认真思考</span>
-              </div>
-              <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
+          <div class="field">
+            <label>回复速度</label>
+            <input v-model.number="depth" type="range" min="1" max="4" step="1" class="range" />
+            <div class="depth-labels">
+              <span>⚡ 快速</span><span>⚖️ 平衡</span><span>🧠 深入</span><span>🔥 认真思考</span>
             </div>
-            <button class="btn primary" @click="saveModel">保存模型设置</button>
-            <p class="hint key-guide">
-              <span class="key-guide-arrow">⬇</span> API 密钥在下方「API 密钥」卡片填写，填完回到这里点保存
-            </p>
-          </template>
+            <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
+          </div>
+          <button class="btn primary" @click="saveModel">保存模型设置</button>
+          <p v-if="modelMode === 'api'" class="hint key-guide">
+            <span class="key-guide-arrow">⬇</span> API 密钥在下方「API 密钥」卡片填写，填完回到这里点保存
+          </p>
         </section>
 
-        <!-- 一键本地部署 AI -->
+        <!-- 内置离线模型状态（v1.0：内置 Qwen2.5 GGUF，无需 Ollama） -->
         <section class="card">
-          <div class="card-title">一键本地部署 AI（Ollama）</div>
+          <div class="card-title">内置离线模型<span class="card-sub">Qwen2.5 · 无需联网</span></div>
           <p class="hint">
-            {{ !ollamaChecked ? '检测中…' : ollama.installed ? `✅ Ollama 已安装（${ollama.models.length} 个模型）` : '❌ 未检测到 Ollama，需先安装' }}
-            <button v-if="ollamaChecked" class="btn ghost" style="margin-left:8px;padding:2px 10px" @click="detectLocalAI">重新检测</button>
+            {{ !localModelsChecked ? '检测中…' : '模型随应用内置，放好 GGUF 文件即可真离线对话；缺失时后端自动降级离线文库。' }}
+            <button v-if="localModelsChecked" class="btn ghost" style="margin-left:8px;padding:2px 10px" @click="detectLocalAI">重新检测</button>
           </p>
-          <template v-if="ollamaChecked && ollama.installed">
-            <p v-if="ollama.models.length" class="hint">已装模型：{{ ollama.models.join('、') }}</p>
-            <p v-else class="hint">还没有模型，下拉一个开始用：</p>
+          <template v-if="localModelsChecked && localModels">
+            <div v-for="m in localModels.models" :key="m.size" class="hint">
+              {{ m.available ? '✅' : '❌' }} {{ m.label }}（{{ m.file_name }}，约 {{ m.size_mb }}MB）
+              <span v-if="!m.available && m.hint"> — {{ m.hint }}</span>
+            </div>
+            <p class="hint">📁 模型目录：{{ localModels.models_dir }}</p>
+            <p v-if="localModels.memory_total_mb" class="hint">
+              🧮 物理内存：{{ (localModels.memory_total_mb / 1024).toFixed(1) }}GB（{{ localModels.can_run_1b ? '可跑 1.5B' : '建议用 0.5B' }}）
+            </p>
             <p v-if="gpuVram.length" class="hint">🖥️ 显卡：{{ gpuVram.map((g) => `${g.name}（${(g.vram_mb / 1024).toFixed(1)}GB）`).join('、') }}</p>
-            <div class="row">
-              <input v-model="pullModelName" class="input long" placeholder="qwen2.5:3b" />
-              <button class="btn primary" @click="doPullModel">⬇️ 一键拉取模型</button>
-            </div>
-            <div v-if="localAiMsg" class="msg">{{ localAiMsg }}</div>
-
-            <!-- 显存不足弹窗（含「我偏不」强制继续） -->
-            <div v-if="vramWarn" class="modal-mask" @click.self="vramWarn = false">
-              <div class="modal vram-modal">
-                <div class="modal-title">🖥️ 显存不足提醒</div>
-                <p class="modal-body">{{ vramWarnText }}</p>
-                <p class="modal-tip">建议改用轻量模型（qwen2.5:3b 或更小），或切换 API 模式更流畅。</p>
-                <div class="modal-actions">
-                  <button class="btn ghost" @click="vramWarn = false">改用 API 模式</button>
-                  <button class="btn primary" @click="vramIgnore">我偏不，老子电脑很牛逼 🔥</button>
-                </div>
-              </div>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <input v-model="modelsPath" class="input long" placeholder="模型存储路径（可选，如 D:\ollama-models）" />
-              <button class="btn ghost" @click="doSaveModelsPath">保存路径</button>
-            </div>
-            <div v-if="pathMsg" class="msg">{{ pathMsg }}</div>
           </template>
-          <template v-else-if="ollamaChecked && !ollama.installed">
-            <div class="row">
-              <button class="btn primary" @click="openExternal('https://ollama.com/download')">🌐 打开 Ollama 官网下载</button>
-            </div>
-            <p class="hint" style="margin-top:6px">安装 Ollama 后回到本页点「重新检测」，再一键拉取模型。推荐 <b>qwen2.5:3b</b>（轻量）或 <b>qwen2.5:7b</b>（均衡）。</p>
-          </template>
+          <p v-else-if="localModelsChecked" class="hint">❌ 模型状态检测失败，可点「重新检测」重试。</p>
         </section>
 
         <!-- 离线语义检索模型（方案3） -->
@@ -1298,9 +1244,6 @@ async function toggleAiToolbox() {
   font-size: var(--fs-13); background: transparent;
 }
 .mode.sel { border-color: var(--accent); background: var(--accent); color: var(--text-user); }
-.vram-modal { width: 360px; text-align: left; }
-.modal-body { font-size: var(--fs-13); line-height: 1.6; margin: 0 0 8px; }
-.modal-tip { font-size: var(--fs-12); color: var(--text-secondary, #999); margin: 0 0 14px; line-height: 1.6; }
 .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-13); }
 .btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
 .btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }

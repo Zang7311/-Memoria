@@ -23,21 +23,30 @@ export interface Memory {
   use_count?: number
 }
 
+/**
+ * 运行模式（v1.0 离线智能版）
+ * - local_0b / local_1b：内置 Qwen2.5 GGUF（0.5B / 1.5B），真离线对话，无需 Ollama
+ * - api：OpenAI 兼容云端兜底
+ * - script：内置离线文库模板，模型缺失时后端自动降级用它（UI 不再作为可选项）
+ */
+export type ModelMode = 'local_0b' | 'local_1b' | 'api' | 'script'
+
 /** 应用设置 */
 export interface Setting {
   theme: 'light' | 'dark'
   contextLength: number // 默认 10
   apiBaseUrl?: string
   apiKey?: string
-  modelMode: 'script' | 'api' | 'local' // 默认 'script'
+  modelMode: ModelMode // 默认 'local_0b'
   depth: 1 | 2 | 3 | 4 // 默认 2
 }
 
 /** 模型模式中文名映射（可选，便于 UI 展示）——人话版（D 批次文案统一） */
-export const MODEL_MODE_LABEL: Record<Setting['modelMode'], string> = {
-  script: '离线模式',
+export const MODEL_MODE_LABEL: Record<ModelMode, string> = {
+  local_0b: '内置 0.5B',
+  local_1b: '内置 1.5B',
   api: '云端AI',
-  local: '本地AI',
+  script: '离线文库',
 }
 
 // ==================== AI-4 记忆系统（与 Rust 端契约对齐） ====================
@@ -232,7 +241,7 @@ export interface AppConfig {
   api_key_plain?: string | null
   /** API 模型名（如 gpt-4o-mini / deepseek-chat） */
   api_model?: string
-  model_mode: 'script' | 'api' | 'local' | string
+  model_mode: ModelMode | string
   depth: number
   language_mix_rate: number
   floating_ball_mode: 'avatar' | 'simple' | string
@@ -301,10 +310,33 @@ export interface ChatUsage {
   total_tokens: number
 }
 
-/** Ollama 本地 AI 检测结果 */
-export interface DetectOllamaResponse {
-  installed: boolean
-  models: string[]
+/** 单档内置 Qwen2.5 模型状态（v1.0 离线智能版） */
+export interface LocalModelInfo {
+  /** "0.5b" | "1.5b" */
+  size: string
+  /** 人话名（内置 0.5B / 内置 1.5B） */
+  label: string
+  /** GGUF 文件名 */
+  file_name: string
+  /** 是否已就位（可直接对话） */
+  available: boolean
+  /** 已就位时的绝对路径 */
+  path?: string | null
+  /** 文件大小（MB） */
+  size_mb: number
+  /** 未就位时的引导文案 */
+  hint?: string | null
+}
+
+/** 两档内置模型的整体状态 */
+export interface LocalModelStatus {
+  models: LocalModelInfo[]
+  /** 推荐放置目录 */
+  models_dir: string
+  /** 物理内存（MB），0 表示采集失败 */
+  memory_total_mb: number
+  /** 内存是否够跑 1.5B */
+  can_run_1b: boolean
 }
 
 /** 显卡显存信息 */

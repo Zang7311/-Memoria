@@ -3488,7 +3488,7 @@ dependencies = [
 
 [[package]]
 name = "mem"
-version = "0.5.1"
+version = "1.0.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3500,6 +3500,7 @@ dependencies = [
  "chrono",
  "encoding_rs",
  "futures-util",
+ "hmac",
  "image",
  "jieba-rs",
  "log",
@@ -3511,6 +3512,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
  "sysinfo",
  "tauri",
  "tauri-build",

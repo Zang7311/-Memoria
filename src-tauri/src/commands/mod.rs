@@ -47,7 +47,8 @@ pub mod update_check;
 pub mod open_url;
 pub mod session;
 pub mod admin;
-pub mod local_ai;
+// —— v1.0 离线智能版：内置 Qwen2.5 模型状态（替代旧 local_ai.rs 的 Ollama 检测）——
+pub mod local_model;
 // —— AI-9 快捷指令系统 ——
 pub mod quick_command;
 // —— moon10 二维码生成与识别 ——

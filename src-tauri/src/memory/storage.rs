@@ -72,8 +72,7 @@ pub fn root_dir() -> PathBuf {
     if !custom.is_empty() {
         return PathBuf::from(custom);
     }
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(base).join("ling-memoria").join("memory")
+    crate::config::app_dir().join("memory")
 }
 
 /// 获取 index.json 的默认路径（与 AI-3 约定一致，保留给 AI-3 使用）

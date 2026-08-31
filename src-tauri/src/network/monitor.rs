@@ -102,23 +102,28 @@ async fn ping_ok(host: &str) -> bool {
     }
 }
 
-/// 断网切换脚本模式 / 联网恢复用户模式
+/// 断网时把云端模式切到离线可用模式 / 联网后恢复用户模式
+///
+/// v1.0 变更：内置 0.5B/1.5B 与 script 本身就完全离线，断网无需动它们；
+/// 只有 api 模式需要兜底，且兜底目标改为内置 0.5B（真对话），而不是旧的模板回复。
 fn apply_mode_switch(status: NetworkStatus) {
     match status {
         NetworkStatus::Offline => {
             let cfg = config_store::get_config();
-            // 已锁定为脚本模式则跳过（防重复）
-            if cfg.model_mode != "script" {
+            let mode = crate::types::ModelMode::parse(&cfg.model_mode);
+            // 已是离线可用模式（local_0b / local_1b / script）→ 无需切换
+            if !mode.is_offline() {
                 *PRE_OFFLINE_MODE.lock().unwrap() = Some(cfg.model_mode.clone());
+                let fallback = crate::types::ModelMode::Local0b.as_str();
                 let mut updates = std::collections::HashMap::new();
                 updates.insert(
                     "model_mode".to_string(),
-                    serde_json::Value::String("script".into()),
+                    serde_json::Value::String(fallback.into()),
                 );
                 if let Err(e) = config_store::update(&updates) {
-                    log::warn!("[network] 切换脚本模式失败：{e}");
+                    log::warn!("[network] 切换离线模式失败：{e}");
                 } else {
-                    log::info!("[network] 断网，已自动切换至脚本模式");
+                    log::info!("[network] 断网，已自动切换至内置 0.5B（{fallback}）");
                 }
             }
         }

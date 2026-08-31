@@ -3,19 +3,31 @@
 // TCP 可靠传输，端口 54546。帧协议见 payload.rs：
 //   [4-byte 大端长度][JSON SyncEnvelope]
 //
-// 协议流程（客户端拉取模式）：
+// 协议流程（客户端拉取模式，v2 强制挑战-应答认证）：
+//   0a. 服务端 → 客户端：Challenge 帧（一次性随机 nonce）
+//   0b. 客户端 → 服务端：Auth 帧（HMAC-SHA256(派生密钥, 域前缀||nonce)）
+//       服务端校验失败 → 立即断开，不泄露任何记忆数据
 //   1. 客户端 → 服务端：Request 帧（device_id / set_name / last_sync_time）
 //   2. 服务端 → 客户端：0..N 个 Payload 帧（每批 ≤100 条，加密 + SHA-256 校验）
 //   3. 服务端 → 客户端：Response 帧（发送完成汇总，synced_count = 发送总数）
 //   4. 客户端 → 服务端：Response 帧（接收回执确认，synced_count = 实际写入数）
 //
 // 增量同步：客户端携带本机该记忆集最后一条时间戳，服务端只回传更新的记忆。
+//
+// 安全（修复"局域网任意设备可拉取全部记忆"）：
+//   旧版 pairing_code 是「固定串 + 固定密钥」的静态密文，且服务端只判断能否解密、
+//   不校验明文内容 —— 局域网抓一次包即可永久重放。现改为每连接一次性 nonce 的
+//   挑战-应答，未持有相同主密码派生密钥的设备无法产生有效 MAC，认证在读取
+//   任何记忆之前完成，失败即断连。
 use crate::context::MEMORY_WRITER_LOCK;
 use crate::error::AppError;
 use crate::memory::storage;
 use crate::sync::conflict::{self, filter_incremental, merge_memories};
 use crate::sync::encryption;
-use crate::sync::payload::{decode_frame, encode_frame, sha256_hex, SyncEnvelope, MAX_BATCH};
+use crate::sync::payload::{
+    compute_auth_mac, decode_frame, encode_frame, generate_nonce_b64, sha256_hex, verify_auth_mac,
+    SyncAuth, SyncEnvelope, MAX_BATCH,
+};
 use crate::types::{
     Memory, StartSyncRequest, StartSyncResponse, SyncDevice, SyncHistoryEntry, SyncPayload,
     SyncProgressEvent, SyncRequest, SyncResponse,
@@ -132,35 +144,58 @@ async fn handle_incoming(
     app: AppHandle,
 ) -> Result<(), AppError> {
     log::info!("[sync] 收到来自 {addr} 的同步连接");
-    conflict::set_status("syncing", 0.0, Some(format!("正在响应 {addr} 的同步…")));
 
-    // 1. 读 SyncRequest
-    let request = match read_frame_timeout(&mut stream).await? {
-        SyncEnvelope::Request { request } => request,
-        _ => return Err(AppError::SyncError("首个帧必须是 SyncRequest".into())),
-    };
-
-    // 认证：要求主密码已设置并已解锁
+    // ==================== 强制认证（在任何数据读取之前）====================
+    // 顺序很关键：先要求本机已设置主密码并解锁，再挑战-应答，
+    // 通过后才允许进入业务流程。任一步失败立即返回 → 连接被 drop 断开。
     let cfg = crate::config::store::get_config();
     if !cfg.has_master_password {
         return Err(AppError::SyncError(
             "同步要求先设置主密码，请在设置中设置主密码后再试".into(),
         ));
     }
-    // 验证配对码（客户端用派生密钥加密 "ling-sync-auth-v1"）
-    if let Some(code) = &request.pairing_code {
-        let key = crate::config::encryption::get_key()
-            .map_err(|_| AppError::SyncError("同步要求先解锁主密码".into()))?;
-        crate::config::encryption::decrypt_with_key(&key, code).map_err(|_| {
-            AppError::SyncError("配对码验证失败：双端主密码不一致".into())
-        })?;
-    } else {
+    let key = crate::config::encryption::get_key()
+        .map_err(|_| AppError::SyncError("同步要求先解锁主密码".into()))?;
+
+    // 0a. 下发一次性挑战 nonce
+    let nonce = generate_nonce_b64();
+    stream
+        .write_all(&encode_frame(&SyncEnvelope::Challenge {
+            nonce: nonce.clone(),
+        })?)
+        .await?;
+
+    // 0b. 校验应答 MAC —— 未配对设备在此被拒，拿不到任何记忆
+    let auth = match read_frame_timeout(&mut stream).await? {
+        SyncEnvelope::Auth { auth } => auth,
+        _ => {
+            log::warn!("[sync] 拒绝 {addr}：未按协议发送认证应答（可能是旧版客户端或未授权设备）");
+            return Err(AppError::SyncError(
+                "认证失败：首帧必须是挑战应答（请升级双端铃·记忆体至同一版本）".into(),
+            ));
+        }
+    };
+    if !verify_auth_mac(&key, &nonce, &auth.mac) {
+        log::warn!(
+            "[sync] 拒绝 {addr}：认证失败（设备 {}），双端主密码不一致或为未授权设备",
+            auth.device_id
+        );
         return Err(AppError::SyncError(
-            "同步请求缺少配对确认码，请升级铃·记忆体客户端".into(),
+            "认证失败：双端主密码不一致，该设备未配对".into(),
         ));
     }
+    log::info!("[sync] {addr}（设备 {}）认证通过", auth.device_id);
 
-    let set_name = request.set_name.clone();
+    conflict::set_status("syncing", 0.0, Some(format!("正在响应 {addr} 的同步…")));
+
+    // 1. 读 SyncRequest（此时对端身份已确认）
+    let request = match read_frame_timeout(&mut stream).await? {
+        SyncEnvelope::Request { request } => request,
+        _ => return Err(AppError::SyncError("认证后的首个帧必须是 SyncRequest".into())),
+    };
+
+    // 记忆集名校验：防止 ../ 穿越读到同步目录之外的索引文件
+    let set_name = sanitize_set_name(&request.set_name)?;
     let total_memories = storage::read_all(&storage::set_index_path(Some(&set_name)))?;
     let to_send = filter_incremental(&total_memories, request.last_sync_time.as_deref());
     log::info!(
@@ -278,8 +313,7 @@ pub async fn start_sync(
     })?;
     let mut stream = stream;
 
-    // 1. 发送 SyncRequest（增量基准 = 本机该记忆集最后一条的时间戳）
-    // 客户端要求主密码已设置并解锁，附带配对码
+    // 客户端同样要求主密码已设置并解锁（认证凭据来源）
     let sync_key = crate::config::encryption::get_key()
         .map_err(|_| AppError::SyncError("同步要求先解锁主密码".into()))?;
     {
@@ -290,12 +324,32 @@ pub async fn start_sync(
             ));
         }
     }
-    let pairing_code = crate::config::encryption::encrypt_with_key(&sync_key, "ling-sync-auth-v1")?;
+
+    // 0. 认证握手：读服务端挑战 → 回 HMAC 应答
+    let nonce = match read_frame_timeout(&mut stream).await? {
+        SyncEnvelope::Challenge { nonce } => nonce,
+        _ => {
+            conflict::set_status("error", 0.0, Some("对端未要求认证".into()));
+            return Err(AppError::SyncError(
+                "对端未发送认证挑战，可能是旧版本，请升级双端铃·记忆体至同一版本".into(),
+            ));
+        }
+    };
+    let device_id = conflict::get_config().device_id.clone();
+    let auth = SyncAuth {
+        device_id: device_id.clone(),
+        mac: compute_auth_mac(&sync_key, &nonce),
+    };
+    stream
+        .write_all(&encode_frame(&SyncEnvelope::Auth { auth })?)
+        .await?;
+
+    // 1. 发送 SyncRequest（增量基准 = 本机该记忆集最后一条的时间戳）
     let request = SyncRequest {
-        device_id: conflict::get_config().device_id.clone(),
+        device_id,
         set_name: req.set_name.clone(),
         last_sync_time: last_sync_time(&req.set_name),
-        pairing_code: Some(pairing_code),
+        pairing_code: None,
     };
     stream
         .write_all(&encode_frame(&SyncEnvelope::Request { request })?)
@@ -326,7 +380,9 @@ pub async fn start_sync(
                 total_received += remote.len();
 
                 // 合并冲突 + 原子写存储（带全局写锁）
-                let path = storage::set_index_path(Some(&payload.set_name));
+                // 服务端回传的 set_name 也要校验：防恶意对端用 ../ 让本机写到目录外
+                let safe_set = sanitize_set_name(&payload.set_name)?;
+                let path = storage::set_index_path(Some(&safe_set));
                 let local = storage::read_all(&path)?;
                 let (merged, conflicts, written) = merge_memories(&local, &remote, policy);
                 conflict_count += conflicts;
@@ -356,6 +412,11 @@ pub async fn start_sync(
             }
             SyncEnvelope::Request { .. } => {
                 return Err(AppError::SyncError("协议错误：服务端不应发送 Request".into()));
+            }
+            SyncEnvelope::Challenge { .. } | SyncEnvelope::Auth { .. } => {
+                return Err(AppError::SyncError(
+                    "协议错误：认证已完成，不应再收到握手帧".into(),
+                ));
             }
         }
     }
@@ -435,6 +496,42 @@ async fn read_frame(stream: &mut TcpStream) -> Result<SyncEnvelope, AppError> {
     decode_frame(&frame)
 }
 
+/// 校验并归一化记忆集名称，防路径穿越
+///
+/// `storage::set_index_path` 会把 set_name 直接 join 到记忆根目录下，
+/// 所以来自网络的名称必须先过滤：只允许字母、数字、下划线、连字符、点与中日韩字符，
+/// 且不得含路径分隔符、`..`、盘符冒号。
+fn sanitize_set_name(raw: &str) -> Result<String, AppError> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err(AppError::SyncError("记忆集名称为空".into()));
+    }
+    if name.len() > 64 {
+        return Err(AppError::SyncError("记忆集名称过长".into()));
+    }
+    if name.contains('/')
+        || name.contains('\\')
+        || name.contains(':')
+        || name.contains('\0')
+        || name == ".."
+        || name == "."
+        || name.contains("..")
+    {
+        return Err(AppError::SyncError(format!(
+            "非法记忆集名称（含路径分隔符或上级目录）：{name}"
+        )));
+    }
+    if name
+        .chars()
+        .any(|c| c.is_control() || matches!(c, '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return Err(AppError::SyncError(format!(
+            "非法记忆集名称（含控制字符或保留符号）：{name}"
+        )));
+    }
+    Ok(name.to_string())
+}
+
 /// 本机某记忆集最后一条记忆的时间戳（增量同步基准）
 /// 仅返回符合 ISO 8601 格式的时间戳，防止非法值混入同步请求
 fn last_sync_time(set_name: &str) -> Option<String> {
@@ -453,4 +550,93 @@ fn write_merged_atomic(path: &std::path::PathBuf, memories: &[Memory]) -> Result
         .lock()
         .map_err(|_| AppError::MemoryError("记忆写锁获取失败".into()))?;
     storage::atomic_write_index(path, memories)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 记忆集名_合法值通过() {
+        for ok in ["default", "工作", "my-set", "set_1", "v1.0"] {
+            assert!(sanitize_set_name(ok).is_ok(), "应通过：{ok}");
+        }
+        // 前后空白被裁剪
+        assert_eq!(sanitize_set_name("  default  ").unwrap(), "default");
+    }
+
+    #[test]
+    fn 记忆集名_路径穿越被拒() {
+        for bad in [
+            "../secret",
+            "..\\secret",
+            "a/b",
+            "a\\b",
+            "C:evil",
+            "..",
+            ".",
+            "foo..bar",
+        ] {
+            assert!(sanitize_set_name(bad).is_err(), "应拒绝：{bad}");
+        }
+    }
+
+    #[test]
+    fn 记忆集名_空与超长被拒() {
+        assert!(sanitize_set_name("").is_err());
+        assert!(sanitize_set_name("   ").is_err());
+        assert!(sanitize_set_name(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn 记忆集名_控制字符与保留符号被拒() {
+        for bad in ["a\0b", "a\nb", "a<b", "a>b", "a|b", "a?b", "a*b", "a\"b"] {
+            assert!(sanitize_set_name(bad).is_err(), "应拒绝：{bad}");
+        }
+    }
+
+    #[test]
+    fn 认证_未配对设备无法伪造mac() {
+        // 服务端密钥（主人的主密码派生）与攻击者密钥不同
+        let server_key = crate::config::encryption::derive_key("主人的密码", b"fixed-salt-16b!!");
+        let attacker_key = crate::config::encryption::derive_key("猜的密码", b"fixed-salt-16b!!");
+        let nonce = generate_nonce_b64();
+        // 攻击者用自己的密钥算 MAC → 服务端校验必须失败
+        let forged = compute_auth_mac(&attacker_key, &nonce);
+        assert!(!verify_auth_mac(&server_key, &nonce, &forged));
+        // 同密码派生的合法设备可通过
+        let legit = compute_auth_mac(&server_key, &nonce);
+        assert!(verify_auth_mac(&server_key, &nonce, &legit));
+    }
+
+    #[test]
+    fn 认证_抓包重放对新连接无效() {
+        let key = crate::config::encryption::derive_key("主人的密码", b"fixed-salt-16b!!");
+        // 攻击者抓到第一次连接的 (nonce, mac)
+        let sniffed_nonce = generate_nonce_b64();
+        let sniffed_mac = compute_auth_mac(&key, &sniffed_nonce);
+        // 新连接服务端下发新 nonce，重放的 mac 失效
+        let fresh_nonce = generate_nonce_b64();
+        assert_ne!(sniffed_nonce, fresh_nonce);
+        assert!(!verify_auth_mac(&key, &fresh_nonce, &sniffed_mac));
+    }
+
+    #[test]
+    fn 认证_帧序列化往返() {
+        let key = [4u8; 32];
+        let nonce = generate_nonce_b64();
+        let env = SyncEnvelope::Auth {
+            auth: SyncAuth {
+                device_id: "dev-x".into(),
+                mac: compute_auth_mac(&key, &nonce),
+            },
+        };
+        let frame = encode_frame(&env).unwrap();
+        match decode_frame(&frame).unwrap() {
+            SyncEnvelope::Auth { auth } => {
+                assert!(verify_auth_mac(&key, &nonce, &auth.mac));
+            }
+            _ => panic!("类型不匹配"),
+        }
+    }
 }

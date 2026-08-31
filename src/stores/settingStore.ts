@@ -3,7 +3,7 @@
 // 数据源统一走 IPC get_config / update_config，不直接操作文件。
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { AppConfig, MasterPasswordStatus, UiThemePreset } from '../types'
+import type { AppConfig, MasterPasswordStatus, ModelMode, UiThemePreset } from '../types'
 import {
   exportConfig,
   getConfig,
@@ -14,6 +14,24 @@ import {
   unlock,
   updateConfig,
 } from '../utils/tauri'
+
+/**
+ * 归一化后端返回的 model_mode（与 Rust 侧 ModelMode::parse 保持同一套规则）
+ * 旧值 'local'（Ollama，已移除）与任何未知值 → 'local_0b'（内置 0.5B）
+ */
+function normalizeModelMode(raw: string | undefined | null): ModelMode {
+  switch ((raw ?? '').trim().toLowerCase()) {
+    case 'local_1b':
+    case 'local_1.5b':
+      return 'local_1b'
+    case 'api':
+      return 'api'
+    case 'script':
+      return 'script'
+    default:
+      return 'local_0b'
+  }
+}
 
 export const useSettingStore = defineStore('setting', () => {
   // —— 配置状态（与 AppConfig 对应，snake_case）——
@@ -44,7 +62,8 @@ export const useSettingStore = defineStore('setting', () => {
   const hasPlainKey = computed(() => !!_apiKeyPlain.value)
   /** API 模型名 */
   const apiModel = ref('gpt-3.5-turbo')
-  const modelMode = ref<'script' | 'api' | 'local'>('script')
+  // v1.0：默认内置 0.5B（装了就能真离线对话）
+  const modelMode = ref<ModelMode>('local_0b')
   const depth = ref(2)
   const languageMixRate = ref(8)
   const floatingBallMode = ref<'avatar' | 'simple'>('avatar')
@@ -85,7 +104,7 @@ export const useSettingStore = defineStore('setting', () => {
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
     _apiKeyPlain.value = c.api_key_plain ?? null
     apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
-    modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
+    modelMode.value = normalizeModelMode(c.model_mode)
     depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
     languageMixRate.value = (typeof c.language_mix_rate === 'number') ? Math.min(Math.max(c.language_mix_rate, 0), 30) : 8
     floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple') || 'avatar'

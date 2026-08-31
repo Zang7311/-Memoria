@@ -2,6 +2,60 @@
 // 与前端 src/types/index.ts 严格对应，serde 派生保证 IPC 序列化一致
 use serde::{Deserialize, Serialize};
 
+/// 运行模式（v1.0 离线智能版）
+///
+/// 配置里 `model_mode` 仍是 String（历史配置兼容 + serde 宽松），本枚举是它的解析结果。
+/// - `local_0b` / `local_1b`：内置 Qwen2.5 GGUF（0.5B / 1.5B），真离线对话，无外部依赖
+/// - `api`：OpenAI 兼容云端，联网兜底
+/// - `script`：内置离线文库模板，最后兜底（模型缺失/加载失败时自动降级）
+///
+/// 旧值迁移：v0.5.x 的 `"local"`（Ollama）已移除 → 落到 `local_0b`（内置 0.5B），
+/// 语义最接近「本地跑模型」；旧 `"script"` 保留原义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelMode {
+    Local0b,
+    Local1b,
+    Api,
+    Script,
+}
+
+impl ModelMode {
+    /// 宽松解析配置字符串（未知值 → 内置 0.5B，保证「装了就能聊」）
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "local_1b" | "local_1.5b" => ModelMode::Local1b,
+            "api" => ModelMode::Api,
+            "script" => ModelMode::Script,
+            // "local_0b" / 旧 "local"(Ollama) / 其他未知值
+            _ => ModelMode::Local0b,
+        }
+    }
+
+    /// 配置里存储的字符串值
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModelMode::Local0b => "local_0b",
+            ModelMode::Local1b => "local_1b",
+            ModelMode::Api => "api",
+            ModelMode::Script => "script",
+        }
+    }
+
+    /// 对应的内置模型档位（非本地模式返回 None）
+    pub fn model_size(self) -> Option<crate::engine::local_llm::ModelSize> {
+        match self {
+            ModelMode::Local0b => Some(crate::engine::local_llm::ModelSize::B05),
+            ModelMode::Local1b => Some(crate::engine::local_llm::ModelSize::B15),
+            _ => None,
+        }
+    }
+
+    /// 是否完全离线可用（不需要联网）
+    pub fn is_offline(self) -> bool {
+        !matches!(self, ModelMode::Api)
+    }
+}
+
 /// 单条对话消息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -61,7 +115,8 @@ pub struct Setting {
     /// API 模型名（默认 gpt-3.5-turbo，可配置 deepseek-chat 等）
     #[serde(default = "default_api_model")]
     pub api_model: String,
-    pub model_mode: String,         // "script" | "api" | "local"
+    /// "local_0b" | "local_1b" | "api" | "script"（见 ModelMode）
+    pub model_mode: String,
     pub depth: u8,                  // 1 | 2 | 3 | 4
     /// AI 自称（回复模板占位替换，默认「铃」；前端未传时为空则用默认）
     #[serde(default)]
@@ -82,7 +137,8 @@ impl Default for Setting {
             api_base_url: None,
             api_key: None,
             api_model: "gpt-3.5-turbo".to_string(),
-            model_mode: "script".to_string(),
+            // v1.0：默认内置 0.5B（装了就能真对话，不再是模板回复）
+            model_mode: ModelMode::Local0b.as_str().to_string(),
             depth: 2,
             self_name: None,
             user_name: None,
@@ -488,7 +544,7 @@ pub struct AppConfig {
     /// API 模型名（如 gpt-4o-mini / deepseek-chat），默认 gpt-3.5-turbo
     #[serde(default = "default_api_model")]
     pub api_model: String,
-    /// "script" | "api" | "local"
+    /// 运行模式："local_0b" | "local_1b" | "api" | "script"（见 ModelMode）
     pub model_mode: String,
     /// 思考深度 1|2|3|4
     pub depth: u8,

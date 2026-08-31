@@ -13,7 +13,8 @@ pub fn default_config() -> AppConfig {
         api_key_encrypted: None,
         api_key_plain: None,
         api_model: "gpt-3.5-turbo".to_string(),
-        model_mode: "script".to_string(),
+        // v1.0 离线智能版：默认内置 0.5B（真离线对话；模型缺失时 send_message 自动降级 script）
+        model_mode: crate::types::ModelMode::Local0b.as_str().to_string(),
         depth: 2,
         language_mix_rate: 8,
         floating_ball_mode: "avatar".to_string(),

@@ -58,8 +58,9 @@ fn home_dir() -> PathBuf {
     PathBuf::from(home)
 }
 
+/// 一键安装的目标目录：本版本数据目录下的 models/（v1.0 与主线隔离）
 fn target_models_dir() -> PathBuf {
-    home_dir().join(".铃记忆体").join("models")
+    crate::config::data_dir().join("models")
 }
 
 fn is_model_file(name: &str) -> bool {

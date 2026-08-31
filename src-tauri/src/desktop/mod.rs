@@ -8,10 +8,10 @@ pub mod tray;
 
 use std::path::PathBuf;
 
-/// 用户数据目录（%APPDATA%/ling-memoria，与 AI-5 插件注册表目录保持一致）
+/// 用户数据目录（%APPDATA%/ling-memoria-v10，与 AI-5 插件注册表目录保持一致）
+/// v1.0：目录名统一由 config::app_dir() 决定，与主线数据隔离。
 pub fn data_dir() -> PathBuf {
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
-    let dir = PathBuf::from(base).join("ling-memoria");
+    let dir = crate::config::app_dir();
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

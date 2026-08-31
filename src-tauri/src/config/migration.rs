@@ -49,6 +49,20 @@ pub fn migrate(raw: Value) -> Result<crate::types::AppConfig, AppError> {
         .unwrap_or(1) as u32;
     // —— 预留：if version < 2 { /* v1 → v2 升级逻辑 */ } ——
 
+    // v1.0 离线智能版：model_mode 归一化。
+    // 旧值 "local"（Ollama，已移除）→ "local_0b"（内置 0.5B），语义最接近；
+    // 其余未知值也统一收敛到合法枚举值，避免脏配置一路传到引擎分支。
+    if let Some(m) = obj.get("model_mode").and_then(|v| v.as_str()) {
+        let normalized = crate::types::ModelMode::parse(m).as_str();
+        if normalized != m {
+            log::info!("[迁移] model_mode「{m}」→「{normalized}」");
+            obj.insert(
+                "model_mode".to_string(),
+                Value::String(normalized.to_string()),
+            );
+        }
+    }
+
     // 解析为 AppConfig
     let mut cfg: crate::types::AppConfig =
         serde_json::from_value(Value::Object(obj)).map_err(|e| {
@@ -81,9 +95,12 @@ pub fn migrate_legacy_config() {
     use std::path::PathBuf;
 
     let appdata = std::env::var("APPDATA").unwrap_or_default();
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
     let old_config_candidates = [
+        // v1.0：主线 v0.5.x 的配置目录（~/.铃记忆体）——首次启动继承一次，之后各写各的
+        PathBuf::from(&home).join(".铃记忆体"),
         PathBuf::from(&appdata).join("com.zang7311.memoria"), // 早期 identifier 路径（任务书点名）
-        PathBuf::from(&appdata).join("com.zang-服务器.mem"),  // 当前 identifier 的 Tauri 默认路径
+        PathBuf::from(&appdata).join("com.zang-服务器.mem"),  // 旧 identifier 的 Tauri 默认路径
     ];
 
     // 新配置已存在 → 不迁移（避免覆盖用户新配置）
@@ -120,8 +137,14 @@ pub fn migrate_legacy_memory(app: &tauri::AppHandle) {
     }
 
     let appdata = std::env::var("APPDATA").unwrap_or_default();
-    // 旧记忆候选：AI-3/AI-4 时代定稿的默认路径（实测存在 48 条记忆）
-    let old_memory_candidates = [PathBuf::from(&appdata).join("ling-memoria").join("memory")];
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
+    // 旧记忆候选（按优先级，只复制不移动）：
+    // ① 主线 v0.5.x 的默认记忆目录（~/Documents/铃记忆体）
+    // ② AI-3/AI-4 时代定稿的 %APPDATA%/ling-memoria/memory（实测存在 48 条记忆）
+    let old_memory_candidates = [
+        PathBuf::from(&home).join("Documents").join("铃记忆体"),
+        PathBuf::from(&appdata).join("ling-memoria").join("memory"),
+    ];
 
     let mut migrated_any = false;
     let mut sources: Vec<String> = Vec::new();
@@ -209,10 +232,10 @@ mod tests {
 
     #[test]
     fn migrate_fills_defaults() {
-        // 空配置 → 全默认
+        // 空配置 → 全默认（v1.0 默认内置 0.5B）
         let cfg = migrate(json!({})).unwrap();
         assert_eq!(cfg.theme, "dark");
-        assert_eq!(cfg.model_mode, "script");
+        assert_eq!(cfg.model_mode, "local_0b");
         assert_eq!(cfg.first_launch, true);
         assert_eq!(cfg.config_version, CURRENT_VERSION);
     }
@@ -223,7 +246,25 @@ mod tests {
         assert_eq!(cfg.theme, "light");
         assert_eq!(cfg.context_length, 20);
         // 未提供的用默认
-        assert_eq!(cfg.model_mode, "script");
+        assert_eq!(cfg.model_mode, "local_0b");
+    }
+
+    #[test]
+    fn migrate_normalizes_legacy_model_mode() {
+        // 旧 Ollama 模式 → 内置 0.5B
+        let cfg = migrate(json!({ "model_mode": "local" })).unwrap();
+        assert_eq!(cfg.model_mode, "local_0b");
+        // 脏值同样收敛
+        let cfg = migrate(json!({ "model_mode": "ollama-whatever" })).unwrap();
+        assert_eq!(cfg.model_mode, "local_0b");
+    }
+
+    #[test]
+    fn migrate_keeps_valid_model_modes() {
+        for m in ["local_0b", "local_1b", "api", "script"] {
+            let cfg = migrate(json!({ "model_mode": m })).unwrap();
+            assert_eq!(cfg.model_mode, m);
+        }
     }
 
     #[test]

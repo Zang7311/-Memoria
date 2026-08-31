@@ -235,11 +235,9 @@ pub fn run() {
             // —— 收尾工程师：管理员权限 ——
             commands::admin::is_admin,
             commands::admin::restart_as_admin,
-            // —— 收尾工程师：一键本地部署 AI ——
-            commands::local_ai::detect_ollama,
-            commands::local_ai::pull_model,
-            commands::local_ai::detect_gpu_vram,
-            commands::local_ai::set_ollama_models_path,
+            // —— v1.0 离线智能版：内置 Qwen2.5 模型状态 ——
+            commands::local_model::detect_local_models,
+            commands::local_model::detect_gpu_vram,
             // —— AI-9 快捷指令系统 ——
             commands::quick_command::list_quick_commands,
             commands::quick_command::save_quick_command,

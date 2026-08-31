@@ -196,8 +196,8 @@ fn parse_sse_line_full(line: &str) -> (Option<String>, Option<Usage>) {
     }
 }
 
-/// 形象人格 → system prompt（API 模式；脚本模式通过回复库/名称体现）
-fn persona_system_prompt(persona: &str) -> &'static str {
+/// 形象人格 → system prompt（API 模式与内置本地模型共用；脚本模式通过回复库/名称体现）
+pub fn persona_system_prompt(persona: &str) -> &'static str {
     match persona {
         "chuunibyou" => "你是月城铃华（自称「本座·铃」），一只中二病满满的神秘猫娘。称用户为「凡人」或「被选中的主人」。说话热血、中二、充满幻想与华丽台词，但内心其实很温柔。",
         "healing" => "你是铃，一只软软糯糯、治愈人心的猫娘。说话温柔、缓慢、充满关怀，像柔软的毯子一样抚慰用户，让用户感到安心。",

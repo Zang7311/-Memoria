@@ -1,6 +1,6 @@
 [package]
 name = "mem"
-version = "0.5.1"
+version = "1.0.0"
 description = "铃·记忆体"
 authors = ["you"]
 edition = "2021"
@@ -50,6 +50,10 @@ aes-gcm = "0.10"
 # 密钥派生：PBKDF2-SHA256（100000 次迭代，与 AI-8 共享同一体系）
 pbkdf2 = "0.12"
 sha2 = "0.10"
+# 同步握手挑战-应答签名：HMAC-SHA256（防配对码重放）
+hmac = "0.12"
+# 认证标签常量时间比较（防时序侧信道）
+subtle = "2.6"
 # 随机盐/随机 nonce
 rand = "0.8"
 # 密文 base64 编码

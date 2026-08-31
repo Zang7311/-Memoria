@@ -32,10 +32,20 @@ fn model_dir() -> PathBuf {
         }
     }
     // 回退：用户目录（用户自放模型 / 轻量版后装插件包）
+    // v1.0：先看本版本目录（~/.铃记忆体-v10/models），再只读复用主线目录，
+    // 免得用户为同一份 bge 模型下两次。
+    let v10 = crate::config::data_dir().join("models");
+    if v10.join("model.safetensors").exists() {
+        return v10;
+    }
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
-    PathBuf::from(format!("{home}/.铃记忆体/models"))
+    let legacy = PathBuf::from(format!("{home}/.铃记忆体/models"));
+    if legacy.join("model.safetensors").exists() {
+        return legacy;
+    }
+    v10
 }
 
 /// 获取 Tauri 应用资源目录（仅在 Tauri 运行时可用，纯测试环境返回 None）
@@ -56,10 +66,8 @@ fn try_resource_dir() -> Option<PathBuf> {
 }
 
 fn cache_path() -> PathBuf {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    PathBuf::from(format!("{home}/.铃记忆体/embeddings.json"))
+    // v1.0：向量缓存跟随本版本数据目录（~/.铃记忆体-v10/embeddings.json）
+    crate::config::data_dir().join("embeddings.json")
 }
 
 fn load_embedder() -> Result<BertEmbedder> {

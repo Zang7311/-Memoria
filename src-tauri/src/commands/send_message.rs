@@ -68,8 +68,8 @@ async fn generate_and_emit(
     //    再叠加全局重要记忆兜底；未提供时保持原行为（全局记忆最近 N 条）——
     let index_path = memory::storage::default_index_path();
     let all_memories = memory::storage::read_all(&index_path)?;
-    let memories = match setting.model_mode.as_str() {
-        "script" => all_memories,
+    let memories = match crate::types::ModelMode::parse(&setting.model_mode) {
+        crate::types::ModelMode::Script => all_memories,
         _ => {
             let mut ctx = Vec::new();
             // 1) 会话历史（若提供了 session_id 且会话存在）→ 转 Memory + 截断
@@ -150,24 +150,38 @@ async fn generate_and_emit(
         return Ok(());
     }
 
-    // 按 model_mode 选择引擎
-    let reply = match setting.model_mode.as_str() {
-        "api" => {
+    // 按 model_mode 选择引擎（v1.0：local_0b / local_1b / api，script 作兜底）
+    let mode = crate::types::ModelMode::parse(&setting.model_mode);
+    let mut used_script = false;
+    let reply = match mode {
+        crate::types::ModelMode::Api => {
             let base = setting.api_base_url.clone().unwrap_or_default();
             let key = setting.api_key.clone().unwrap_or_default();
             let self_name = setting.self_name.clone().unwrap_or_else(|| "铃".to_string());
             let user_name = setting.user_name.clone().unwrap_or_else(|| "主人".to_string());
             engine::api::run_api(app, input, &memories, &base, &key, &setting.api_model, depth, &setting.persona, &self_name, &user_name).await?
         }
-        "local" => {
-            engine::local::run_local(app, input, &memories, depth).await?
+        crate::types::ModelMode::Local0b | crate::types::ModelMode::Local1b => {
+            let size = mode.model_size().unwrap_or(engine::local_llm::ModelSize::B05);
+            match engine::local_llm::run_local_llm(app, input, &memories, depth, size, &setting).await {
+                Ok(r) => r,
+                Err(e) => {
+                    // 模型文件缺失 / 加载失败 → 降级离线文库兜底（README 承诺「离线优先，永远有回应」）
+                    log::warn!("[send_message] {} 不可用，降级离线文库：{e}", size.label());
+                    used_script = true;
+                    engine::script::run_script(app, input, &setting, depth, &memories).await?
+                }
+            }
         }
-        _ => engine::script::run_script(app, input, &setting, depth, &memories).await?,
+        crate::types::ModelMode::Script => {
+            used_script = true;
+            engine::script::run_script(app, input, &setting, depth, &memories).await?
+        }
     };
 
     // 流结束后，将完整回复写入记忆
     // —— script 模式回复是固定模板（无新信息），不写入记忆，避免污染上下文 ——
-    if setting.model_mode.as_str() != "script" {
+    if !used_script {
         if let Err(e) = memory::storage::save_assistant_message(
             &index_path,
             &crate::utils::gen_id(),
