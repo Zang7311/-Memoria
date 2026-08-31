@@ -16,6 +16,7 @@ use base64::Engine as _;
 use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 use std::sync::Mutex;
+use zeroize::Zeroizing;
 
 /// PBKDF2 迭代次数（任务书强制 100000）
 pub const PBKDF2_ITERATIONS: u32 = 100_000;
@@ -26,8 +27,8 @@ pub const NONCE_LEN: usize = 12;
 /// 盐长度（16 字节）
 pub const SALT_LEN: usize = 16;
 
-/// 主密码派生的密钥（仅存内存，不落盘）。解锁后持有，用于 API Key 加解密。
-static DERIVED_KEY: Mutex<Option<[u8; KEY_LEN]>> = Mutex::new(None);
+/// 主密码派生的密钥（仅存内存，不落盘）。Zeroizing 包装确保 Drop 时自动清零。
+static DERIVED_KEY: Mutex<Option<Zeroizing<[u8; KEY_LEN]>>> = Mutex::new(None);
 
 /// 当前是否已解锁（内存中持有派生密钥）
 pub fn is_unlocked() -> bool {
@@ -36,20 +37,21 @@ pub fn is_unlocked() -> bool {
 
 /// 设置派生密钥（设置主密码 / 解锁成功时调用）
 pub fn set_key(key: [u8; KEY_LEN]) {
-    *DERIVED_KEY.lock().unwrap() = Some(key);
+    *DERIVED_KEY.lock().unwrap() = Some(Zeroizing::new(key));
 }
 
-/// 清除派生密钥（锁定）
+/// 清除派生密钥（锁定）—— Zeroizing Drop 时自动清零内存
 pub fn clear_key() {
     *DERIVED_KEY.lock().unwrap() = None;
 }
 
-/// 获取当前密钥；未解锁时返回 Locked
+/// 获取当前密钥副本；未解锁时返回 Locked
 pub fn get_key() -> Result<[u8; KEY_LEN], AppError> {
     DERIVED_KEY
         .lock()
         .unwrap()
-        .clone()
+        .as_deref()
+        .copied()
         .ok_or(AppError::Locked)
 }
 

@@ -49,17 +49,14 @@ fn load_user_items() -> Vec<ToolboxItem> {
     }
 }
 
-/// 保存用户自定义条目
-fn save_user_items(items: &[ToolboxItem]) {
+/// 保存用户自定义条目（失败时返回错误而非静默丢失）
+fn save_user_items(items: &[ToolboxItem]) -> Result<(), AppError> {
     let path = crate::desktop::toolbox_items_path();
-    match serde_json::to_string_pretty(items) {
-        Ok(s) => {
-            if let Err(e) = std::fs::write(&path, s) {
-                log::warn!("[toolbox] 保存用户条目失败：{e}");
-            }
-        }
-        Err(e) => log::warn!("[toolbox] 序列化失败：{e}"),
-    }
+    let s = serde_json::to_string_pretty(items)
+        .map_err(|e| AppError::ToolboxError(format!("序列化工具箱条目失败：{e}")))?;
+    std::fs::write(&path, s)
+        .map_err(|e| AppError::ToolboxError(format!("保存工具箱条目失败：{e}")))?;
+    Ok(())
 }
 
 /// 按 id 查找条目（预设 + 用户）
@@ -75,16 +72,14 @@ pub fn save_user_item(item: ToolboxItem) -> Result<(), AppError> {
     } else {
         items.push(item);
     }
-    save_user_items(&items);
-    Ok(())
+    save_user_items(&items)
 }
 
 /// 删除用户自定义条目
 pub fn delete_user_item(item_id: &str) -> Result<(), AppError> {
     let mut items = load_user_items();
     items.retain(|i| i.id != item_id);
-    save_user_items(&items);
-    Ok(())
+    save_user_items(&items)
 }
 
 /// 异步执行工具命令（cmd /C），30 秒超时强制终止（kill_on_drop）

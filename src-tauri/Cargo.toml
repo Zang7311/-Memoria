@@ -1,6 +1,6 @@
 [package]
 name = "mem"
-version = "0.4.6"
+version = "0.4.7"
 description = "铃·记忆体"
 authors = ["you"]
 edition = "2021"
@@ -54,6 +54,8 @@ sha2 = "0.10"
 rand = "0.8"
 # 密文 base64 编码
 base64 = "0.22"
+# 派生密钥内存安全清零（Drop 时自动覆盖，防止 key 残留内存）
+zeroize = { version = "1.8", features = ["derive"] }
 # 控制台输出智能解码（GBK 回退，解决 PS5.1 中文输出乱码）
 encoding_rs = "0.8"
 # 诊断包导出（zip 压缩）

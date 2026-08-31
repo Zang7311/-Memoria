@@ -34,6 +34,7 @@ pub fn default_config() -> AppConfig {
         persona: "daily".to_string(),
         master_password_salt: None,
         has_master_password: false,
+        master_password_check: None,
         accent_color: None,
         danger_color: None,
         bg_color: None,

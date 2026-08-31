@@ -86,6 +86,26 @@ async fn handle_incoming(
         _ => return Err(AppError::SyncError("首个帧必须是 SyncRequest".into())),
     };
 
+    // 认证：要求主密码已设置并已解锁
+    let cfg = crate::config::store::get_config();
+    if !cfg.has_master_password {
+        return Err(AppError::SyncError(
+            "同步要求先设置主密码，请在设置中设置主密码后再试".into(),
+        ));
+    }
+    // 验证配对码（客户端用派生密钥加密 "ling-sync-auth-v1"）
+    if let Some(code) = &request.pairing_code {
+        let key = crate::config::encryption::get_key()
+            .map_err(|_| AppError::SyncError("同步要求先解锁主密码".into()))?;
+        crate::config::encryption::decrypt_with_key(&key, code).map_err(|_| {
+            AppError::SyncError("配对码验证失败：双端主密码不一致".into())
+        })?;
+    } else {
+        return Err(AppError::SyncError(
+            "同步请求缺少配对确认码，请升级铃·记忆体客户端".into(),
+        ));
+    }
+
     let set_name = request.set_name.clone();
     let total_memories = storage::read_all(&storage::set_index_path(Some(&set_name)))?;
     let to_send = filter_incremental(&total_memories, request.last_sync_time.as_deref());
@@ -205,10 +225,23 @@ pub async fn start_sync(
     let mut stream = stream;
 
     // 1. 发送 SyncRequest（增量基准 = 本机该记忆集最后一条的时间戳）
+    // 客户端要求主密码已设置并解锁，附带配对码
+    let sync_key = crate::config::encryption::get_key()
+        .map_err(|_| AppError::SyncError("同步要求先解锁主密码".into()))?;
+    {
+        let cfg = crate::config::store::get_config();
+        if !cfg.has_master_password {
+            return Err(AppError::SyncError(
+                "同步要求先设置主密码，请在设置中设置主密码后再试".into(),
+            ));
+        }
+    }
+    let pairing_code = crate::config::encryption::encrypt_with_key(&sync_key, "ling-sync-auth-v1")?;
     let request = SyncRequest {
         device_id: conflict::get_config().device_id.clone(),
         set_name: req.set_name.clone(),
         last_sync_time: last_sync_time(&req.set_name),
+        pairing_code: Some(pairing_code),
     };
     stream
         .write_all(&encode_frame(&SyncEnvelope::Request { request })?)
@@ -349,10 +382,15 @@ async fn read_frame(stream: &mut TcpStream) -> Result<SyncEnvelope, AppError> {
 }
 
 /// 本机某记忆集最后一条记忆的时间戳（增量同步基准）
+/// 仅返回符合 ISO 8601 格式的时间戳，防止非法值混入同步请求
 fn last_sync_time(set_name: &str) -> Option<String> {
     let path = storage::set_index_path(Some(set_name));
     let all = storage::read_all(&path).ok()?;
-    all.iter().map(|m| &m.timestamp).max().cloned()
+    all.iter()
+        .map(|m| &m.timestamp)
+        .filter(|ts| chrono::DateTime::parse_from_rfc3339(ts).is_ok())
+        .max()
+        .cloned()
 }
 
 /// 带全局写锁的整表原子写入（同步合并后落盘）

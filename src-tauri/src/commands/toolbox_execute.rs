@@ -32,6 +32,23 @@ pub async fn execute_toolbox(
     app: AppHandle,
     request: ExecuteToolboxRequest,
 ) -> Result<ExecuteToolboxResponse, AppError> {
+    // H-7：format-disk 硬编码二次确认 + 盘符严格校验
+    if request.item_id == "format-disk" {
+        if !request.confirm {
+            return Err(AppError::ToolboxError(
+                "格式化磁盘为不可逆危险操作，必须传入 confirm=true 才能执行".into(),
+            ));
+        }
+        // 盘符必须为单个字母 A-Z（不区分大小写）
+        let drive = request.input.as_deref().unwrap_or("").trim();
+        let valid = drive.len() == 1 && drive.chars().next().map_or(false, |c| c.is_ascii_alphabetic());
+        if !valid {
+            return Err(AppError::ToolboxError(
+                "盘符必须是单个英文字母（A-Z），格式化中止".into(),
+            ));
+        }
+    }
+
     match toolbox::find_item(&resource_dir(&app), &request.item_id) {
         Some(item) => toolbox::execute(&item, request.input).await,
         None => Err(AppError::ToolboxError(format!(

@@ -387,6 +387,9 @@ pub struct ExecuteToolboxRequest {
     /// 需要输入参数的工具：用户输入值（对应命令里的 {input} 占位符）
     #[serde(default)]
     pub input: Option<String>,
+    /// 危险操作二次确认（format-disk 必须为 true 才执行）
+    #[serde(default)]
+    pub confirm: bool,
 }
 
 /// 执行工具箱命令响应
@@ -530,6 +533,9 @@ pub struct AppConfig {
     /// 是否已设置过主密码（true 表示已设置；解锁状态 unlocked 是内存态，不落盘）
     #[serde(default)]
     pub has_master_password: bool,
+    /// 密码校验段：对固定明文 "ling-check-v1" 的加密结果，用于 unlock 时验证密码正确性
+    #[serde(default)]
+    pub master_password_check: Option<String>,
     /// —— 外观自定义（用户可自行调整，均选填，大版本开放给用户自定义）——
     /// 主色 accent（十六进制，如 #ff7a94）
     #[serde(default)]
@@ -809,6 +815,9 @@ pub struct SyncRequest {
     /// 增量同步时间戳（None 为全量）
     #[serde(default)]
     pub last_sync_time: Option<String>,
+    /// 配对确认码：用派生密钥加密固定串 "ling-sync-auth-v1"，服务端解密验证双端密码一致
+    #[serde(default)]
+    pub pairing_code: Option<String>,
 }
 
 /// 同步响应（服务端 → 客户端）

@@ -49,24 +49,9 @@ pub async fn check_update(force: bool) -> Result<CheckUpdateResponse, AppError> 
     }
 
     let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
-    // 构建客户端：支持代理（读 HTTP_PROXY/HTTPS_PROXY 环境变量）。
-    // reqwest 默认不读系统代理，国内直连 GitHub 会失败（HTTP 000），
-    // 用户开 FlClash 等代理工具后，环境变量里有代理地址即可走代理。
-    let mut client_builder = reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .user_agent("Memoria-Client/1.0")
-        .timeout(std::time::Duration::from_secs(8));
-    for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
-        if let Ok(proxy) = std::env::var(key) {
-            if !proxy.is_empty() {
-                if let Ok(p) = reqwest::Proxy::all(&proxy) {
-                    client_builder = client_builder.proxy(p);
-                    log::debug!("[update] 使用代理 {}（来自 {key}）", proxy);
-                    break;
-                }
-            }
-        }
-    }
-    let client = client_builder
+        .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| AppError::UpdateCheckError(e.to_string()))?;
 
