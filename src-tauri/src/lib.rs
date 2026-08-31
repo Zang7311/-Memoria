@@ -23,10 +23,13 @@ mod utils;
 
 use tauri::Manager;
 
-// —— 测试通道（保留，供前端 greet 使用）——
+// —— 测试通道（debug 构建返回实际内容；release 构建为空操作，命令仍注册但无实质功能）——
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("你好，{}！铃已经准备好了。", name)
+    #[cfg(debug_assertions)]
+    return format!("你好，{}！铃已经准备好了。", name);
+    #[cfg(not(debug_assertions))]
+    { let _ = name; String::new() }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -68,7 +71,7 @@ pub fn run() {
                 }
             }
 
-            // —— AI-8 同步模块初始化 + TCP 监听 + UDP 广播响应 + 网络监测 ——
+            // —— AI-8 同步模块初始化 + TCP 监听 + 网络监测 ——
             sync::init();
             sync::spawn_listener(app.handle().clone());
             sync::spawn_responder();

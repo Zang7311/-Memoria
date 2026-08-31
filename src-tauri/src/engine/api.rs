@@ -126,15 +126,13 @@ pub async fn run_api(
             while let Some(pos) = buf.find('\n') {
                 let line = buf[..pos].trim().to_string();
                 buf.drain(..=pos);
-                if let Some(part) = parse_sse_line(&line) {
+                let (content, line_usage) = parse_sse_line_full(&line);
+                if let Some(part) = content {
                     full.push_str(&part);
                     sender::send_chunk(app, &part)?;
                 }
-                // 捕获 usage（stream_options.include_usage 时最后一块带 usage）
-                if let Some(u) = parse_usage(&line) {
-                    if u.total_tokens > 0 {
-                        usage = Some(u);
-                    }
+                if let Some(u) = line_usage {
+                    usage = Some(u);
                 }
             }
         }
@@ -174,24 +172,28 @@ pub async fn run_api(
     }
 }
 
-/// 解析一行 SSE 数据，返回其中的 delta.content
-fn parse_sse_line(line: &str) -> Option<String> {
+/// 解析一行 SSE 数据，同时返回 delta.content 和 usage（避免重复解析同一行）
+fn parse_sse_line_full(line: &str) -> (Option<String>, Option<Usage>) {
     let line = line.trim();
     if !line.starts_with("data:") {
-        return None;
+        return (None, None);
     }
     let data = line["data:".len()..].trim();
-    if data == "[DONE]" {
-        return None;
+    if data == "[DONE]" || data.is_empty() {
+        return (None, None);
     }
-    serde_json::from_str::<StreamChunk>(data)
-        .ok()
-        .and_then(|c| {
-            c.choices
+    match serde_json::from_str::<StreamChunk>(data).ok() {
+        Some(chunk) => {
+            let content = chunk
+                .choices
                 .into_iter()
                 .find_map(|ch| ch.delta.and_then(|d| d.content))
-                .filter(|s| !s.is_empty())
-        })
+                .filter(|s| !s.is_empty());
+            let usage = chunk.usage.filter(|u| u.total_tokens > 0);
+            (content, usage)
+        }
+        None => (None, None),
+    }
 }
 
 /// 形象人格 → system prompt（API 模式；脚本模式通过回复库/名称体现）
@@ -206,17 +208,7 @@ fn persona_system_prompt(persona: &str) -> &'static str {
 
 /// 从一行 SSE 数据解析 usage（仅当该行是 data: 且含 usage 字段；用于流式 token 统计）
 fn parse_usage(line: &str) -> Option<Usage> {
-    let line = line.trim();
-    if !line.starts_with("data:") {
-        return None;
-    }
-    let data = line["data:".len()..].trim();
-    if data == "[DONE]" || data.is_empty() {
-        return None;
-    }
-    serde_json::from_str::<StreamChunk>(data)
-        .ok()
-        .and_then(|c| c.usage)
+    parse_sse_line_full(line).1
 }
 
 /// 生成一条 assistant 记忆

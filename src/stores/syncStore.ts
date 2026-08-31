@@ -120,11 +120,6 @@ export const useSyncStore = defineStore('sync', () => {
   async function checkUpdateNow(force = false) {
     try {
       const res = await checkUpdate(force)
-      if (res.error) {
-        // 检查失败（网络/限流等），如实告知，不误报"最新"
-        message.value = `更新检查失败：${res.error}`
-        return res
-      }
       if (res.has_update && res.version_info) {
         message.value = `发现新版本 ${res.version_info.latest_version}！`
       } else {

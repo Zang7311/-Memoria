@@ -28,6 +28,8 @@ export const useChatStore = defineStore('chat', () => {
   const interruptedIds = ref<Record<string, boolean>>({})
   // 最近一次 API 回复的 token 用量
   const lastUsage = ref<ChatUsage | null>(null)
+  // saveCurrentSession 并发锁（防止并发写入同一会话）
+  let _saveLock: Promise<void> | null = null
 
   // —— 初始化：加载会话列表，无会话则自动新建 ——
   async function init() {
@@ -72,15 +74,22 @@ export const useChatStore = defineStore('chat', () => {
     await loadInto(id)
   }
 
-  // —— 保存当前会话到后端（更新标题/计数/时间）——
+  // —— 保存当前会话到后端（更新标题/计数/时间）串行化防并发 ——
   async function saveCurrentSession() {
     if (!activeSessionId.value) return
-    const s = await saveSessionCmd(activeSessionId.value, messages.value)
-    const idx = sessions.value.findIndex((x) => x.id === s.meta.id)
-    if (idx >= 0) sessions.value[idx] = s.meta
-    else sessions.value.unshift(s.meta)
-    // 最新会话排最前
-    sessions.value.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+    // 若已有保存在进行中，等它完成后再发起新的（防止并发覆盖）
+    if (_saveLock) {
+      await _saveLock.catch(() => {})
+    }
+    const id = activeSessionId.value
+    const msgs = messages.value.slice()
+    _saveLock = saveSessionCmd(id, msgs).then((s) => {
+      const idx = sessions.value.findIndex((x) => x.id === s.meta.id)
+      if (idx >= 0) sessions.value[idx] = s.meta
+      else sessions.value.unshift(s.meta)
+      sessions.value.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+    }).finally(() => { _saveLock = null })
+    await _saveLock
   }
 
   // —— 删除会话（若删除当前会话则切换到下一个/新建）——

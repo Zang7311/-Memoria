@@ -2,7 +2,7 @@
 // 对应后端 AppConfig，提供加载/更新/重置/导入导出。
 // 数据源统一走 IPC get_config / update_config，不直接操作文件。
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { AppConfig, MasterPasswordStatus, UiThemePreset } from '../types'
 import {
   exportConfig,
@@ -38,8 +38,10 @@ export const useSettingStore = defineStore('setting', () => {
   const apiBaseUrl = ref<string | null>(null)
   /** 加密存储的密文（不用于回显明文） */
   const apiKeyEncrypted = ref<string | null>(null)
-  /** 明文存储的 API Key（未设置主密码时使用） */
-  const apiKeyPlain = ref<string | null>(null)
+  /** 明文存储的 API Key（未设置主密码时使用；不直接暴露，通过 hasPlainKey 判断是否存在） */
+  const _apiKeyPlain = ref<string | null>(null)
+  /** 是否存在明文 API Key（只读布尔，不暴露明文内容） */
+  const hasPlainKey = computed(() => !!_apiKeyPlain.value)
   /** API 模型名 */
   const apiModel = ref('gpt-3.5-turbo')
   const modelMode = ref<'script' | 'api' | 'local'>('script')
@@ -78,14 +80,14 @@ export const useSettingStore = defineStore('setting', () => {
     runAsAdmin.value = c.run_as_admin ?? false
     emojiMode.value = (c.emoji_mode as 'off' | 'partial' | 'all') || 'off'
     aiToolbox.value = c.ai_toolbox ?? false
-    contextLength.value = c.context_length
+    contextLength.value = (typeof c.context_length === 'number' && c.context_length > 0) ? Math.min(c.context_length, 100) : 10
     apiBaseUrl.value = c.api_base_url ?? null
     apiKeyEncrypted.value = c.api_key_encrypted ?? null
-    apiKeyPlain.value = c.api_key_plain ?? null
+    _apiKeyPlain.value = c.api_key_plain ?? null
     apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
-    depth.value = c.depth
-    languageMixRate.value = c.language_mix_rate
+    depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
+    languageMixRate.value = (typeof c.language_mix_rate === 'number') ? Math.min(Math.max(c.language_mix_rate, 0), 30) : 8
     floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple') || 'avatar'
     floatingBallPosition.value = c.floating_ball_position ?? [0, 0]
     monitorEnabled.value = c.monitor_enabled
@@ -237,7 +239,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, apiBaseUrl, apiKeyEncrypted, apiKeyPlain, apiModel, modelMode, depth,
+    theme, contextLength, apiBaseUrl, apiKeyEncrypted, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,

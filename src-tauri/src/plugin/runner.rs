@@ -165,6 +165,10 @@ fn run_js_blocking(
 
     let mut context = Context::default();
 
+    // M-2：设置资源限制，防止插件无限循环或深递归耗尽资源
+    context.runtime_limits_mut().set_loop_iteration_limit(100_000);
+    context.runtime_limits_mut().set_recursion_limit(256);
+
     // 1. 注入 console 日志（捕获到主日志）
     let console_log = NativeFunction::from_copy_closure(
         |_this: &JsValue, args: &[JsValue], ctx: &mut Context| {

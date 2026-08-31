@@ -132,6 +132,7 @@ pub fn reset() -> Result<AppConfig, AppError> {
     let old = get_config();
     d.has_master_password = old.has_master_password;
     d.master_password_salt = old.master_password_salt;
+    d.master_password_check = old.master_password_check;
     d.api_key_encrypted = old.api_key_encrypted;
     set_config(d.clone())?;
     Ok(d)
@@ -139,7 +140,7 @@ pub fn reset() -> Result<AppConfig, AppError> {
 
 // ==================== 主密码管理 ====================
 
-/// 设置主密码（首次引导 / 修改）：生成盐 → 派生密钥 → 存内存 → 持久化盐+标志
+/// 设置主密码（首次引导 / 修改）：生成盐 → 派生密钥 → 加密校验段 → 存内存 → 持久化
 pub fn set_master_password(password: &str) -> Result<(), AppError> {
     if password.is_empty() {
         return Err(AppError::EncryptionError("主密码不能为空".into()));
@@ -147,15 +148,18 @@ pub fn set_master_password(password: &str) -> Result<(), AppError> {
     let salt_b64 = encryption::generate_salt_b64();
     let salt = encryption::decode_salt(&salt_b64)?;
     let key = encryption::derive_key(password, &salt);
+    // 用派生密钥加密固定校验明文，后续 unlock 时用于验证密码是否正确
+    let check = encryption::encrypt_with_key(&key, "ling-check-v1")?;
     encryption::set_key(key);
 
     let mut cfg = get_config();
     cfg.master_password_salt = Some(salt_b64);
     cfg.has_master_password = true;
+    cfg.master_password_check = Some(check);
     set_config(cfg)
 }
 
-/// 解锁：用主密码 + 已存盐派生密钥；若有已加密 api_key，尝试解密验证（成功才算解锁）
+/// 解锁：用主密码 + 已存盐派生密钥，先解密校验段验证密码正确性，再持有密钥
 pub fn unlock(password: &str) -> Result<bool, AppError> {
     let cfg = get_config();
     let salt_b64 = cfg
@@ -165,10 +169,16 @@ pub fn unlock(password: &str) -> Result<bool, AppError> {
     let salt = encryption::decode_salt(&salt_b64)?;
     let key = encryption::derive_key(password, &salt);
 
-    // 若已有加密 api_key，用派生密钥解密验证；失败 → 主密码错误
-    if let Some(enc) = &cfg.api_key_encrypted {
-        encryption::decrypt_with_key(&key, enc)?;
+    // 优先用校验段验证密码（set_master_password 时写入）
+    if let Some(check) = &cfg.master_password_check {
+        encryption::decrypt_with_key(&key, check)
+            .map_err(|_| AppError::MasterPasswordWrong("主密码不正确".into()))?;
+    } else if let Some(enc) = &cfg.api_key_encrypted {
+        // 旧数据：无校验段，退回用 api_key 验证（兼容）
+        encryption::decrypt_with_key(&key, enc)
+            .map_err(|_| AppError::MasterPasswordWrong("主密码不正确".into()))?;
     }
+    // 若既无校验段又无加密 key，则无法验证 —— 直接接受（防止旧数据被锁死）
     encryption::set_key(key);
     Ok(true)
 }
