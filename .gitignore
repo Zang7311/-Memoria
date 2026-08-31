@@ -25,3 +25,6 @@ dist-ssr
 
 # 临时脚本/生成产物（不入库）
 scripts_tmp/
+
+# 模型文件（体积大，不入 git 仓库；完整版经安装包分发，见 README 嵌入模型声明）
+src-tauri/resources/models/

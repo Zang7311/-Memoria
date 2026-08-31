@@ -5,6 +5,7 @@ import {
   getSearchMode,
   setSearchMode,
   checkVectorModelStatus,
+  getSystemInfo,
   type SearchMode,
   type VectorModelStatus,
 } from '../utils/tauri'
@@ -43,14 +44,21 @@ async function selectMode(mode: SearchMode) {
 }
 
 async function handleVectorCheck() {
-  // 内存检测：优先 navigator.deviceMemory（GB，可能不精确），最低 1
-  const ram = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0
+  // 内存检测：优先后端真实物理内存（GB），Tauri WebView 中 navigator.deviceMemory 通常不可用
+  let ram = 0
+  try {
+    const sys = await getSystemInfo()
+    ram = (sys.memory_total_mb ?? 0) / 1024
+  } catch {
+    // 后端拿不到则回退 navigator.deviceMemory（可能不准确）
+    ram = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0
+  }
   if (ram > 0 && ram < 4) {
-    memoryWarning.value = `你的电脑配置较低（约 ${ram}GB 内存），开启后可能卡顿，建议 8GB 以上内存使用`
+    memoryWarning.value = `你的电脑配置较低（约 ${ram.toFixed(1)}GB 内存），开启后可能卡顿，建议 8GB 以上内存使用`
   } else if (ram >= 4 && ram < 8) {
-    memoryWarning.value = `检测到约 ${ram}GB 内存，可运行但可能卡顿`
+    memoryWarning.value = `检测到约 ${ram.toFixed(1)}GB 内存，可运行但可能卡顿`
   } else if (ram >= 8) {
-    memoryWarning.value = `检测到约 ${ram}GB 内存，可流畅运行`
+    memoryWarning.value = `检测到约 ${ram.toFixed(1)}GB 内存，可流畅运行`
   } else {
     // 无法检测
     memoryWarning.value = null
