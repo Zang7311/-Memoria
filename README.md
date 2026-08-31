@@ -134,4 +134,11 @@ src-tauri/                  # Rust 后端
 
 ## 🤖 AI 生成声明
 
-本项目的部分实现由 Hermes Agent 生成，使用模型包括：DeepSeek V4 Pro、DeepSeek V4 Flash、DeepSeek V4 Flash Vision Exp、Qwen 3.7 Max、DeepSeek V3.2、GPT 网页免费版。作者已对输出做了人工审查与调整，并维护 76+ 个单元测试。任何后续问题由 [@Zang7311](https://github.com/Zang7311) 负责修复。
+本项目的部分实现由 Hermes Agent 生成，使用模型包括：DeepSeek V4 Pro、DeepSeek V4 Flash、DeepSeek V4 Flash Vision Exp、Qwen 3.7 Max、DeepSeek V3.2、GPT 网页免费版。作者已对输出做了人工审查与调整，并维护 80+ 个单元测试。任何后续问题由 [@Zang7311](https://github.com/Zang7311) 负责修复。
+
+## 🧠 嵌入模型声明（可选方案3）
+
+- 语义检索（方案3）使用 [BAAI/FlagEmbedding](https://github.com/FlagOpen/FlagEmbedding) 的 **bge-small-zh-v1.5** 中文嵌入模型。
+- 该模型基于 **MIT License** 发布（见 [FlagEmbedding](https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE)），可免费商用。
+- 来源：[ModelScope](https://modelscope.cn/models/AI-ModelScope/bge-small-zh-v1.5)，完整版安装包已内置（`models/model.safetensors`）；轻量版不含模型，可通过插件包补齐。
+- 模型仅在用户开启「方案3：向量检索」时加载，其余情况不影响下载体积与内存占用。

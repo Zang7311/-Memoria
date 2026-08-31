@@ -70,3 +70,10 @@ rqrr = "0.7"
 # ==================== 离线检索增强（方案2 BM25 分词）====================
 # jieba-rs 内置词典（编译期内嵌 include_bytes!），无运行时下载，纯离线
 jieba-rs = "0.7"
+# ==================== 离线检索增强（方案3 向量检索）====================
+# candle：纯 Rust ML 框架，加载 safetensors + BertModel 前向
+candle-core = { version = "0.11.0", default-features = false }
+candle-nn = { version = "0.11.0", default-features = false }
+candle-transformers = { version = "0.11.0", default-features = false }
+# HuggingFace tokenizers：加载 tokenizer.json，WordPiece 分词
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }

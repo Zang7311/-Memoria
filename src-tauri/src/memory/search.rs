@@ -289,8 +289,20 @@ pub fn search_with_mode(memories: &[Memory], keyword: &str, mode: &str) -> Vec<M
     match mode {
         "bm25" => search_bm25(memories, keyword),
         "vector" => {
-            // 向量模型未加载实现，降级到 BM25
-            search_bm25(memories, keyword)
+            // 真正的向量检索；模型不可用时自动降级 bigram
+            match crate::memory::vector::search_vector(memories, keyword, 0.3) {
+                Some(results) if !results.is_empty() => results,
+                Some(_) => {
+                    // 向量检索零结果，降级 bigram
+                    log::debug!("[vector] 向量检索无结果，降级 bigram");
+                    search_bigram(memories, keyword)
+                }
+                None => {
+                    // 模型不可用，降级 bigram
+                    log::warn!("[vector] 向量模型不可用，降级 bigram");
+                    search_bigram(memories, keyword)
+                }
+            }
         }
         _ => search_bigram(memories, keyword),
     }
