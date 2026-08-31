@@ -12,7 +12,7 @@ import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
 import { MODEL_MODE_LABEL } from '../types'
 import TheIcon from '../components/TheIcon.vue'
-import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection } from '../utils/tauri'
+import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate } from '../utils/tauri'
 
 const setting = useSettingStore()
 const milestone = useMilestoneStore()
@@ -94,6 +94,50 @@ const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
 const apiKeyInput = ref('')
 const depth = ref(2)
+// 离线语义检索模型（bge, 方案3）状态
+const vectorModelStatus = ref<{ available: boolean; message: string } | null>(null)
+const vectorCandidates = ref<ModelCandidate[]>([])
+const vectorScanning = ref(false)
+const vectorInstalling = ref(false)
+const vectorMsg = ref('')
+// 检查离线语义检索模型
+async function checkVectorModel() {
+  try {
+    vectorModelStatus.value = await checkVectorModelStatus()
+  } catch (e) {
+    vectorModelStatus.value = null
+    vectorMsg.value = `检测失败：${e}`
+  }
+}
+// 扫描本地常见位置的模型候选
+async function scanVectorModels() {
+  vectorScanning.value = true
+  vectorMsg.value = ''
+  try {
+    vectorCandidates.value = await scanModelFiles()
+    if (!vectorCandidates.value.length) {
+      vectorMsg.value = '未在常见位置找到模型，请手动放入 ~/.铃记忆体/models/'
+    }
+  } catch (e) {
+    vectorMsg.value = `扫描失败：${e}`
+  } finally {
+    vectorScanning.value = false
+  }
+}
+// 一键安装选中的模型
+async function doInstallVectorModel(path: string) {
+  vectorInstalling.value = true
+  vectorMsg.value = ''
+  try {
+    await installModel(path)
+    await checkVectorModel()
+    vectorMsg.value = '✅ 模型安装成功，方案3（语义检索）已可用'
+  } catch (e) {
+    vectorMsg.value = `安装失败：${e}`
+  } finally {
+    vectorInstalling.value = false
+  }
+}
 // 思考档位人话标签（P1：深度 1-4 → 快速/平衡/深入/认真思考）
 const DEPTH_LABEL: Record<number, string> = {
   1: '⚡ 快速',
@@ -261,6 +305,8 @@ onMounted(async () => {
   try { adminState.value = await isAdmin() } catch { adminState.value = false }
   // 检测本地 Ollama
   await detectLocalAI()
+  // 检测离线语义检索模型（方案3）
+  await checkVectorModel()
 })
 
 // 以管理员权限重启
@@ -839,18 +885,20 @@ async function toggleAiToolbox() {
             </div>
             <div v-if="testMsg" class="msg">{{ testMsg }}</div>
           </template>
-          <div class="field">
-            <label>回复速度</label>
-            <input v-model="depth" type="range" min="1" max="4" step="1" class="range" />
-            <div class="depth-labels">
-              <span>⚡ 快速</span><span>⚖️ 平衡</span><span>🧠 深入</span><span>🔥 认真思考</span>
+          <template v-if="modelMode !== 'script'">
+            <div class="field">
+              <label>回复速度</label>
+              <input v-model.number="depth" type="range" min="1" max="4" step="1" class="range" />
+              <div class="depth-labels">
+                <span>⚡ 快速</span><span>⚖️ 平衡</span><span>🧠 深入</span><span>🔥 认真思考</span>
+              </div>
+              <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
             </div>
-            <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
-          </div>
-          <button class="btn primary" @click="saveModel">保存模型设置</button>
-          <p class="hint key-guide">
-            <span class="key-guide-arrow">⬇</span> API 密钥在下方「API 密钥」卡片填写，填完回到这里点保存
-          </p>
+            <button class="btn primary" @click="saveModel">保存模型设置</button>
+            <p class="hint key-guide">
+              <span class="key-guide-arrow">⬇</span> API 密钥在下方「API 密钥」卡片填写，填完回到这里点保存
+            </p>
+          </template>
         </section>
 
         <!-- 一键本地部署 AI -->
@@ -894,6 +942,30 @@ async function toggleAiToolbox() {
             </div>
             <p class="hint" style="margin-top:6px">安装 Ollama 后回到本页点「重新检测」，再一键拉取模型。推荐 <b>qwen2.5:3b</b>（轻量）或 <b>qwen2.5:7b</b>（均衡）。</p>
           </template>
+        </section>
+
+        <!-- 离线语义检索模型（方案3） -->
+        <section class="card">
+          <div class="card-title">离线语义检索模型（bge）</div>
+          <p class="hint">离线模式下让「铃」更聪明地选回复（语义匹配，比关键词更懂你）。模型约 91MB，完整版内置；轻量版可一键检索安装。</p>
+          <div v-if="vectorModelStatus" class="hint">
+            {{ vectorModelStatus.available ? '✅ ' + vectorModelStatus.message : '❌ ' + vectorModelStatus.message }}
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn ghost" :disabled="vectorScanning" @click="scanVectorModels">
+              {{ vectorScanning ? '⏳ 检索中…' : '🔍 检索模型' }}
+            </button>
+          </div>
+          <div v-if="vectorCandidates.length" class="card" style="margin-top:8px;background:var(--input-bg)">
+            <div v-for="c in vectorCandidates" :key="c.path" class="row" style="margin-top:6px">
+              <span class="hint" style="flex:1">{{ c.filename }}（{{ (c.size_mb).toFixed(1) }}MB）</span>
+              <button v-if="c.exists_in_target" class="btn ghost" disabled>已安装</button>
+              <button v-else class="btn primary" :disabled="vectorInstalling" @click="doInstallVectorModel(c.path)">
+                {{ vectorInstalling ? '安装中…' : '一键安装' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="vectorMsg" class="msg">{{ vectorMsg }}</div>
         </section>
 
         <section class="card">
@@ -960,7 +1032,7 @@ async function toggleAiToolbox() {
           <div class="card-title">个性化</div>
           <div class="field">
             <label>日语修饰词浓度（0-30）</label>
-            <input v-model="mixRate" type="range" min="0" max="30" class="range" />
+            <input v-model.number="mixRate" type="range" min="0" max="30" class="range" />
             <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
           </div>
           <div class="row">

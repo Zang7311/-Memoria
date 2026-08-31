@@ -118,6 +118,23 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
             }
         }
     }
+    // 容错：u8 整数型字段若前端误传字符串（如 "4"），转换为数字，避免反序列化失败
+    if let Value::Object(map) = &mut obj {
+        for k in [
+            "context_length",
+            "depth",
+            "language_mix_rate",
+            "ui_radius",
+        ] {
+            if let Some(v) = map.get_mut(k) {
+                if let Value::String(s) = v {
+                    if let Ok(n) = s.parse::<u8>() {
+                        *v = Value::Number(n.into());
+                    }
+                }
+            }
+        }
+    }
     let new_cfg: AppConfig = serde_json::from_value(obj)
         .map_err(|e| AppError::ConfigSaveError(format!("配置更新解析失败：{e}")))?;
     set_config(new_cfg.clone())?;
