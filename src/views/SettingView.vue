@@ -839,11 +839,6 @@ async function toggleAiToolbox() {
               <div class="qmode-name">DeepSeek<span class="qmode-tag">推荐</span></div>
               <div class="qmode-desc">云端智能，性价比高，中文好</div>
             </div>
-            <div class="qmode" :class="{ sel: modelMode === 'api' && !apiBaseUrl.includes('deepseek') && apiBaseUrl !== '' }" @click="pickQuick('openai')">
-              <div class="qmode-icon">🌐</div>
-              <div class="qmode-name">OpenAI 兼容</div>
-              <div class="qmode-desc">任意兼容服务（Qwen / GPT / 中转）</div>
-            </div>
             <div class="qmode" :class="{ sel: modelMode === 'local' }" @click="pickQuick('local')">
               <div class="qmode-icon">💻</div>
               <div class="qmode-name">本地 AI</div>
@@ -856,6 +851,9 @@ async function toggleAiToolbox() {
             </div>
           </div>
           <p class="hint">点击卡片会自动切换模式并填入推荐配置；下方「运行模式」可手调高级参数。</p>
+          <p class="hint" style="margin-top:6px;color:var(--text-secondary)">
+            💡 OpenAI 兼容：支持任意 OpenAI 兼容服务（中转站 / Qwen / 混元等）。在下方「运行模式」填 API 地址即可；DeepSeek 卡片已填好官方示例，无需联网的海外 OpenAI 官方（需翻墙+付费 key）不做默认推荐。
+          </p>
         </section>
 
         <section class="card">
