@@ -63,18 +63,7 @@ fn target_models_dir() -> PathBuf {
 }
 
 fn is_model_file(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    let valid_ext = lower.ends_with(".safetensors")
-        || lower.ends_with(".onnx")
-        || lower.ends_with(".gguf")
-        || lower.ends_with(".bin");
-    if !valid_ext {
-        return false;
-    }
-    matches!(
-        lower.as_str(),
-        "model.safetensors" | "embedding.bin" | "model.onnx" | "embedding.gguf"
-    ) || lower.contains("bge")
+    name.to_lowercase() == "model.safetensors"
 }
 
 /// 扫描常见位置的向量模型文件（model.safetensors / bge*.safetensors/onnx/gguf 等）

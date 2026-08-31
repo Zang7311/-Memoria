@@ -63,6 +63,10 @@ pub async fn delete_memories_batch(ids: Vec<String>, set_name: Option<String>) -
     memories.retain(|m| !ids.contains(&m.id));
     let deleted = before - memories.len();
     if deleted > 0 {
+        // 被删除的记忆，向量缓存一并失效（避免残留孤儿向量）
+        for id in &ids {
+            crate::memory::vector::invalidate(id);
+        }
         let _ = storage::write_all(&index_path, &memories);
     }
     Ok(deleted)
@@ -104,6 +108,7 @@ pub async fn edit_memory_content(id: String, content: String, set_name: Option<S
         // 内容变了重新分类
         m.category = Some(classify(&m.content));
         let _ = storage::write_all(&index_path, &memories);
+        crate::memory::vector::invalidate(&id);
         Ok(())
     } else {
         Err(AppError::MemoryNotFound(id))

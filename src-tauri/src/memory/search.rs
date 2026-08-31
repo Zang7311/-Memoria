@@ -1,15 +1,15 @@
 // 《铃·记忆体》记忆搜索引擎（离线检索增强）
 //
-// 方案1（默认）: 字符 bigram 倒排索引 + 重合度打分，纯标准库零新依赖
+// 方案1（默认）: 字符 bigram + HashSet 重合度扫描，纯标准库零新依赖
 // 方案2        : jieba-rs 分词 + BM25（TF-IDF）打分
-// 方案3（预留）: 向量检索接口——仅检测模型文件是否存在，不加载模型
+// 方案3        : 向量检索（candle BertModel + bge-small-zh-v1.5，模型不可用时自动降级 bigram）
 //
 // 公开 API 签名与旧版保持一致，前端/上层调用无需修改。
 use crate::types::Memory;
 use std::collections::HashMap;
 
 // ============================================================
-// 方案3：向量检索预留接口
+// 方案3：向量检索接口（candle BertModel，需 model.safetensors + config.json + tokenizer.json）
 // ============================================================
 
 /// 向量模型安装状态（不加载模型，仅探测文件）
@@ -19,9 +19,8 @@ pub struct VectorModelStatus {
     pub message: String,
 }
 
-/// 检测向量 embedding 模型是否已安装
+/// 检测向量模型三件套是否完整：model.safetensors + config.json + tokenizer.json
 /// 探测路径：~/.铃记忆体/models/ 及 ~/.ling-memoria/models/
-/// 支持文件：embedding.bin / model.onnx / embedding.gguf / model.safetensors
 pub fn check_vector_model() -> VectorModelStatus {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -31,38 +30,28 @@ pub fn check_vector_model() -> VectorModelStatus {
         format!("{home}/.铃记忆体/models"),
         format!("{home}/.ling-memoria/models"),
     ];
-    let model_files = [
-        "embedding.bin",
-        "model.onnx",
-        "embedding.gguf",
-        "model.safetensors",
-    ];
+    let required = ["model.safetensors", "config.json", "tokenizer.json"];
 
     for dir in &model_dirs {
         let dir_path = std::path::Path::new(dir);
-        if dir_path.exists() {
-            for file in &model_files {
-                let model_path = dir_path.join(file);
-                if model_path.exists() {
-                    return VectorModelStatus {
-                        available: true,
-                        message: format!("已找到模型：{}", model_path.display()),
-                    };
-                }
-            }
+        if required.iter().all(|f| dir_path.join(f).exists()) {
+            return VectorModelStatus {
+                available: true,
+                message: format!("已找到完整模型文件（model.safetensors + config.json + tokenizer.json）：{dir}"),
+            };
         }
     }
 
     VectorModelStatus {
         available: false,
         message: format!(
-            "向量模型未安装。请将 embedding.bin 或 model.onnx 放入 {home}/.铃记忆体/models/"
+            "向量模型未完整安装。请将 model.safetensors + config.json + tokenizer.json 放入 {home}/.铃记忆体/models/"
         ),
     }
 }
 
 // ============================================================
-// 方案1：字符 bigram 倒排索引 + 重合度打分
+// 方案1：字符 bigram + HashSet 重合度扫描（逐条遍历，无持久倒排表）
 // ============================================================
 
 /// 将文本切成字符级 bigram（滑动窗口步长 1）
@@ -211,6 +200,8 @@ fn memory_doc_text(m: &Memory) -> String {
     }
 }
 
+// 当前为每次查询重建索引（小规模可接受；大规模需预建索引）
+// TODO: 大规模场景下将 jieba 分词+DF 表提前构建，查询时只做 BM25 打分
 fn search_bm25(memories: &[Memory], keyword: &str) -> Vec<Memory> {
     if keyword.trim().is_empty() {
         return memories.to_vec();
@@ -282,7 +273,7 @@ pub fn search(memories: &[Memory], keyword: &str) -> Vec<Memory> {
 }
 
 /// 按指定引擎搜索记忆
-/// - `"bigram"` : 字符 bigram 倒排索引（默认，零依赖）
+/// - `"bigram"` : 字符 bigram + HashSet 重合度扫描（默认，零依赖）
 /// - `"bm25"`   : jieba-rs 分词 + BM25 打分
 /// - `"vector"` : 向量检索（模型未安装时自动降级 bigram）
 pub fn search_with_mode(memories: &[Memory], keyword: &str, mode: &str) -> Vec<Memory> {
