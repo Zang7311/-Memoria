@@ -4,6 +4,7 @@
 //       增量/全量同步、冲突检测与解决、同步状态与历史。
 pub mod conflict;
 pub mod discovery;
+pub use discovery::spawn_responder;
 pub mod encryption;
 pub mod payload;
 pub mod transfer;
