@@ -257,6 +257,8 @@ pub fn run() {
             commands::search_mode::get_search_mode,
             commands::search_mode::set_search_mode,
             commands::search_mode::check_vector_model_status,
+            commands::search_mode::scan_model_files,
+            commands::search_mode::install_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

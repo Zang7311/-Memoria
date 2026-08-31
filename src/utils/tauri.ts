@@ -626,3 +626,26 @@ export function setSearchMode(mode: SearchMode): Promise<SearchMode> {
 export function checkVectorModelStatus(): Promise<VectorModelStatus> {
   return invoke<VectorModelStatus>('check_vector_model_status')
 }
+
+export interface ModelCandidate {
+  path: string
+  filename: string
+  size_mb: number
+  exists_in_target: boolean
+}
+
+export interface InstallModelResult {
+  success: boolean
+  message: string
+  missing_files: string[]
+}
+
+/** 扫描常见位置的向量模型文件（model.safetensors / bge* 等） */
+export function scanModelFiles(): Promise<ModelCandidate[]> {
+  return invoke<ModelCandidate[]>('scan_model_files')
+}
+
+/** 将指定模型文件及同级 config.json/tokenizer.json 安装到 ~/.铃记忆体/models/ */
+export function installModel(path: string): Promise<InstallModelResult> {
+  return invoke<InstallModelResult>('install_model', { path })
+}
