@@ -54,3 +54,5 @@ pub mod quick_command;
 pub mod qrcode;
 // —— moon11 OCR 文字识别 ——
 pub mod ocr;
+// —— 离线检索增强：搜索引擎模式配置 ——
+pub mod search_mode;

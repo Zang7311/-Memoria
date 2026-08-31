@@ -579,6 +579,13 @@ pub struct AppConfig {
     /// —— AI-9 快捷指令（用户自定义组合指令，如「晚安模式」）——
     #[serde(default)]
     pub quick_commands: Vec<QuickCommand>,
+    /// 搜索引擎模式："bigram"（默认）/ "bm25" / "vector"
+    #[serde(default = "default_search_mode")]
+    pub search_mode: String,
+}
+
+fn default_search_mode() -> String {
+    "bigram".to_string()
 }
 
 /// 一套完整的外观自定义组合（用户命名保存，可一键切换）
