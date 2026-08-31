@@ -6,8 +6,9 @@ import type { Message } from '../types'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingStore } from '../stores/settingStore'
 import { assetUrl, isImagePath } from '../utils/tauri'
+import SearchModePanel from './SearchModePanel.vue'
 
-const props = defineProps<{ message: Message }>()
+const props = defineProps<{ message: Message; isLast?: boolean }>()
 const chat = useChatStore()
 const setting = useSettingStore()
 
@@ -45,6 +46,8 @@ const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl
       <!-- 中断提示 -->
       <span v-if="isInterrupted" class="error-tip">（生成中断，请重试）</span>
       <div class="time">{{ time }}</div>
+      <!-- 离线增强方案入口：仅在离线模式最后一条铃消息下显示 -->
+      <SearchModePanel v-if="!isUser && isLast && setting.modelMode === 'script'" />
     </div>
 
     <div v-if="isUser" class="avatar avatar-user">

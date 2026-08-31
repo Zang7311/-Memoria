@@ -602,3 +602,27 @@ export function onSyncProgress(callback: (payload: SyncProgressEvent) => void): 
 export function onNetworkStatusChanged(callback: (payload: NetworkStatusEvent) => void): Promise<UnlistenFn> {
   return listen<NetworkStatusEvent>('network-status-changed', (event) => callback(event.payload))
 }
+
+// ==================== 离线增强方案 IPC 封装 ====================
+
+export type SearchMode = 'bigram' | 'bm25' | 'vector'
+
+export interface VectorModelStatus {
+  available: boolean
+  message: string
+}
+
+/** 获取当前离线检索模式 */
+export function getSearchMode(): Promise<SearchMode> {
+  return invoke<SearchMode>('get_search_mode')
+}
+
+/** 设置离线检索模式（bigram / bm25 / vector） */
+export function setSearchMode(mode: SearchMode): Promise<SearchMode> {
+  return invoke<SearchMode>('set_search_mode', { mode })
+}
+
+/** 检测向量模型是否已安装（不加载模型） */
+export function checkVectorModelStatus(): Promise<VectorModelStatus> {
+  return invoke<VectorModelStatus>('check_vector_model_status')
+}
