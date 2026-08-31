@@ -5,3 +5,4 @@ pub mod compress;
 pub mod index;
 pub mod search;
 pub mod storage;
+pub mod wal;

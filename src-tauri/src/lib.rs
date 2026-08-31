@@ -71,6 +71,14 @@ pub fn run() {
                 }
             }
 
+            // WAL 回放：将上次崩溃前未 checkpoint 的追加记录合并回 index.json
+            {
+                let default_path = memory::storage::default_index_path();
+                if let Err(e) = memory::wal::replay_wal(&default_path) {
+                    log::warn!("[wal] default 集回放失败（不影响启动）：{e}");
+                }
+            }
+
             // —— AI-8 同步模块初始化 + TCP 监听 + 网络监测 ——
             sync::init();
             sync::spawn_listener(app.handle().clone());
