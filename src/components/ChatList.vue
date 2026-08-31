@@ -31,8 +31,8 @@ watch(
       <p class="empty-sub">你好，我是铃～可以陪你聊天，也可以帮你打理电脑。</p>
       <p class="empty-tip">试试对我说「你好」或「铃，清理一下内存」</p>
     </div>
-    <template v-for="msg in chat.messages" :key="msg.id">
-      <ChatBubble :message="msg" />
+    <template v-for="(msg, i) in chat.messages" :key="msg.id">
+      <ChatBubble :message="msg" :isLast="i === chat.messages.length - 1" />
     </template>
   </div>
 </template>
