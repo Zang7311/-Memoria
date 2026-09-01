@@ -171,3 +171,8 @@ src-tauri/                  # Rust 后端
 - 该模型基于 **MIT License** 发布（见 [FlagEmbedding](https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE)），可免费商用。
 - 来源：[ModelScope](https://modelscope.cn/models/AI-ModelScope/bge-small-zh-v1.5)，完整版安装包已内置（`models/model.safetensors`）；轻量版不含模型，可通过插件包补齐。
 - 模型仅在用户开启「方案3：向量检索」时加载，其余情况不影响下载体积与内存占用。
+
+## 🌿 分支说明
+
+- **`main`（推荐）**：当前稳定主线，随版本持续更新（当前 v0.5.1）。
+- **`v1.0`（实验分支）**：曾尝试"内置 Qwen2.5 小模型做离线对话"的实验分支（含 0.5B / 1.5B GGUF 模型）。**结论：小模型（1.5B 及以下）无法稳定承担复杂对话，体验不佳，此方案已放弃，不再内置模型。** 该分支代码与安装包仍可下载参考，但**不推荐日常使用**，请以 main 主线为准。
