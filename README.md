@@ -163,7 +163,8 @@ src-tauri/                  # Rust 后端
 
 ## 🤖 AI 生成声明
 
-本项目的部分实现由 Hermes Agent 生成，使用模型包括：DeepSeek V4 Pro、DeepSeek V4 Flash、DeepSeek V4 Flash Vision Exp、Qwen 3.7 Max、DeepSeek V3.2、GPT 网页免费版。作者已对输出做了人工审查与调整，并维护 80+ 个单元测试。任何后续问题由 [@Zang7311](https://github.com/Zang7311) 负责修复。
+本项目的部分实现由 Hermes Agent 生成，使用模型包括：DeepSeek V4 Pro、DeepSeek V4 Flash、DeepSeek V4 Flash Vision Exp、Qwen 3.7 Max、DeepSeek V3.2、GPT 网页免费版，Claude Sonnet 4.6
+Claude Sonnet 5，Claude Opus 5，GLM 5.3。作者已对输出做了人工审查与调整，并维护 80+ 个单元测试。任何后续问题由 [@Zang7311](https://github.com/Zang7311) 负责修复。
 
 ## 🧠 嵌入模型声明（可选方案3）
 
