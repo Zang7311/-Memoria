@@ -504,6 +504,9 @@ pub struct AppConfig {
     pub language_mix_rate: u8,
     /// 悬浮球模式 "avatar" | "simple" | "live2d"
     pub floating_ball_mode: String,
+    /// 是否启用悬浮球
+    #[serde(default = "default_true")]
+    pub floating_ball_enabled: bool,
     /// 悬浮球大小（px，默认 200）
     #[serde(default = "default_floating_ball_size")]
     pub floating_ball_size: u32,

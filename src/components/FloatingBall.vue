@@ -4,7 +4,7 @@
      无滑块/无按钮组/无透明度调节 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window'
+import { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize, primaryMonitor } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { onMonitorTrigger } from '../utils/tauri'
 import { useSettingStore } from '../stores/settingStore'
@@ -12,14 +12,18 @@ import { useSettingStore } from '../stores/settingStore'
 const win = getCurrentWindow()
 const setting = useSettingStore()
 const mode = computed(() => setting.floatingBallMode)
+const enabled = computed(() => setting.floatingBallEnabled)
 const hasMessage = ref(false)
 let flashTimer: number | undefined
 let unlistenTrigger: (() => void) | undefined
 
-// —— 拖拽（流畅，无瞬移） ——
+// —— 拖拽状态 ——
 let dragging = false
 let startMouse = { x: 0, y: 0 }
 let startPos = { x: 0, y: 0 }
+
+// —— 持久化位置 ——
+const POS_KEY = 'floating-ball-pos-v4'
 
 async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
@@ -107,9 +111,34 @@ watch(mode, async (newMode) => {
   try {
     if (newMode === 'live2d') {
       await win.setSize(new LogicalSize(300, 400))
-      await win.setPosition(new LogicalPosition(100, 100))
     } else {
       await win.setSize(new LogicalSize(100, 100))
+    }
+  } catch { /* 忽略 */ }
+})
+
+// —— 监听开关变化，自动显示/隐藏窗口 ——
+watch(enabled, async (val) => {
+  try {
+    if (val) {
+      await win.show()
+      // 恢复位置
+      const saved = localStorage.getItem(POS_KEY)
+      if (saved) {
+        const { x, y } = JSON.parse(saved)
+        const monitor = (await currentMonitor()) || (await primaryMonitor())
+        if (monitor) {
+          const scale = monitor.scaleFactor || 1
+          const lw = Math.round(monitor.size.width / scale)
+          const lh = Math.round(monitor.size.height / scale)
+          const s = mode.value === 'live2d' ? 300 : 100
+          const cx = Math.min(Math.max(0, x), Math.max(0, lw - s))
+          const cy = Math.min(Math.max(0, y), Math.max(0, lh - s))
+          await win.setPosition(new LogicalPosition(cx, cy))
+        }
+      }
+    } else {
+      await win.hide()
     }
   } catch { /* 忽略 */ }
 })
