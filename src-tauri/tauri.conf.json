@@ -44,11 +44,7 @@
       "resources/plugins/file_viewer/manifest.json": "plugins/file_viewer/manifest.json",
       "resources/plugins/file_viewer/index.js": "plugins/file_viewer/index.js",
       "resources/hermes_plugins/hello_hermes/config.json": "hermes_plugins/hello_hermes/config.json",
-      "resources/hermes_plugins/hello_hermes/main.js": "hermes_plugins/hello_hermes/main.js",
-      "resources/models/model.safetensors": "models/model.safetensors",
-      "resources/models/config.json": "models/config.json",
-      "resources/models/tokenizer.json": "models/tokenizer.json",
-      "resources/models/tokenizer_config.json": "models/tokenizer_config.json"
+      "resources/hermes_plugins/hello_hermes/main.js": "hermes_plugins/hello_hermes/main.js"
     },
     "icon": [
       "icons/32x32.png",
