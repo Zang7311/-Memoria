@@ -1061,8 +1061,10 @@ async function toggleAiToolbox() {
             </select>
           </div>
           <div class="field">
-            <label>大小（{{ setting.floatingBallSize }}px）</label>
-            <input v-model.number="setting.floatingBallSize" type="range" min="80" max="300" step="10" class="range" @change="saveBallSettings" />
+            <label>大小</label>
+            <div class="size-btns">
+              <button v-for="s in [120, 160, 200, 260]" :key="s" class="size-btn" :class="{ active: setting.floatingBallSize === s }" @click="setting.floatingBallSize = s; saveBallSettings()">{{ s }}</button>
+            </div>
           </div>
           <div class="field">
             <label>透明度（{{ (setting.floatingBallOpacity * 100).toFixed(0) }}%）</label>
@@ -1183,6 +1185,23 @@ async function toggleAiToolbox() {
 }
 .input.long { flex: 1; min-width: 220px; }
 .range { width: 100%; accent-color: var(--accent, #ff7a94); }
+.size-btns { display: flex; gap: 8px; margin-top: 6px; }
+.size-btn {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-main);
+  font-size: var(--fs-13);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.size-btn.active {
+  background: var(--accent, #ff7a94);
+  color: var(--text-user);
+  border-color: transparent;
+}
 .depth-labels {
   display: flex;
   justify-content: space-between;
