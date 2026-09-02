@@ -20,6 +20,7 @@ mod sync;
 pub mod types;
 mod update;
 mod utils;
+mod vbil;
 
 use tauri::Manager;
 
@@ -84,6 +85,12 @@ pub fn run() {
             sync::spawn_listener(app.handle().clone());
             sync::spawn_responder();
             network::spawn_monitor(app.handle().clone());
+
+            // —— VBIL 虚拟形象互联层初始化（本地 TCP 服务 + 心跳 + 规则引擎 + 响应桥接）——
+            vbil::init();
+            vbil::spawn_listener(app.handle().clone());
+            vbil::rules::init();
+            vbil::spawn_responder(app.handle().clone());
 
             // —— AI-5 插件系统初始化 ——
             plugin::init(&app.handle());
@@ -259,6 +266,13 @@ pub fn run() {
             commands::search_mode::check_vector_model_status,
             commands::search_mode::scan_model_files,
             commands::search_mode::install_model,
+            // —— VBIL 虚拟形象互联层命令 ——
+            vbil::commands::scan_windows,
+            vbil::commands::get_vbil_status,
+            vbil::commands::set_vbil_enabled,
+            vbil::commands::set_vbil_mode,
+            vbil::commands::set_whitelist,
+            vbil::commands::get_online_clients,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

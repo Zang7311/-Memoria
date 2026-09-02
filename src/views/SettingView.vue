@@ -7,6 +7,7 @@ import MonitorSettings from '../components/MonitorSettings.vue'
 import PluginManager from '../components/PluginManager.vue'
 import QuickCommandPanel from '../components/QuickCommandPanel.vue'
 import SyncPanel from '../components/SyncPanel.vue'
+import VBILSettings from './VBILSettings.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
@@ -67,6 +68,7 @@ const tabs = [
   { key: 'model', label: '模型', icon: 'command' },
   { key: 'memory', label: '记忆', icon: 'memory' },
   { key: 'monitor', label: '监测', icon: 'monitor' },
+  { key: 'vbil', label: '形象', icon: 'customize' },
   { key: 'persona', label: '个性化', icon: 'customize' },
   { key: 'plugin', label: '插件', icon: 'plugin' },
   { key: 'quick', label: '指令', icon: 'command' },
@@ -1022,6 +1024,11 @@ async function toggleAiToolbox() {
       <!-- ============ 监测 ============ -->
       <div v-else-if="activeTab === 'monitor'">
         <MonitorSettings />
+      </div>
+
+      <!-- ============ 形象互联（VBIL） ============ -->
+      <div v-else-if="activeTab === 'vbil'">
+        <VBILSettings />
       </div>
 
       <!-- ============ 个性化 ============ -->
