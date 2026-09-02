@@ -48,6 +48,7 @@ export const useSettingStore = defineStore('setting', () => {
   const depth = ref(2)
   const languageMixRate = ref(8)
   const floatingBallMode = ref<'avatar' | 'simple' | 'live2d'>('avatar')
+  const floatingBallEnabled = ref(true)
   const floatingBallSize = ref(200)
   const floatingBallOpacity = ref(1.0)
   const floatingBallBreathing = ref(true)
@@ -93,6 +94,7 @@ export const useSettingStore = defineStore('setting', () => {
     depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
     languageMixRate.value = (typeof c.language_mix_rate === 'number') ? Math.min(Math.max(c.language_mix_rate, 0), 30) : 8
     floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple' | 'live2d') || 'avatar'
+    floatingBallEnabled.value = c.floating_ball_enabled ?? true
     floatingBallSize.value = c.floating_ball_size ?? 200
     floatingBallOpacity.value = c.floating_ball_opacity ?? 1.0
     floatingBallBreathing.value = c.floating_ball_breathing ?? true
@@ -253,7 +255,7 @@ export const useSettingStore = defineStore('setting', () => {
     runAsAdmin,
     emojiMode, aiToolbox,
     saveThemePreset, switchThemePreset, deleteThemePreset,
-    languageMixRate, floatingBallMode, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallPosition, monitorEnabled,
+    languageMixRate, floatingBallMode, floatingBallEnabled, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
     applyConfig, loadConfig, update, toggleTheme, setTheme, saveApiKey, resetAll,

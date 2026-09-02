@@ -236,6 +236,8 @@ export interface AppConfig {
   depth: number
   language_mix_rate: number
   floating_ball_mode: 'avatar' | 'simple' | 'live2d' | string
+  /** 是否启用悬浮球 */
+  floating_ball_enabled: boolean
   /** 悬浮球大小（px） */
   floating_ball_size: number
   /** 悬浮球透明度（0~1） */

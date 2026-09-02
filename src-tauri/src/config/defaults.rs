@@ -17,6 +17,7 @@ pub fn default_config() -> AppConfig {
         depth: 2,
         language_mix_rate: 8,
         floating_ball_mode: "avatar".to_string(),
+        floating_ball_enabled: true,
         floating_ball_size: 200,
         floating_ball_opacity: 1.0,
         floating_ball_breathing: true,

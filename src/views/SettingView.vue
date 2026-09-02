@@ -1053,6 +1053,12 @@ async function toggleAiToolbox() {
         <section class="card">
           <div class="card-title">悬浮球</div>
           <div class="field">
+            <label class="switch-wrap">
+              <span class="label">显示悬浮球</span>
+              <input type="checkbox" class="switch" v-model="setting.floatingBallEnabled" @change="saveBallSettings" />
+            </label>
+          </div>
+          <div v-if="setting.floatingBallEnabled" class="field">
             <label>显示模式</label>
             <select v-model="setting.floatingBallMode" @change="saveBallSettings">
               <option value="avatar">头像</option>
@@ -1060,17 +1066,17 @@ async function toggleAiToolbox() {
               <option value="live2d">Live2D（实验）</option>
             </select>
           </div>
-          <div class="field">
+          <div v-if="setting.floatingBallEnabled" class="field">
             <label>大小</label>
             <div class="size-btns">
               <button v-for="s in [120, 160, 200, 260]" :key="s" class="size-btn" :class="{ active: setting.floatingBallSize === s }" @click="setting.floatingBallSize = s; saveBallSettings()">{{ s }}</button>
             </div>
           </div>
-          <div class="field">
+          <div v-if="setting.floatingBallEnabled" class="field">
             <label>透明度（{{ (setting.floatingBallOpacity * 100).toFixed(0) }}%）</label>
             <input v-model.number="setting.floatingBallOpacity" type="range" min="0.1" max="1" step="0.05" class="range" @change="saveBallSettings" />
           </div>
-          <div class="row">
+          <div v-if="setting.floatingBallEnabled" class="row">
             <label class="switch-wrap">
               <span class="label">呼吸动画</span>
               <input type="checkbox" class="switch" v-model="setting.floatingBallBreathing" @change="saveBallSettings" />
@@ -1080,7 +1086,7 @@ async function toggleAiToolbox() {
               <input type="checkbox" class="switch" v-model="setting.floatingBallFlash" @change="saveBallSettings" />
             </label>
           </div>
-          <div class="actions">
+          <div v-if="setting.floatingBallEnabled" class="actions">
             <button class="btn ghost" @click="resetBallPosition">重置位置</button>
           </div>
         </section>
