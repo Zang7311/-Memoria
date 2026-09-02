@@ -162,6 +162,55 @@ watch([size, opacity], async ([newSize]) => {
     await win.setSize(new LogicalSize(newSize, newSize))
   } catch { /* 忽略 */ }
 })
+
+// —— Live2D 集成 ——
+const live2dMount = ref<HTMLDivElement | null>(null)
+let live2dCleanup: (() => void) | null = null
+
+// 内置免费模型（CDN 托管的 Live2D 模型）
+const LIVE2D_MODELS = [
+  { path: 'https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json', name: 'Haru' },
+  { path: 'https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json', name: 'Shizuku' },
+]
+
+watch(mode, async (newMode) => {
+  if (newMode !== 'live2d') {
+    if (live2dCleanup) { live2dCleanup(); live2dCleanup = null }
+    return
+  }
+  await loadLive2D()
+})
+
+async function loadLive2D() {
+  if (mode.value !== 'live2d' || !live2dMount.value) return
+  // 清理旧实例
+  if (live2dCleanup) { live2dCleanup(); live2dCleanup = null }
+  live2dMount.value.innerHTML = ''
+  try {
+    // 动态导入 oh-my-live2d（仅在 live2d 模式时加载，减少包体积）
+    const { loadOml2d } = await import('oh-my-live2d')
+    if (!live2dMount.value) return
+    const container = live2dMount.value
+    // TODO: 用户自定义模型目录（~/.铃记忆体/live2d/）后续版本支持
+    loadOml2d({
+      parentElement: container,
+      models: LIVE2D_MODELS.map(m => ({ path: m.path, scale: 0.25 })),
+    })
+    live2dCleanup = () => {
+      // oh-my-live2d 无 destroy 方法，直接清空容器
+      if (live2dMount.value) live2dMount.value.innerHTML = ''
+    }
+  } catch (e) {
+    console.warn('[Live2D] 加载失败：', e)
+    if (live2dMount.value) {
+      live2dMount.value.innerHTML = '<div style="color:#fff;font-size:12px;text-align:center;padding:8px;">Live2D 加载失败</div>'
+    }
+  }
+}
+
+onUnmounted(() => {
+  if (live2dCleanup) live2dCleanup()
+})
 </script>
 
 <template>
@@ -208,9 +257,7 @@ watch([size, opacity], async ([newSize]) => {
 
       <!-- Live2D 模式 -->
       <template v-else-if="mode === 'live2d'">
-        <div class="live2d-container">
-          <div class="live2d-placeholder">Live2D</div>
-        </div>
+        <div ref="live2dMount" class="live2d-container"></div>
       </template>
     </div>
 
