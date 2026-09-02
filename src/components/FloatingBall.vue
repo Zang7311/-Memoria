@@ -1,24 +1,30 @@
-<!-- 《铃·记忆体》悬浮球（AI-6 任务 2 / 4.1）
-     独立透明小窗：拖拽移动 / 双击恢复主窗口 / 右键菜单（显示主窗口、暂停监测、退出）
-     空闲呼吸动画；收到监测消息时闪烁 -->
+<!-- 《铃·记忆体》悬浮球 v2（全面改进）
+     三种模式：avatar / simple / live2d
+     支持大小/透明度/动画自定义 -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   currentMonitor,
   getCurrentWindow,
   LogicalPosition,
+  LogicalSize,
   primaryMonitor,
 } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { assetUrl, getMonitorRules, isImagePath, onMonitorTrigger, toggleMonitoring } from '../utils/tauri'
+import { onMonitorTrigger, toggleMonitoring, getMonitorRules } from '../utils/tauri'
 import { useSettingStore } from '../stores/settingStore'
 
 const win = getCurrentWindow()
 const setting = useSettingStore()
-// 铃的头像：图片路径则显示图片
-const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
 
-// —— 拖拽状态 ——
+// —— 模式切换监听 ——
+const mode = computed(() => setting.floatingBallMode)
+const size = computed(() => setting.floatingBallSize)
+const opacity = computed(() => setting.floatingBallOpacity)
+const breathing = computed(() => setting.floatingBallBreathing)
+const flash = computed(() => setting.floatingBallFlash)
+
+// —— 拖拽 ——
 const dragging = ref(false)
 let startMouse = { x: 0, y: 0 }
 let startPos = { x: 0, y: 0 }
@@ -32,37 +38,41 @@ const hasMessage = ref(false)
 let flashTimer: number | undefined
 let unlistenTrigger: (() => void) | undefined
 
-// 位置持久化（localStorage，下次启动恢复）
-const POS_KEY = 'floating-ball-pos'
+// —— 位置持久化 ——
+const POS_KEY = 'floating-ball-pos-v2'
 onMounted(async () => {
   try {
     const saved = localStorage.getItem(POS_KEY)
     if (saved) {
       const { x, y } = JSON.parse(saved)
-      // 位置越界保护：防止旧坐标/多显示器切换导致窗口飞出屏幕
       const monitor = (await currentMonitor()) || (await primaryMonitor())
       if (monitor) {
         const scale = monitor.scaleFactor || 1
         const lw = Math.round(monitor.size.width / scale)
         const lh = Math.round(monitor.size.height / scale)
-        const cx = Math.min(Math.max(0, x), Math.max(0, lw - 90))
-        const cy = Math.min(Math.max(0, y), Math.max(0, lh - 90))
+        const s = size.value
+        const cx = Math.min(Math.max(0, x), Math.max(0, lw - s))
+        const cy = Math.min(Math.max(0, y), Math.max(0, lh - s))
         await win.setPosition(new LogicalPosition(cx, cy))
+        await win.setSize(new LogicalSize(s, s))
       }
     } else {
-      // 默认右上角：monitor.size 是物理像素，必须除以 scaleFactor 换算逻辑坐标
+      // 默认右上角
       const monitor = (await currentMonitor()) || (await primaryMonitor())
       if (monitor) {
         const scale = monitor.scaleFactor || 1
         const lw = Math.round(monitor.size.width / scale)
-        const x = Math.max(0, lw - 110)
-        await win.setPosition(new LogicalPosition(x, 60))
+        const s = size.value
+        const x = Math.max(0, lw - s - 20)
+        await win.setPosition(new LogicalPosition(x, 20))
+        await win.setSize(new LogicalSize(s, s))
       }
     }
-  } catch { /* 非 Tauri 环境忽略 */ }
+  } catch { /* 忽略 */ }
 
-  // 监听监测触发 → 闪烁提示
+  // 监听监测触发
   unlistenTrigger = await onMonitorTrigger(() => {
+    if (!flash.value) return
     hasMessage.value = true
     if (flashTimer) clearTimeout(flashTimer)
     flashTimer = window.setTimeout(() => (hasMessage.value = false), 3000)
@@ -74,7 +84,7 @@ onUnmounted(() => {
   unlistenTrigger?.()
 })
 
-// —— 拖拽：mousedown 记录起点，mousemove 更新窗口位置 ——
+// —— 拖拽逻辑 ——
 async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
   dragging.value = true
@@ -92,14 +102,15 @@ async function onMouseMove(e: MouseEvent) {
   const nx = startPos.x + (e.screenX - startMouse.x)
   const ny = startPos.y + (e.screenY - startMouse.y)
   try {
+    const s = size.value
     await win.setPosition(new LogicalPosition(nx, ny))
+    await win.setSize(new LogicalSize(s, s))
   } catch { /* 忽略 */ }
 }
 
 function onMouseUp() {
   if (!dragging.value) return
   dragging.value = false
-  // 持久化当前位置（带越界保护，避免存到屏幕外坐标）
   win.outerPosition().then((p) => {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify({ x: p.x, y: p.y }))
@@ -107,7 +118,7 @@ function onMouseUp() {
   })
 }
 
-// —— 双击 → 恢复主窗口 ——
+// —— 双击恢复主窗口 ——
 async function onDoubleClick() {
   try {
     const main = await WebviewWindow.getByLabel('main')
@@ -134,16 +145,23 @@ async function menuShowMain() {
 
 async function menuToggleMonitor() {
   hideMenu()
-  // 通过 IPC 切换监测状态
-  const res = await getMonitorRules()
-  await toggleMonitoring(!res.enabled)
+  try {
+    const res = await getMonitorRules()
+    await toggleMonitoring(!res.enabled)
+  } catch { /* 忽略 */ }
 }
 
 function menuExit() {
   hideMenu()
-  // 退出应用：关闭主窗口（Tauri 默认全部窗口关闭后进程退出）
   WebviewWindow.getByLabel('main').then((m) => m?.close())
 }
+
+// —— 窗口大小同步（当设置改变时） ——
+watch([size, opacity], async ([newSize]) => {
+  try {
+    await win.setSize(new LogicalSize(newSize, newSize))
+  } catch { /* 忽略 */ }
+})
 </script>
 
 <template>
@@ -156,12 +174,44 @@ function menuExit() {
     @dblclick="onDoubleClick"
     @contextmenu="onContextMenu"
   >
-    <!-- 猫娘圆球：呼吸动画 / 消息闪烁 -->
-    <div class="ball" :class="{ breathing: !dragging && !hasMessage, flashing: hasMessage, dragging }">
-      <span class="ball-face">
-        <img v-if="avatarImg" :src="avatarImg" class="ball-img" />
-        <template v-else>{{ setting.avatarSuzu || '铃' }}</template>
-      </span>
+    <!-- 悬浮球主体 -->
+    <div
+      class="ball"
+      :class="{
+        breathing: breathing && !dragging && !hasMessage,
+        flashing: flash && hasMessage,
+        dragging,
+        'live2d-mode': mode === 'live2d'
+      }"
+      :style="{
+        width: size + 'px',
+        height: size + 'px',
+        opacity: opacity,
+        borderRadius: mode === 'live2d' ? '12px' : '50%',
+      }"
+    >
+      <!-- 头像模式 -->
+      <template v-if="mode === 'avatar'">
+        <img
+          v-if="setting.avatarSuzu && setting.avatarSuzu.startsWith('http')"
+          :src="setting.avatarSuzu"
+          class="ball-img"
+          draggable="false"
+        />
+        <div v-else class="ball-text">{{ setting.selfName || '铃' }}</div>
+      </template>
+
+      <!-- 纯文字模式 -->
+      <template v-else-if="mode === 'simple'">
+        <div class="ball-text">{{ setting.selfName || '铃' }}</div>
+      </template>
+
+      <!-- Live2D 模式 -->
+      <template v-else-if="mode === 'live2d'">
+        <div class="live2d-container">
+          <div class="live2d-placeholder">Live2D</div>
+        </div>
+      </template>
     </div>
 
     <!-- 右键菜单 -->
@@ -176,7 +226,7 @@ function menuExit() {
       <div class="menu-item danger" @click="menuExit">退出</div>
     </div>
 
-    <!-- 点击空白处关闭菜单 -->
+    <!-- 遮罩 -->
     <div v-if="menuVisible" class="menu-mask" @click="hideMenu" @contextmenu.prevent="hideMenu" />
   </div>
 </template>
@@ -191,10 +241,6 @@ function menuExit() {
   -webkit-user-select: none;
 }
 .ball {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  margin: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -203,13 +249,13 @@ function menuExit() {
   box-shadow: 0 4px 16px color-mix(in srgb, var(--accent, #ff7a94) 45%, transparent);
   cursor: grab;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  overflow: hidden;
 }
 .ball.dragging {
   cursor: grabbing;
   transform: scale(1.1);
   box-shadow: 0 8px 24px rgba(255, 138, 171, 0.65);
 }
-/* 空闲呼吸动画 */
 .ball.breathing {
   animation: breathe 3s ease-in-out infinite;
 }
@@ -217,7 +263,6 @@ function menuExit() {
   0%, 100% { transform: scale(1); box-shadow: 0 4px 16px rgba(255, 138, 171, 0.45); }
   50% { transform: scale(1.06); box-shadow: 0 6px 22px rgba(255, 138, 171, 0.65); }
 }
-/* 消息闪烁 */
 .ball.flashing {
   animation: flash 0.5s ease-in-out 6;
   border-color: var(--accent);
@@ -226,16 +271,33 @@ function menuExit() {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.35; transform: scale(1.15); }
 }
-.ball-face {
-  font-size: var(--fs-30);
+.ball-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.ball-text {
+  font-size: calc(v-bind(size) * 0.4px);
+  font-weight: 600;
+  color: var(--text-user, #fff);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+.live2d-container {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  background: rgba(0, 0, 0, 0.1);
 }
-.ball-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.live2d-placeholder {
+  color: var(--text-user, #fff);
+  font-size: calc(v-bind(size) * 0.15px);
+  opacity: 0.8;
+}
 .ball-menu {
   position: fixed;
   z-index: 999;
@@ -267,7 +329,6 @@ function menuExit() {
 }
 </style>
 
-<!-- 悬浮球窗口必须全透明 -->
 <style>
 html,
 body,
