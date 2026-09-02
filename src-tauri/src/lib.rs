@@ -101,13 +101,14 @@ pub fn run() {
             desktop::tray::init_tray(app.handle());
 
             // 2. 悬浮球窗口（独立无边框透明小窗，常驻置顶；默认隐藏，托盘/设置可开启）
+            //    默认 200x200（支持 Live2D），最小 80x80（纯头像/文字模式）
             tauri::WebviewWindowBuilder::new(
                 app,
                 "floating-ball",
                 tauri::WebviewUrl::App("index.html".into()),
             )
             .title("铃·记忆体 悬浮球")
-            .inner_size(80.0, 80.0)
+            .inner_size(200.0, 200.0)
             .min_inner_size(80.0, 80.0)
             .resizable(false)
             .decorations(false)

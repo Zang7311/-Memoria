@@ -235,7 +235,15 @@ export interface AppConfig {
   model_mode: 'script' | 'api' | 'local' | string
   depth: number
   language_mix_rate: number
-  floating_ball_mode: 'avatar' | 'simple' | string
+  floating_ball_mode: 'avatar' | 'simple' | 'live2d' | string
+  /** 悬浮球大小（px） */
+  floating_ball_size: number
+  /** 悬浮球透明度（0~1） */
+  floating_ball_opacity: number
+  /** 是否开启呼吸动画 */
+  floating_ball_breathing: boolean
+  /** 是否开启消息闪烁 */
+  floating_ball_flash: boolean
   floating_ball_position: [number, number]
   monitor_enabled: boolean
   monitor_frequency: number

@@ -325,6 +325,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_floating_ball_size() -> u32 {
+    200
+}
+
+fn default_floating_ball_opacity() -> f32 {
+    1.0
+}
+
 /// 工具箱条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolboxItem {
@@ -494,8 +502,20 @@ pub struct AppConfig {
     pub depth: u8,
     /// 日语修饰词浓度 0~30
     pub language_mix_rate: u8,
-    /// 悬浮球模式 "avatar" | "simple"
+    /// 悬浮球模式 "avatar" | "simple" | "live2d"
     pub floating_ball_mode: String,
+    /// 悬浮球大小（px，默认 200）
+    #[serde(default = "default_floating_ball_size")]
+    pub floating_ball_size: u32,
+    /// 悬浮球透明度 0.0~1.0（默认 1.0）
+    #[serde(default = "default_floating_ball_opacity")]
+    pub floating_ball_opacity: f32,
+    /// 是否开启呼吸动画（默认 true）
+    #[serde(default = "default_true")]
+    pub floating_ball_breathing: bool,
+    /// 是否开启消息闪烁（默认 true）
+    #[serde(default = "default_true")]
+    pub floating_ball_flash: bool,
     /// 悬浮球位置 (x, y)
     #[serde(default)]
     pub floating_ball_position: (u32, u32),

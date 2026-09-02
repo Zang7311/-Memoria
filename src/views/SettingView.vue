@@ -69,6 +69,7 @@ const tabs = [
   { key: 'memory', label: '记忆', icon: 'memory' },
   { key: 'monitor', label: '监测', icon: 'monitor' },
   { key: 'vbil', label: '形象', icon: 'customize' },
+  { key: 'ball', label: '悬浮球', icon: 'customize' },
   { key: 'persona', label: '个性化', icon: 'customize' },
   { key: 'plugin', label: '插件', icon: 'plugin' },
   { key: 'quick', label: '指令', icon: 'command' },
@@ -456,6 +457,22 @@ async function savePersona() {
     user_name: userName.value,
   })
   generalMsg.value = '✓ 个性化设置已保存'
+}
+
+// —— 悬浮球设置 ——
+async function saveBallSettings() {
+  await setting.update({
+    floating_ball_mode: setting.floatingBallMode,
+    floating_ball_size: setting.floatingBallSize,
+    floating_ball_opacity: setting.floatingBallOpacity,
+    floating_ball_breathing: setting.floatingBallBreathing,
+    floating_ball_flash: setting.floatingBallFlash,
+  })
+  generalMsg.value = '✓ 悬浮球设置已保存'
+}
+async function resetBallPosition() {
+  await setting.update({ floating_ball_position: [0, 0] })
+  generalMsg.value = '✓ 位置已重置（下次启动生效）'
 }
 
 // —— 外观自定义 ——
@@ -1029,6 +1046,42 @@ async function toggleAiToolbox() {
       <!-- ============ 形象互联（VBIL） ============ -->
       <div v-else-if="activeTab === 'vbil'">
         <VBILSettings />
+      </div>
+
+      <!-- ============ 悬浮球 ============ -->
+      <div v-else-if="activeTab === 'ball'">
+        <section class="card">
+          <div class="card-title">悬浮球</div>
+          <div class="field">
+            <label>显示模式</label>
+            <select v-model="setting.floatingBallMode" @change="saveBallSettings">
+              <option value="avatar">头像</option>
+              <option value="simple">纯文字</option>
+              <option value="live2d">Live2D（实验）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>大小（{{ setting.floatingBallSize }}px）</label>
+            <input v-model.number="setting.floatingBallSize" type="range" min="80" max="300" step="10" class="range" @change="saveBallSettings" />
+          </div>
+          <div class="field">
+            <label>透明度（{{ (setting.floatingBallOpacity * 100).toFixed(0) }}%）</label>
+            <input v-model.number="setting.floatingBallOpacity" type="range" min="0.1" max="1" step="0.05" class="range" @change="saveBallSettings" />
+          </div>
+          <div class="row">
+            <label class="switch-wrap">
+              <span class="label">呼吸动画</span>
+              <input type="checkbox" class="switch" v-model="setting.floatingBallBreathing" @change="saveBallSettings" />
+            </label>
+            <label class="switch-wrap">
+              <span class="label">消息闪烁</span>
+              <input type="checkbox" class="switch" v-model="setting.floatingBallFlash" @change="saveBallSettings" />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="btn ghost" @click="resetBallPosition">重置位置</button>
+          </div>
+        </section>
       </div>
 
       <!-- ============ 个性化 ============ -->

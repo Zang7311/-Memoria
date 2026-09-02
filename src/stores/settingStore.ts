@@ -47,7 +47,11 @@ export const useSettingStore = defineStore('setting', () => {
   const modelMode = ref<'script' | 'api' | 'local'>('script')
   const depth = ref(2)
   const languageMixRate = ref(8)
-  const floatingBallMode = ref<'avatar' | 'simple'>('avatar')
+  const floatingBallMode = ref<'avatar' | 'simple' | 'live2d'>('avatar')
+  const floatingBallSize = ref(200)
+  const floatingBallOpacity = ref(1.0)
+  const floatingBallBreathing = ref(true)
+  const floatingBallFlash = ref(true)
   const floatingBallPosition = ref<[number, number]>([0, 0])
   const monitorEnabled = ref(true)
   const monitorFrequency = ref(3)
@@ -88,7 +92,11 @@ export const useSettingStore = defineStore('setting', () => {
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
     depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
     languageMixRate.value = (typeof c.language_mix_rate === 'number') ? Math.min(Math.max(c.language_mix_rate, 0), 30) : 8
-    floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple') || 'avatar'
+    floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple' | 'live2d') || 'avatar'
+    floatingBallSize.value = c.floating_ball_size ?? 200
+    floatingBallOpacity.value = c.floating_ball_opacity ?? 1.0
+    floatingBallBreathing.value = c.floating_ball_breathing ?? true
+    floatingBallFlash.value = c.floating_ball_flash ?? true
     floatingBallPosition.value = c.floating_ball_position ?? [0, 0]
     monitorEnabled.value = c.monitor_enabled
     monitorFrequency.value = c.monitor_frequency
@@ -245,7 +253,7 @@ export const useSettingStore = defineStore('setting', () => {
     runAsAdmin,
     emojiMode, aiToolbox,
     saveThemePreset, switchThemePreset, deleteThemePreset,
-    languageMixRate, floatingBallMode, floatingBallPosition, monitorEnabled,
+    languageMixRate, floatingBallMode, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
     applyConfig, loadConfig, update, toggleTheme, setTheme, saveApiKey, resetAll,
