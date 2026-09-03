@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "mem"
 version = "0.5.4"
 description = "铃·记忆体"
@@ -18,11 +18,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# AI-6：tray-icon 启用系统托盘，image-png 启用 PNG 图标解码（悬浮球/托盘图标�?tauri = { version = "2", features = ["tray-icon", "image-png", "protocol-asset"] }
+# AI-6：tray-icon 启用系统托盘，image-png 启用 PNG 图标解码（悬浮球/托盘图标）
+tauri = { version = "2", features = ["tray-icon", "image-png", "protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# —�?AI-3 新增依赖 —�?reqwest = { version = "0.11", features = ["json", "stream"] }
+# —— AI-3 新增依赖 ——
+reqwest = { version = "0.11", features = ["json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
 chrono = "0.4"
@@ -31,38 +33,47 @@ anyhow = "1.0"
 thiserror = "1.0"
 uuid = { version = "1.0", features = ["v4"] }
 boa_engine = "0.20"
-# ==================== AI-6 桌面交互与系统集�?====================
-# 全局快捷键（官方插件，Tauri 2�?tauri-plugin-global-shortcut = "2"
-# Windows 系统调用：前台窗口检测（winuser/processthreadsapi/psapi）、注册表（winreg�?winapi = { version = "0.3", features = [
+# ==================== AI-6 桌面交互与系统集成 ====================
+# 全局快捷键（官方插件，Tauri 2）
+tauri-plugin-global-shortcut = "2"
+# Windows 系统调用：前台窗口检测（winuser/processthreadsapi/psapi）、注册表（winreg）
+winapi = { version = "0.3", features = [
     "winuser", "processthreadsapi", "psapi", "libloaderapi",
     "winnt", "handleapi", "errhandlingapi", "minwindef", "windef", "winbase"
 ] }
 winreg = "0.52"
-# ==================== AI-7 配置与诊�?====================
-# 系统信息采集（CPU/内存/磁盘/OS�?sysinfo = "0.30"
+# ==================== AI-7 配置与诊断 ====================
+# 系统信息采集（CPU/内存/磁盘/OS）
+sysinfo = "0.30"
 # API Key 加密：AES-256-GCM
 aes-gcm = "0.10"
-# 密钥派生：PBKDF2-SHA256�?00000 次迭代，�?AI-8 共享同一体系�?pbkdf2 = "0.12"
+# 密钥派生：PBKDF2-SHA256（100000 次迭代，与 AI-8 共享同一体系）
+pbkdf2 = "0.12"
 sha2 = "0.10"
-# 随机�?随机 nonce
+# 随机盐/随机 nonce
 rand = "0.8"
 # 密文 base64 编码
 base64 = "0.22"
-# 派生密钥内存安全清零（Drop 时自动覆盖，防止 key 残留内存�?zeroize = { version = "1.8", features = ["derive"] }
-# 控制台输出智能解码（GBK 回退，解�?PS5.1 中文输出乱码�?encoding_rs = "0.8"
-# 诊断包导出（zip 压缩�?zip = { version = "2", default-features = false, features = ["deflate"] }
+# 派生密钥内存安全清零（Drop 时自动覆盖，防止 key 残留内存）
+zeroize = { version = "1.8", features = ["derive"] }
+# 控制台输出智能解码（GBK 回退，解决 PS5.1 中文输出乱码）
+encoding_rs = "0.8"
+# 诊断包导出（zip 压缩）
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # ==================== moon10 二维码生成与识别 ====================
-# �?Rust 方案：qrcode(生成矩阵) + image(0.25, PNG渲染/图片解码) + rqrr(解码)，无系统依赖，离线可�?# 坑：rqrr 全系依赖 image 0.25，故 image 必须�?0.25 统一；qrcode 禁用�?image feature(会拉0.24冲突)�?#     生成时用 qrcode 矩阵 + image 0.25 手动渲染 PNG
+# 纯 Rust 方案：qrcode(生成矩阵) + image(0.25, PNG渲染/图片解码) + rqrr(解码)，无系统依赖，离线可用
+# 坑：rqrr 全系依赖 image 0.25，故 image 必须用 0.25 统一；qrcode 禁用其 image feature(会拉0.24冲突)，
+#     生成时用 qrcode 矩阵 + image 0.25 手动渲染 PNG
 qrcode = { version = "0.14", default-features = false }
 image = "0.25"
 rqrr = "0.7"
-# ==================== 离线检索增强（方案2 BM25 分词�?===================
+# ==================== 离线检索增强（方案2 BM25 分词）====================
 # jieba-rs 内置词典（编译期内嵌 include_bytes!），无运行时下载，纯离线
 jieba-rs = "0.7"
 # ==================== 离线检索增强（方案3 向量检索）====================
-# candle：纯 Rust ML 框架，加�?safetensors + BertModel 前向
+# candle：纯 Rust ML 框架，加载 safetensors + BertModel 前向
 candle-core = { version = "0.11.0", default-features = false }
 candle-nn = { version = "0.11.0", default-features = false }
 candle-transformers = { version = "0.11.0", default-features = false }
-# HuggingFace tokenizers：加�?tokenizer.json，WordPiece 分词
+# HuggingFace tokenizers：加载 tokenizer.json，WordPiece 分词
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
