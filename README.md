@@ -7,7 +7,7 @@
 第一眼，她是"我的铃"；相处久了你会发现，她还能帮你管理电脑。
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.5-ff7a94" alt="version">
+  <img src="https://img.shields.io/badge/version-0.6.0-ff7a94" alt="version">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="platform">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/offline--first-yes-success" alt="offline-first">
@@ -131,6 +131,7 @@ src-tauri/                  # Rust 后端
 
 | 版本 | 内容 |
 |------|------|
+| v0.6.0 | 悬浮球 v7 全面重构（系统级拖动 + 边缘磁吸 + 单击/双击/长按分级 + 右键灵动控制面板 + 鼠标穿透 + 配置实时同步 + DPI 坐标修复 + 光晕防削边）|
 | v0.5.5 | 悬浮球全面改进 v5/v6（内置猫娘头像 + Live2D 本地离线加载 Haru + DPI 拖拽修复 + 呼吸动画修复 + 位置持久化 + 滚动条隐藏）+ 悬浮球设置并入个性化 tab |
 | v0.5.3 | 悬浮球全面改进（三种显示模式/大小/透明度/动画自定义 + Live2D 集成 oh-my-live2d + Haru/Shizuku 内置模型 + 设置页悬浮球 tab） |
 | v0.5.2 | 新增 VBIL 虚拟形象互联（本地 TCP 服务 + 协议解析 + 心跳 + 规则引擎 + 响应桥接 + 窗口扫描 + 设置页） |
@@ -168,5 +169,5 @@ Claude Sonnet 5，Claude Opus 5，GLM 5.3。作者已对输出做了人工审查
 
 ## 🌿 分支说明
 
-- **`main`（推荐）**：当前稳定主线，随版本持续更新（当前 v0.5.5）。
+- **`main`（推荐）**：当前稳定主线，随版本持续更新（当前 v0.6.0）。
 - **`v1.0`（实验分支）**：曾尝试"内置 Qwen2.5 小模型做离线对话"的实验分支（含 0.5B / 1.5B GGUF 模型）。**结论：小模型（1.5B 及以下）无法稳定承担复杂对话，体验不佳，此方案已放弃，不再内置模型。** 该分支代码与安装包仍可下载参考，但**不推荐日常使用**，请以 main 主线为准。
