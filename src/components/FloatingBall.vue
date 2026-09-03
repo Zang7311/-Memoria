@@ -18,6 +18,9 @@ import {
   listSessions,
   listToolboxItems,
   onBallClickThroughChanged,
+  onChatChunk,
+  onChatEnd,
+  onChatError,
   onConfigUpdated,
   onMonitorTrigger,
   sendMessage,
@@ -58,7 +61,7 @@ const SNAP_FRAMES = 14 // 磁吸动画帧数
 const PANEL_W = 232 // 展开面板宽
 const PANEL_H = 344 // 展开面板高
 const ASK_W = 300 // 快速提问卡宽
-const ASK_H = 132 // 快速提问卡高
+const ASK_H = 320 // 快速提问卡高（含对话区）
 
 // ==================== 拖拽（v7.1：系统级拖动 startDragging，OS 接管，跟手/防丢） ====================
 let dragging = false
@@ -345,6 +348,11 @@ const askOpen = ref(false) // 快速提问迷你卡（与 panel 互斥）
 const panelPage = ref<'main' | 'tools'>('main') // 面板内页：主菜单 / 小工具
 const askText = ref('')
 const askInput = ref<HTMLInputElement | null>(null)
+// —— 迷你对话：在提问卡内直接展示铃的回复（不依赖主窗口）——
+const askMsgs = ref<{ role: 'user' | 'suzu'; text: string }[]>([])
+const askStreaming = ref('')
+const askBusy = ref(false)
+let askUnlisten: (() => void)[] = []
 let panelPrevPos = { x: 0, y: 0 }
 
 /** 展开态通用：以球为中心展开到 w×h（互斥关闭另一展开态；记录球位置用于恢复） */
@@ -411,11 +419,35 @@ async function closePanel() {
   await restoreBall()
 }
 
-// —— 快速提问迷你卡：双击 / 面板「快速提问」/ 全局热键 Ctrl+Alt+Q ——
+// —— 快速提问迷你对话卡：双击 / 面板「快速提问」/ 全局热键 Ctrl+Alt+Q ——
 async function openAsk() {
   if (askOpen.value) return
   askText.value = ''
   await expandTo(ASK_W, ASK_H, 'ask')
+  // 注册回复流式监听（仅提问卡打开期间；回复经 chat_chunk/chat_end 全局广播）
+  try {
+    askUnlisten = [
+      await onChatChunk((chunk) => {
+        if (!askOpen.value) return
+        askStreaming.value += chunk
+      }),
+      await onChatEnd(() => {
+        if (!askOpen.value) return
+        const full = askStreaming.value.trim()
+        askStreaming.value = ''
+        askBusy.value = false
+        if (full) askMsgs.value.push({ role: 'suzu', text: full })
+        scrollAskToBottom()
+      }),
+      await onChatError((err) => {
+        if (!askOpen.value) return
+        askBusy.value = false
+        askStreaming.value = ''
+        askMsgs.value.push({ role: 'suzu', text: `（铃回复失败：${err}）` })
+        scrollAskToBottom()
+      }),
+    ]
+  } catch { /* 忽略 */ }
   // 聚焦输入框（等窗口形态稳定后）
   setTimeout(() => askInput.value?.focus(), 180)
 }
@@ -423,27 +455,41 @@ async function openAsk() {
 async function closeAsk() {
   if (!askOpen.value) return
   askOpen.value = false
+  askBusy.value = false
+  askStreaming.value = ''
+  askUnlisten.forEach((fn) => { try { fn() } catch { /* 忽略 */ } })
+  askUnlisten = []
   await restoreBall()
 }
 
-/** 发送快速提问：不弹主窗口，消息发给最近会话（无则走默认上下文），回复存会话 */
+const askBodyRef = ref<HTMLDivElement | null>(null)
+function scrollAskToBottom() {
+  setTimeout(() => {
+    if (askBodyRef.value) askBodyRef.value.scrollTop = askBodyRef.value.scrollHeight
+  }, 30)
+}
+
+/** 发送快速提问：消息与回复都在提问卡内对话展示（同时存档最近会话） */
 async function submitAsk() {
   const text = askText.value.trim()
-  if (!text) return
+  if (!text || askBusy.value) return
   askText.value = ''
+  askMsgs.value.push({ role: 'user', text })
+  scrollAskToBottom()
+  askBusy.value = true
+  askStreaming.value = ''
+  let sid: string | null = null
   try {
-    let sid: string | null = null
-    try {
-      const sessions = await listSessions()
-      if (sessions && sessions.length > 0) sid = sessions[0].id
-    } catch { /* 无会话则走默认 */ }
+    const sessions = await listSessions()
+    if (sessions && sessions.length > 0) sid = sessions[0].id
+  } catch { /* 无会话则走默认 */ }
+  try {
     await sendMessage(text, setting.depth || 2, sid)
   } catch {
-    showNotice('发送失败，请检查连接')
-    return
+    askBusy.value = false
+    askMsgs.value.push({ role: 'suzu', text: '（发送失败，请检查连接）' })
+    scrollAskToBottom()
   }
-  await closeAsk()
-  showNotice('已发给铃，回复请打开主窗口查看')
 }
 
 // —— 展开态窗口失焦（点到窗口外）→ 自动收起，防尺寸残留 ——
@@ -647,6 +693,8 @@ onUnmounted(() => {
   unlistenFocus?.()
   unlistenToggle?.()
   unlistenAskHotkey?.()
+  askUnlisten.forEach((fn) => { try { fn() } catch { /* 忽略 */ } })
+  askUnlisten = []
   if (live2dCleanup) live2dCleanup()
 })
 
@@ -859,11 +907,23 @@ async function loadLive2D() {
       </div>
     </div>
 
-    <!-- ====== 展开态二：快速提问迷你卡 ====== -->
+    <!-- ====== 展开态二：快速提问迷你对话卡 ====== -->
     <div v-else-if="askOpen" class="ask-card">
       <div class="ask-head">
         <span class="ask-title">{{ setting.selfName || '铃' }} · 快速提问</span>
         <span class="ask-close" @click="closeAsk">×</span>
+      </div>
+      <!-- 对话记录 -->
+      <div ref="askBodyRef" class="ask-body">
+        <div v-if="askMsgs.length === 0 && !askStreaming" class="ask-empty">在这里直接和铃对话，回复实时显示～</div>
+        <div
+          v-for="(m, i) in askMsgs"
+          :key="i"
+          class="msg-line"
+          :class="m.role === 'user' ? 'from-user' : 'from-suzu'"
+        >{{ m.text }}</div>
+        <div v-if="askStreaming" class="msg-line from-suzu streaming">{{ askStreaming }}<span class="caret"></span></div>
+        <div v-if="askBusy && !askStreaming" class="msg-line from-suzu typing">铃正在思考…</div>
       </div>
       <div class="ask-row">
         <input
@@ -871,11 +931,12 @@ async function loadLive2D() {
           v-model="askText"
           class="ask-input"
           placeholder="问点什么… Enter 发送"
+          :disabled="askBusy"
           @keydown.enter.prevent="submitAsk"
         />
-        <button class="ask-send" :disabled="!askText.trim()" @click="submitAsk">发送</button>
+        <button class="ask-send" :disabled="askBusy || !askText.trim()" @click="submitAsk">发送</button>
       </div>
-      <div class="ask-sub">发送给最近会话，回复可在主窗口查看</div>
+      <div class="ask-sub">对话会同步保存到最近会话</div>
     </div>
   </div>
 </template>
@@ -1289,6 +1350,60 @@ async function loadLive2D() {
   font-size: var(--fs-11, 11px);
   color: var(--text-secondary, #9a9294);
   flex-shrink: 0;
+}
+/* —— 迷你对话区 —— */
+.ask-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ask-empty {
+  font-size: var(--fs-12, 12px);
+  color: var(--text-secondary, #9a9294);
+  text-align: center;
+  padding: 14px 0;
+}
+.msg-line {
+  max-width: 92%;
+  padding: 6px 10px;
+  border-radius: calc(var(--radius-ui, 14px) - 4px);
+  font-size: var(--fs-12, 12px);
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.msg-line.from-user {
+  align-self: flex-end;
+  background: var(--bubble-user-bg, #3a3438);
+  color: var(--text-user, #fff);
+  border-bottom-right-radius: 4px;
+}
+.msg-line.from-suzu {
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--input-bg, #2a272b) 75%, transparent);
+  color: var(--text-main, #eee6e7);
+  border-bottom-left-radius: 4px;
+}
+.msg-line.streaming .caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent, #ff7a94);
+  animation: caret-blink 0.8s step-end infinite;
+}
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.msg-line.typing {
+  color: var(--text-secondary, #9a9294);
+  font-style: italic;
 }
 </style>
 
