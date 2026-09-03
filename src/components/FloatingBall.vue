@@ -55,10 +55,13 @@ async function clampToScreen(x: number, y: number): Promise<[number, number]> {
   return [x, y]
 }
 
+let moved = false
+
 async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
   e.preventDefault()
   dragging = true
+  moved = false
   startScreen = { x: e.screenX, y: e.screenY }
   try {
     const pos = await win.outerPosition()
@@ -72,8 +75,13 @@ async function onMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!dragging) return
-  targetPos.x = startPos.x + (e.screenX - startScreen.x) / dpiScale
-  targetPos.y = startPos.y + (e.screenY - startScreen.y) / dpiScale
+  const dx = (e.screenX - startScreen.x) / dpiScale
+  const dy = (e.screenY - startScreen.y) / dpiScale
+  // 移动超过阈值才算"拖动"；纯点击（微小抖动）不移动窗口
+  if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+  moved = true
+  targetPos.x = startPos.x + dx
+  targetPos.y = startPos.y + dy
   if (rafId !== null) return
   rafId = window.requestAnimationFrame(() => {
     rafId = null
@@ -88,11 +96,11 @@ function onMouseUp() {
     window.cancelAnimationFrame(rafId)
     rafId = null
   }
-  win.outerPosition().then(async (p) => {
-    const [cx, cy] = await clampToScreen(p.x, p.y)
-    await win.setPosition(new LogicalPosition(cx, cy)).catch(() => {})
+  // 只有真正拖动过才保存位置；纯点击完全不动窗口
+  if (!moved) return
+  win.outerPosition().then((p) => {
     try {
-      localStorage.setItem(POS_KEY, JSON.stringify({ x: cx, y: cy }))
+      localStorage.setItem(POS_KEY, JSON.stringify({ x: p.x, y: p.y }))
     } catch { /* 忽略 */ }
   }).catch(() => {})
 }
