@@ -303,9 +303,9 @@ async function loadLive2D() {
 
 <style scoped>
 .shell {
-  width: 100vw;
-  height: 100vh;
-  overflow: visible;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   position: relative;
   user-select: none;
   -webkit-user-select: none;
@@ -416,5 +416,15 @@ async function loadLive2D() {
 <style>
 html, body, #app, .app-root {
   background: transparent !important;
+  overflow: hidden !important;
+}
+/* 彻底隐藏悬浮球窗口的滚动条（滑轨） */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 </style>
