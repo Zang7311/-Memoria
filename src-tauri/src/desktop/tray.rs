@@ -15,9 +15,13 @@ pub fn init_tray(app: &AppHandle) {
         .expect("创建托盘菜单失败");
     let pause = MenuItem::with_id(app, "pause", "暂停监测", true, None::<&str>)
         .expect("创建托盘菜单失败");
+    let ct_on = MenuItem::with_id(app, "click_through_on", "鼠标穿透：开", true, None::<&str>)
+        .expect("创建托盘菜单失败");
+    let ct_off = MenuItem::with_id(app, "click_through_off", "鼠标穿透：关", true, None::<&str>)
+        .expect("创建托盘菜单失败");
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)
         .expect("创建托盘菜单失败");
-    let menu = Menu::with_items(app, &[&show, &ball, &pause, &quit])
+    let menu = Menu::with_items(app, &[&show, &ball, &pause, &ct_on, &ct_off, &quit])
         .expect("创建托盘菜单失败");
 
     // 托盘图标：打包自带的 icon.png（RGBA，Tauri 2 直接支持）
@@ -33,6 +37,12 @@ pub fn init_tray(app: &AppHandle) {
             "show" => show_main_window(app),
             "ball" => toggle_floating_ball(app),
             "pause" => toggle_monitoring(app),
+            "click_through_on" => {
+                let _ = crate::commands::ball::set_click_through(app, true);
+            }
+            "click_through_off" => {
+                let _ = crate::commands::ball::set_click_through(app, false);
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -73,6 +83,8 @@ fn toggle_floating_ball(app: &AppHandle) {
         if ball.is_visible().unwrap_or(false) {
             let _ = ball.hide();
         } else {
+            // 显示前强制置顶（防主窗口激活后悬浮球置顶位丢失被盖）
+            let _ = ball.set_always_on_top(true);
             let _ = ball.show();
             let _ = ball.set_focus();
         }

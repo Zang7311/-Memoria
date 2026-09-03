@@ -16,6 +16,7 @@ import { useDesktopStore } from '../stores/desktopStore'
 import { assetUrl, isImagePath } from '../utils/tauri'
 import { useSyncStore } from '../stores/syncStore'
 import { useChatStore } from '../stores/chatStore'
+import { listen } from '@tauri-apps/api/event'
 
 const setting = useSettingStore()
 const desktop = useDesktopStore()
@@ -39,6 +40,11 @@ onMounted(() => {
   sync.init().catch(() => {})
   // 收尾批次3：加载多会话（无会话则自动新建）
   chat.init().catch(() => {})
+  // v0.6：悬浮球面板「设置…」→ 打开设置页
+  listen('floating-open-settings', () => {
+    showSettings.value = true
+    showToolbox.value = false
+  }).catch(() => {})
 })
 
 async function onDeleteSession(id: string) {

@@ -1,6 +1,8 @@
 <!-- 《铃·记忆体》输入栏：textarea + 纸飞机发送按钮
      任务 4：Enter 发送、Shift+Enter 换行、发送中禁用、清空输入 -->
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '../stores/chatStore'
 import { useStreamRender } from '../composables/useStreamRender'
 import { useSettingStore } from '../stores/settingStore'
@@ -8,6 +10,15 @@ import { useSettingStore } from '../stores/settingStore'
 const chat = useChatStore()
 const setting = useSettingStore()
 const { send } = useStreamRender()
+
+const taRef = ref<HTMLTextAreaElement | null>(null)
+
+// v0.6：悬浮球「双击快速提问」→ 唤起主窗口后聚焦输入框
+onMounted(() => {
+  listen('floating-quick-ask', () => {
+    taRef.value?.focus()
+  }).catch(() => { /* 非 Tauri 环境忽略 */ })
+})
 
 // 处理 Enter 键：Shift+Enter 换行，Enter 发送
 function onKeydown(e: KeyboardEvent) {
@@ -30,6 +41,7 @@ async function handleSend() {
   <div class="chat-input">
     <textarea
       v-model="chat.inputText"
+      ref="taRef"
       class="input-area"
       name="chat"
       placeholder="说点什么…"
