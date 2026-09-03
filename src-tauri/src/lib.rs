@@ -23,6 +23,8 @@ mod utils;
 mod vbil;
 
 use tauri::Manager;
+use tauri::Emitter;
+use tauri::Listener;
 
 // —— 测试通道（debug 构建返回实际内容；release 构建为空操作，命令仍注册但无实质功能）——
 #[tauri::command]
@@ -119,6 +121,14 @@ pub fn run() {
             .visible(false)
             .build()?;
 
+            // 临时调试通道（v0.6 悬浮球诊断，发布前移除）：前端 emit ball-diag → 打印到日志
+            {
+                let handle = app.handle().clone();
+                handle.listen("ball-diag", move |ev| {
+                    log::info!("[ball-diag] {}", ev.payload());
+                });
+            }
+
             // 3. 气泡弹窗窗口（右下角提示；默认隐藏，监测触发时显示）
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -202,6 +212,9 @@ pub fn run() {
             commands::ui_image::save_ui_image,
             deps::check_dependency,
             commands::tray::set_floating_ball_visibility,
+            commands::main_window::ensure_main_window,
+            commands::ball::set_floating_ball_click_through,
+            commands::ball::get_floating_ball_click_through,
             commands::hotkey::register_hotkey,
             commands::hotkey::unregister_hotkey,
             commands::autostart::set_autostart,

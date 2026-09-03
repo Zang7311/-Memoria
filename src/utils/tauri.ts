@@ -425,6 +425,33 @@ export function setFloatingBallVisibility(visible: boolean): Promise<void> {
   return invoke('set_floating_ball_visibility', { request: { visible } })
 }
 
+// ==================== v0.6 悬浮球重构：鼠标穿透 ====================
+
+/** 切换悬浮球鼠标穿透（开启后窗口忽略鼠标事件，托盘菜单可恢复），返回最新状态 */
+export function setFloatingBallClickThrough(enabled: boolean): Promise<boolean> {
+  return invoke('set_floating_ball_click_through', { enabled })
+}
+
+/** 查询悬浮球鼠标穿透状态（初始化 UI 用） */
+export function getFloatingBallClickThrough(): Promise<boolean> {
+  return invoke('get_floating_ball_click_through')
+}
+
+/** 监听穿透状态变化（悬浮球/主窗口同步 UI 用） */
+export function onBallClickThroughChanged(callback: (enabled: boolean) => void): Promise<UnlistenFn> {
+  return listen<boolean>('ball-click-through-changed', (event) => callback(event.payload))
+}
+
+/** 监听配置更新事件（悬浮球/气泡窗口收到后重新加载配置） */
+export function onConfigUpdated(callback: () => void): Promise<UnlistenFn> {
+  return listen('config-updated', callback)
+}
+
+/** 确保主窗口存在（用户可能已关闭主窗；悬浮球「打开主窗口/快速提问/设置」前调用） */
+export function ensureMainWindow(): Promise<void> {
+  return invoke('ensure_main_window')
+}
+
 /** 注册全局快捷键（如 Ctrl+Alt+L） */
 export function registerHotkey(accelerator: string): Promise<{ registered: boolean; accelerator: string }> {
   return invoke('register_hotkey', { request: { accelerator } })

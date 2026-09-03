@@ -19,7 +19,9 @@ pub mod plugin_terminal;
 pub mod plugin_uninstall;
 // —— AI-6 桌面交互命令 ——
 pub mod autostart;
+pub mod ball;
 pub mod hotkey;
+pub mod main_window;
 pub mod monitor_rules;
 pub mod toolbox_execute;
 pub mod tray;
