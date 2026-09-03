@@ -351,6 +351,10 @@ pub struct ToolboxItem {
     /// 输入框占位符
     #[serde(default)]
     pub input_placeholder: Option<String>,
+    /// 组合工具（模块化，v0.6 新增）：非空时按顺序执行各步骤（模仿快捷指令）；
+    /// 空 = 传统单命令工具（向后兼容旧数据）
+    #[serde(default)]
+    pub steps: Vec<QuickCommandStep>,
 }
 
 /// 获取前台窗口信息响应

@@ -50,7 +50,22 @@ pub async fn execute_toolbox(
     }
 
     match toolbox::find_item(&resource_dir(&app), &request.item_id) {
-        Some(item) => toolbox::execute(&item, request.input).await,
+        Some(item) => {
+            // 组合工具（steps 非空）：按顺序执行各步骤，结果合并返回（复用快捷指令步骤执行器）
+            if !item.steps.is_empty() {
+                let mut outs: Vec<String> = Vec::with_capacity(item.steps.len());
+                for step in &item.steps {
+                    outs.push(crate::commands::quick_command::execute_step(&app, step).await);
+                }
+                Ok(ExecuteToolboxResponse {
+                    success: true,
+                    output: Some(outs.join("；")),
+                    error: None,
+                })
+            } else {
+                toolbox::execute(&item, request.input).await
+            }
+        }
         None => Err(AppError::ToolboxError(format!(
             "工具箱条目不存在：{}",
             request.item_id
