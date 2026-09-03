@@ -26,6 +26,9 @@ let unlistenTrigger: (() => void) | undefined
 
 // —— 拖拽（物理像素差值 ÷ 缩放比 = 逻辑坐标，rAF 节流防乱序） ——
 let dragging = false
+let dragReady = false
+let moved = false
+let peakDist = 0
 let startScreen = { x: 0, y: 0 }
 let startPos = { x: 0, y: 0 }
 let dpiScale = 1
@@ -55,13 +58,13 @@ async function clampToScreen(x: number, y: number): Promise<[number, number]> {
   return [x, y]
 }
 
-let moved = false
-
 async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
   e.preventDefault()
   dragging = true
   moved = false
+  peakDist = 0
+  dragReady = false
   startScreen = { x: e.screenX, y: e.screenY }
   try {
     const pos = await win.outerPosition()
@@ -70,15 +73,19 @@ async function onMouseDown(e: MouseEvent) {
     dpiScale = mon?.scaleFactor || 1
   } catch {
     startPos = { x: 0, y: 0 }
+  } finally {
+    dragReady = true
   }
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!dragging) return
+  if (!dragging || !dragReady) return
   const dx = (e.screenX - startScreen.x) / dpiScale
   const dy = (e.screenY - startScreen.y) / dpiScale
-  // 移动超过阈值才算"拖动"；纯点击（微小抖动）不移动窗口
-  if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+  const dist = Math.hypot(dx, dy)
+  if (dist > peakDist) peakDist = dist
+  // 移动超过 3px 才算拖动；纯点击（手抖）不移动窗口
+  if (!moved && dist < 3) return
   moved = true
   targetPos.x = startPos.x + dx
   targetPos.y = startPos.y + dy
@@ -96,8 +103,12 @@ function onMouseUp() {
     window.cancelAnimationFrame(rafId)
     rafId = null
   }
-  // 只有真正拖动过才保存位置；纯点击完全不动窗口
-  if (!moved) return
+  // 峰值位移 < 8px 视为"点击"：把窗口吸回按下时的位置（消除手抖漂移），不保存
+  if (!moved || peakDist < 8) {
+    win.setPosition(new LogicalPosition(Math.round(startPos.x), Math.round(startPos.y))).catch(() => {})
+    return
+  }
+  // 真拖动：保存当前位置
   win.outerPosition().then((p) => {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify({ x: p.x, y: p.y }))
@@ -311,8 +322,8 @@ async function loadLive2D() {
 
 <style scoped>
 .shell {
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   position: relative;
   user-select: none;
@@ -428,6 +439,10 @@ async function loadLive2D() {
 html, body, #app, .app-root {
   background: transparent !important;
   overflow: hidden !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 /* 彻底隐藏悬浮球窗口的滚动条（滑轨） */
 html::-webkit-scrollbar,
