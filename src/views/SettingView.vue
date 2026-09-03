@@ -69,7 +69,6 @@ const tabs = [
   { key: 'memory', label: '记忆', icon: 'memory' },
   { key: 'monitor', label: '监测', icon: 'monitor' },
   { key: 'vbil', label: '形象', icon: 'customize' },
-  { key: 'ball', label: '悬浮球', icon: 'customize' },
   { key: 'persona', label: '个性化', icon: 'customize' },
   { key: 'plugin', label: '插件', icon: 'plugin' },
   { key: 'quick', label: '指令', icon: 'command' },
@@ -1048,8 +1047,28 @@ async function toggleAiToolbox() {
         <VBILSettings />
       </div>
 
-      <!-- ============ 悬浮球 ============ -->
-      <div v-else-if="activeTab === 'ball'">
+      <!-- ============ 个性化（含悬浮球设置） ============ -->
+      <div v-else-if="activeTab === 'persona'">
+        <section class="card">
+          <div class="card-title">个性化</div>
+          <div class="field">
+            <label>日语修饰词浓度（0-30）</label>
+            <input v-model.number="mixRate" type="range" min="0" max="30" class="range" />
+            <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>自称</label>
+              <input v-model="selfName" class="input" />
+            </div>
+            <div class="field">
+              <label>对您的称呼</label>
+              <input v-model="userName" class="input" />
+            </div>
+          </div>
+          <button class="btn primary" @click="savePersona">保存个性化</button>
+        </section>
+
         <section class="card">
           <div class="card-title">悬浮球</div>
           <div class="field">
@@ -1091,29 +1110,6 @@ async function toggleAiToolbox() {
           <div v-if="setting.floatingBallEnabled" class="actions">
             <button class="btn ghost" @click="resetBallPosition">重置位置</button>
           </div>
-        </section>
-      </div>
-
-      <!-- ============ 个性化 ============ -->
-      <div v-else-if="activeTab === 'persona'">
-        <section class="card">
-          <div class="card-title">个性化</div>
-          <div class="field">
-            <label>日语修饰词浓度（0-30）</label>
-            <input v-model.number="mixRate" type="range" min="0" max="30" class="range" />
-            <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
-          </div>
-          <div class="row">
-            <div class="field">
-              <label>自称</label>
-              <input v-model="selfName" class="input" />
-            </div>
-            <div class="field">
-              <label>对您的称呼</label>
-              <input v-model="userName" class="input" />
-            </div>
-          </div>
-          <button class="btn primary" @click="savePersona">保存个性化</button>
         </section>
       </div>
 
