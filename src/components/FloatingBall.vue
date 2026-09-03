@@ -1,8 +1,7 @@
-<!-- 《铃·记忆体》悬浮球 v5
-     修复：按钮接线（大小/透明度/呼吸/闪烁）/ DPI 拖拽瞬移 / 位置持久化+屏幕约束
-     头像模式显示内置猫娘头像，Live2D 本地加载内置模型（无需代理） -->
+<!-- 《铃·记忆体》悬浮球 v6
+     修复：DPi 拖拽抖动（物理像素÷缩放+rAF）/ 呼吸不光晕不削边 / Live2D 本地加载不联网 -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { resourceDir } from '@tauri-apps/api/path'
 import { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize, primaryMonitor } from '@tauri-apps/api/window'
@@ -25,13 +24,16 @@ const hasMessage = ref(false)
 let flashTimer: number | undefined
 let unlistenTrigger: (() => void) | undefined
 
-// —— 拖拽状态（用 clientX/Y 逻辑像素，避免 DPI 缩放导致瞬移） ——
+// —— 拖拽（物理像素差值 ÷ 缩放比 = 逻辑坐标，rAF 节流防乱序） ——
 let dragging = false
-let startClient = { x: 0, y: 0 }
+let startScreen = { x: 0, y: 0 }
 let startPos = { x: 0, y: 0 }
+let dpiScale = 1
+let targetPos = { x: 0, y: 0 }
+let rafId: number | null = null
 
 // —— 位置持久化 ——
-const POS_KEY = 'floating-ball-pos-v5'
+const POS_KEY = 'floating-ball-pos-v6'
 
 /** 当前模式的窗口尺寸 */
 function currentWinSize(): number {
@@ -57,10 +59,12 @@ async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
   e.preventDefault()
   dragging = true
-  startClient = { x: e.clientX, y: e.clientY }
+  startScreen = { x: e.screenX, y: e.screenY }
   try {
     const pos = await win.outerPosition()
     startPos = { x: pos.x, y: pos.y }
+    const mon = (await currentMonitor()) || (await primaryMonitor())
+    dpiScale = mon?.scaleFactor || 1
   } catch {
     startPos = { x: 0, y: 0 }
   }
@@ -68,17 +72,22 @@ async function onMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!dragging) return
-  const dx = e.clientX - startClient.x
-  const dy = e.clientY - startClient.y
-  win
-    .setPosition(new LogicalPosition(Math.round(startPos.x + dx), Math.round(startPos.y + dy)))
-    .catch(() => {})
+  targetPos.x = startPos.x + (e.screenX - startScreen.x) / dpiScale
+  targetPos.y = startPos.y + (e.screenY - startScreen.y) / dpiScale
+  if (rafId !== null) return
+  rafId = window.requestAnimationFrame(() => {
+    rafId = null
+    win.setPosition(new LogicalPosition(Math.round(targetPos.x), Math.round(targetPos.y))).catch(() => {})
+  })
 }
 
 function onMouseUp() {
   if (!dragging) return
   dragging = false
-  // 保存位置（约束在屏幕内，避免拖出屏幕后"消失"）
+  if (rafId !== null) {
+    window.cancelAnimationFrame(rafId)
+    rafId = null
+  }
   win.outerPosition().then(async (p) => {
     const [cx, cy] = await clampToScreen(p.x, p.y)
     await win.setPosition(new LogicalPosition(cx, cy)).catch(() => {})
@@ -129,12 +138,11 @@ function menuExit() {
   WebviewWindow.getByLabel('main').then((m) => m?.close())
 }
 
-// —— 窗口事件监听（拖拽用 window 级，拖动更流畅不丢事件） ——
+// —— 窗口事件监听（window 级，拖动流畅） ——
 onMounted(async () => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
 
-  // 监听监测触发 → 闪烁
   unlistenTrigger = await onMonitorTrigger(() => {
     if (!flash.value) return
     hasMessage.value = true
@@ -163,11 +171,12 @@ onUnmounted(() => {
   if (live2dCleanup) live2dCleanup()
 })
 
-// —— 模式变化：调整窗口大小 ——
+// —— 模式变化：调整窗口大小 + 加载 Live2D ——
 watch(mode, async (newMode) => {
   try {
     if (newMode === 'live2d') {
       await win.setSize(new LogicalSize(300, 400))
+      await nextTick()
       await loadLive2D()
     } else {
       const s = size.value
@@ -201,7 +210,7 @@ watch(enabled, async (val) => {
   } catch { /* 忽略 */ }
 })
 
-// —— Live2D：本地加载内置模型（无需联网/代理） ——
+// —— Live2D：本地加载内置模型（无需联网） ——
 const live2dMount = ref<HTMLDivElement | null>(null)
 let live2dCleanup: (() => void) | null = null
 
@@ -214,20 +223,27 @@ async function loadLive2D() {
     if (!live2dMount.value) return
     const container = live2dMount.value
 
-    // 内置模型：开发模式 resourceDir=src-tauri，打包后=安装目录，路径统一为 live2d/haru
+    // 内置模型：开发/打包路径统一为 live2d/haru（相对资源目录）
     const dir = await resourceDir()
     const modelPath = `${dir}live2d/haru/haru_greeter_t03.model3.json`
     const modelUrl = convertFileSrc(modelPath)
+    console.warn('[Live2D] 模型路径：', modelPath)
 
-    loadOml2d({
+    const oml2d = loadOml2d({
       parentElement: container,
-      models: [{ path: modelUrl, scale: 0.08 }],
+      models: [{ path: modelUrl, scale: 0.12 }],
+    })
+    oml2d.onLoad((status) => {
+      console.warn('[Live2D] 加载状态：', status)
+      if (status === 'fail') {
+        container.innerHTML = '<div style="color:#fff;font-size:12px;text-align:center;padding:20px;">Live2D 加载失败</div>'
+      }
     })
     live2dCleanup = () => {
       if (live2dMount.value) live2dMount.value.innerHTML = ''
     }
   } catch (e) {
-    console.warn('[Live2D] 加载失败：', e)
+    console.warn('[Live2D] 加载异常：', e)
     if (live2dMount.value) {
       live2dMount.value.innerHTML = '<div style="color:#fff;font-size:12px;text-align:center;padding:20px;">Live2D 加载失败</div>'
     }
@@ -242,7 +258,7 @@ async function loadLive2D() {
     @dblclick="onDoubleClick"
     @contextmenu="onContextMenu"
   >
-    <!-- 头像模式：圆形，跟随窗口大小 -->
+    <!-- 头像模式 -->
     <template v-if="mode === 'avatar'">
       <div
         class="ball avatar"
@@ -295,7 +311,7 @@ async function loadLive2D() {
   -webkit-user-select: none;
 }
 
-/* 头像/文字模式：100% 跟随窗口（窗口由 setSize 控制，严格同步） */
+/* 头像/文字模式：100% 跟随窗口（窗口由 setSize 控制） */
 .ball.avatar {
   width: 100%;
   height: 100%;
@@ -313,15 +329,16 @@ async function loadLive2D() {
 }
 .ball.avatar:active {
   cursor: grabbing;
-  transform: scale(1.06);
+  transform: scale(1.04);
   box-shadow: 0 8px 24px rgba(255, 138, 171, 0.65);
 }
+/* 呼吸：光晕脉动，不放大（避免超出窗口被削边） */
 .ball.avatar.breathing {
   animation: breathe 3s ease-in-out infinite;
 }
 @keyframes breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.03); }
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(255, 138, 171, 0.4); }
+  50% { transform: scale(0.99); box-shadow: 0 6px 24px rgba(255, 138, 171, 0.75); }
 }
 
 .avatar-img {
@@ -351,7 +368,7 @@ async function loadLive2D() {
 }
 .live2d-wrap:active {
   cursor: grabbing;
-  transform: scale(1.02);
+  transform: scale(1.01);
 }
 .live2d-container {
   width: 100%;
@@ -364,8 +381,8 @@ async function loadLive2D() {
   animation: flash 0.5s ease-in-out 6;
 }
 @keyframes flash {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(1.06); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 /* 右键菜单 */

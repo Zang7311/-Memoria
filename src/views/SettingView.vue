@@ -1073,8 +1073,10 @@ async function toggleAiToolbox() {
             </div>
           </div>
           <div v-if="setting.floatingBallEnabled" class="field">
-            <label>透明度（{{ (setting.floatingBallOpacity * 100).toFixed(0) }}%）</label>
-            <input v-model.number="setting.floatingBallOpacity" type="range" min="0.1" max="1" step="0.05" class="range" @change="saveBallSettings" />
+            <label>透明度</label>
+            <div class="size-btns">
+              <button v-for="o in [1, 0.8, 0.6, 0.4]" :key="o" class="size-btn" :class="{ active: Math.abs(setting.floatingBallOpacity - o) < 0.01 }" @click="setting.floatingBallOpacity = o; saveBallSettings()">{{ o * 100 }}%</button>
+            </div>
           </div>
           <div v-if="setting.floatingBallEnabled" class="row">
             <label class="switch-wrap">
