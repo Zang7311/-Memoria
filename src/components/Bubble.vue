@@ -7,11 +7,12 @@ import { currentMonitor, getCurrentWindow, LogicalPosition, primaryMonitor } fro
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { assetUrl, isImagePath, onMonitorTrigger } from '../utils/tauri'
 import { useSettingStore } from '../stores/settingStore'
+import suzuAvatar from '../assets/avatar_suzu.png'
 
 const win = getCurrentWindow()
 const setting = useSettingStore()
-// 铃的头像：图片路径则显示图片
-const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
+// 铃的头像：图片路径则显示图片，否则用内置猫娘头像
+const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : suzuAvatar))
 
 const visible = ref(false)
 const message = ref('')
