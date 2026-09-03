@@ -7,6 +7,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useSettingStore } from '../stores/settingStore'
 import { assetUrl, isImagePath } from '../utils/tauri'
 import SearchModePanel from './SearchModePanel.vue'
+import suzuAvatar from '../assets/avatar_suzu.png'
 
 const props = defineProps<{ message: Message; isLast?: boolean }>()
 const chat = useChatStore()
@@ -25,8 +26,8 @@ const time = computed(() => {
   return `${h}:${m}`
 })
 const isUser = computed(() => props.message.role === 'user')
-// 铃的头像：图片路径则显示图片
-const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
+// 铃的头像：用户自定义图片则显示，否则用内置猫娘头像
+const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : suzuAvatar))
 // 用户头像：图片路径则显示图片，否则 emoji/文字
 const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl(setting.avatarUser!) : null))
 </script>
