@@ -309,12 +309,15 @@ async function loadLive2D() {
   position: relative;
   user-select: none;
   -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* 头像/文字模式：100% 跟随窗口（窗口由 setSize 控制） */
+/* 头像/文字模式：球占外框 90%（直径小于外框边长，任何缩放都不削边） */
 .ball.avatar {
-  width: 100%;
-  height: 100%;
+  width: 90%;
+  height: 90%;
   border-radius: 50%;
   background: linear-gradient(135deg, #ff7a94, #6db3ff);
   border: 2px solid rgba(255, 255, 255, 0.7);
@@ -325,20 +328,20 @@ async function loadLive2D() {
   justify-content: center;
   overflow: hidden;
   box-sizing: border-box;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
+/* 点击/拖动：只加深阴影，不缩放（球不会"动"） */
 .ball.avatar:active {
   cursor: grabbing;
-  transform: scale(1.04);
   box-shadow: 0 8px 24px rgba(255, 138, 171, 0.65);
 }
-/* 呼吸：光晕脉动，不放大（避免超出窗口被削边） */
+/* 呼吸：仅光晕变化，不改变大小（不削边） */
 .ball.avatar.breathing {
   animation: breathe 3s ease-in-out infinite;
 }
 @keyframes breathe {
-  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(255, 138, 171, 0.4); }
-  50% { transform: scale(0.99); box-shadow: 0 6px 24px rgba(255, 138, 171, 0.75); }
+  0%, 100% { box-shadow: 0 4px 14px rgba(255, 138, 171, 0.4); }
+  50% { box-shadow: 0 7px 26px rgba(255, 138, 171, 0.8); }
 }
 
 .avatar-img {

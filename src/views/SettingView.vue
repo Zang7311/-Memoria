@@ -65,12 +65,11 @@ function buildDiaryBody(dayCount: number, chat: number, tools: number, topics: s
 
 const tabs = [
   { key: 'general', label: '通用', icon: 'settings' },
-  { key: 'model', label: '模型', icon: 'command' },
-  { key: 'memory', label: '记忆', icon: 'memory' },
-  { key: 'monitor', label: '监测', icon: 'monitor' },
-  { key: 'vbil', label: '形象', icon: 'customize' },
-  { key: 'persona', label: '个性化', icon: 'customize' },
-  { key: 'plugin', label: '插件', icon: 'plugin' },
+    { key: 'model', label: '模型', icon: 'command' },
+    { key: 'memory', label: '记忆', icon: 'memory' },
+    { key: 'monitor', label: '监测', icon: 'monitor' },
+    { key: 'style', label: '形象', icon: 'customize' },
+    { key: 'plugin', label: '插件', icon: 'plugin' },
   { key: 'quick', label: '指令', icon: 'command' },
   { key: 'sync', label: '同步', icon: 'sync' },
   { key: 'sponsor', label: '赞助', icon: 'sponsor' },
@@ -657,110 +656,6 @@ async function toggleAiToolbox() {
         </section>
 
         <section class="card">
-          <div class="card-title">外观</div>
-          <div class="row">
-            <span class="label">主题</span>
-            <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">深色</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'light' }" @click="setting.setTheme('light')">亮色</button>
-          </div>
-          <div class="row theme-row">
-            <span class="label">风格</span>
-            <button class="btn ghost" :class="{ on: setting.theme === 'win10' }" @click="setting.setTheme('win10')">Win10</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'edge' }" @click="setting.setTheme('edge')">微软浏览器</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">极简文字</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">iOS 扁平</button>
-            <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">iOS 毛玻璃</button>
-          </div>
-          <div class="row theme-row">
-            <span class="label">Emoji</span>
-            <button class="btn ghost" :class="{ on: setting.emojiMode === 'off' }" @click="setEmojiMode('off')">关闭</button>
-            <button class="btn ghost" :class="{ on: setting.emojiMode === 'partial' }" @click="setEmojiMode('partial')">局部</button>
-            <button class="btn ghost" :class="{ on: setting.emojiMode === 'all' }" @click="setEmojiMode('all')">全部</button>
-          </div>
-          <div class="ui-custom">
-            <div class="field">
-              <label>主色</label>
-              <div class="row">
-                <input v-model="setting.accentColor" class="input" placeholder="#ff7a94" style="flex:1" />
-                <input type="color" v-model="setting.accentColor" class="color-swatch" />
-              </div>
-              <p class="hint" style="margin-top:2px">设置主色后，铃的气泡/危险按钮自动跟随（可单独覆盖）</p>
-            </div>
-            <div class="field">
-              <label>危险色（删除/错误按钮）</label>
-              <div class="row">
-                <input v-model="setting.dangerColor" class="input" placeholder="留空则跟随主色" style="flex:1" />
-                <input type="color" v-model="setting.dangerColor" class="color-swatch" />
-              </div>
-            </div>
-            <div class="field">
-              <label>背景色</label>
-              <div class="row">
-                <input v-model="setting.bgColor" class="input" placeholder="#1d1b1f" style="flex:1" />
-                <input type="color" v-model="setting.bgColor" class="color-swatch" />
-              </div>
-            </div>
-            <div class="field">
-              <label>背景图（选填）</label>
-              <div class="row">
-                <input v-model="setting.bgImage" class="input long" placeholder="C:\Users\...\bg.jpg" style="flex:1" />
-                <button class="btn ghost" @click="pickImage('bg')">选择图片</button>
-              </div>
-              <input ref="bgFileInput" type="file" accept="image/*" style="display:none" @change="onBgFile" />
-            </div>
-            <div class="field">
-              <label>铃的头像（emoji / 文字 / 图片）</label>
-              <div class="row">
-                <input v-model="setting.avatarSuzu" class="input" placeholder="铃" style="flex:1" />
-                <button class="btn ghost" @click="pickImage('avatar')">选头像图</button>
-              </div>
-              <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="onAvatarFile" />
-            </div>
-            <div class="field">
-              <label>你的头像（选填）</label>
-              <div class="row">
-                <input v-model="setting.avatarUser" class="input" placeholder="（留空则不显示）" style="flex:1" />
-                <button class="btn ghost" @click="pickImage('user')">选头像图</button>
-              </div>
-              <input ref="userAvatarFileInput" type="file" accept="image/*" style="display:none" @change="onUserAvatarFile" />
-            </div>
-            <div class="field">
-              <label>圆角：{{ setting.uiRadius ?? 12 }}px</label>
-              <input v-model.number="setting.uiRadius" type="range" min="0" max="24" class="range" />
-            </div>
-            <div class="field">
-              <label>你的气泡颜色</label>
-              <div class="row">
-                <input v-model="setting.bubbleUserColor" class="input" placeholder="#2d2d2d" style="flex:1" />
-                <input type="color" v-model="setting.bubbleUserColor" class="color-swatch" />
-              </div>
-            </div>
-            <div class="field">
-              <label>铃的气泡颜色</label>
-              <div class="row">
-                <input v-model="setting.bubbleSuzuColor" class="input" placeholder="#3a3438" style="flex:1" />
-                <input type="color" v-model="setting.bubbleSuzuColor" class="color-swatch" />
-              </div>
-            </div>
-            <button class="btn primary" @click="saveUiCustom">应用自定义外观</button>
-            <div class="theme-presets">
-              <div class="row">
-                <input v-model="presetName" class="input" placeholder="给这套风格起个名字" style="flex:1" />
-                <button class="btn primary" @click="savePreset">保存组合</button>
-              </div>
-              <p class="hint">保存后一键切换你的专属风格，无需复制粘贴</p>
-              <div v-if="setting.uiThemes && setting.uiThemes.length" class="preset-list">
-                <div v-for="t in setting.uiThemes" :key="t.name" class="preset-item">
-                  <span class="preset-name">{{ t.name }}</span>
-                  <button class="btn ghost" @click="setting.switchThemePreset(t.name)">切换</button>
-                  <button class="btn ghost" @click="setting.deleteThemePreset(t.name)">删除</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card">
           <div class="card-title">管理员权限</div>
           <p class="hint">
             当前状态：{{ adminState === null ? '检测中…' : adminState ? '✅ 已以管理员权限运行' : '普通权限（电源模式切换 / 深度清理内存等特殊工具需管理员）' }}
@@ -1042,76 +937,177 @@ async function toggleAiToolbox() {
         <MonitorSettings />
       </div>
 
-      <!-- ============ 形象互联（VBIL） ============ -->
-      <div v-else-if="activeTab === 'vbil'">
-        <VBILSettings />
-      </div>
+      <!-- ============ 形象（VBIL + 个性化 + 悬浮球 + 外观风格） ============ -->
+            <div v-else-if="activeTab === 'style'">
+              <VBILSettings />
 
-      <!-- ============ 个性化（含悬浮球设置） ============ -->
-      <div v-else-if="activeTab === 'persona'">
-        <section class="card">
-          <div class="card-title">个性化</div>
-          <div class="field">
-            <label>日语修饰词浓度（0-30）</label>
-            <input v-model.number="mixRate" type="range" min="0" max="30" class="range" />
-            <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
-          </div>
-          <div class="row">
-            <div class="field">
-              <label>自称</label>
-              <input v-model="selfName" class="input" />
-            </div>
-            <div class="field">
-              <label>对您的称呼</label>
-              <input v-model="userName" class="input" />
-            </div>
-          </div>
-          <button class="btn primary" @click="savePersona">保存个性化</button>
-        </section>
+              <section class="card">
+                <div class="card-title">个性化</div>
+                <div class="field">
+                  <label>日语修饰词浓度（0-30）</label>
+                  <input v-model.number="mixRate" type="range" min="0" max="30" class="range" />
+                  <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
+                </div>
+                <div class="row">
+                  <div class="field">
+                    <label>自称</label>
+                    <input v-model="selfName" class="input" />
+                  </div>
+                  <div class="field">
+                    <label>对您的称呼</label>
+                    <input v-model="userName" class="input" />
+                  </div>
+                </div>
+                <button class="btn primary" @click="savePersona">保存个性化</button>
+              </section>
 
-        <section class="card">
-          <div class="card-title">悬浮球</div>
-          <div class="field">
-            <label class="switch-wrap">
-              <span class="label">显示悬浮球</span>
-              <input type="checkbox" class="switch" v-model="setting.floatingBallEnabled" @change="saveBallSettings" />
-            </label>
-          </div>
-          <div v-if="setting.floatingBallEnabled" class="field">
-            <label>显示模式</label>
-            <select v-model="setting.floatingBallMode" @change="saveBallSettings">
-              <option value="avatar">头像</option>
-              <option value="simple">纯文字</option>
-              <option value="live2d">Live2D（实验）</option>
-            </select>
-          </div>
-          <div v-if="setting.floatingBallEnabled" class="field">
-            <label>大小</label>
-            <div class="size-btns">
-              <button v-for="s in [120, 160, 200, 260]" :key="s" class="size-btn" :class="{ active: setting.floatingBallSize === s }" @click="setting.floatingBallSize = s; saveBallSettings()">{{ s }}</button>
+              <section class="card">
+                <div class="card-title">悬浮球</div>
+                <div class="field">
+                  <label class="switch-wrap">
+                    <span class="label">显示悬浮球</span>
+                    <input type="checkbox" class="switch" v-model="setting.floatingBallEnabled" @change="saveBallSettings" />
+                  </label>
+                </div>
+                <div v-if="setting.floatingBallEnabled" class="field">
+                  <label>显示模式</label>
+                  <select v-model="setting.floatingBallMode" @change="saveBallSettings">
+                    <option value="avatar">头像</option>
+                    <option value="simple">纯文字</option>
+                    <option value="live2d">Live2D（实验）</option>
+                  </select>
+                </div>
+                <div v-if="setting.floatingBallEnabled" class="field">
+                  <label>大小</label>
+                  <div class="size-btns">
+                                <button v-for="s in [80, 100, 120, 160, 200]" :key="s" class="size-btn" :class="{ active: setting.floatingBallSize === s }" @click="setting.floatingBallSize = s; saveBallSettings()">{{ s }}</button>
+                              </div>
+                </div>
+                <div v-if="setting.floatingBallEnabled" class="field">
+                  <label>透明度</label>
+                  <div class="size-btns">
+                    <button v-for="o in [1, 0.8, 0.6, 0.4]" :key="o" class="size-btn" :class="{ active: Math.abs(setting.floatingBallOpacity - o) < 0.01 }" @click="setting.floatingBallOpacity = o; saveBallSettings()">{{ o * 100 }}%</button>
+                  </div>
+                </div>
+                <div v-if="setting.floatingBallEnabled" class="row">
+                  <label class="switch-wrap">
+                    <span class="label">呼吸动画</span>
+                    <input type="checkbox" class="switch" v-model="setting.floatingBallBreathing" @change="saveBallSettings" />
+                  </label>
+                  <label class="switch-wrap">
+                    <span class="label">消息闪烁</span>
+                    <input type="checkbox" class="switch" v-model="setting.floatingBallFlash" @change="saveBallSettings" />
+                  </label>
+                </div>
+                <div v-if="setting.floatingBallEnabled" class="actions">
+                  <button class="btn ghost" @click="resetBallPosition">重置位置</button>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-title">外观</div>
+                <div class="row">
+                  <span class="label">主题</span>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">深色</button>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'light' }" @click="setting.setTheme('light')">亮色</button>
+                </div>
+                <div class="row theme-row">
+                  <span class="label">风格</span>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'win10' }" @click="setting.setTheme('win10')">Win10</button>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'edge' }" @click="setting.setTheme('edge')">微软浏览器</button>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">极简文字</button>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">iOS 扁平</button>
+                  <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">iOS 毛玻璃</button>
+                </div>
+                <div class="row theme-row">
+                  <span class="label">Emoji</span>
+                  <button class="btn ghost" :class="{ on: setting.emojiMode === 'off' }" @click="setEmojiMode('off')">关闭</button>
+                  <button class="btn ghost" :class="{ on: setting.emojiMode === 'partial' }" @click="setEmojiMode('partial')">局部</button>
+                  <button class="btn ghost" :class="{ on: setting.emojiMode === 'all' }" @click="setEmojiMode('all')">全部</button>
+                </div>
+                <div class="ui-custom">
+                  <div class="field">
+                    <label>主色</label>
+                    <div class="row">
+                      <input v-model="setting.accentColor" class="input" placeholder="#ff7a94" style="flex:1" />
+                      <input type="color" v-model="setting.accentColor" class="color-swatch" />
+                    </div>
+                    <p class="hint" style="margin-top:2px">设置主色后，铃的气泡/危险按钮自动跟随（可单独覆盖）</p>
+                  </div>
+                  <div class="field">
+                    <label>危险色（删除/错误按钮）</label>
+                    <div class="row">
+                      <input v-model="setting.dangerColor" class="input" placeholder="留空则跟随主色" style="flex:1" />
+                      <input type="color" v-model="setting.dangerColor" class="color-swatch" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>背景色</label>
+                    <div class="row">
+                      <input v-model="setting.bgColor" class="input" placeholder="#1d1b1f" style="flex:1" />
+                      <input type="color" v-model="setting.bgColor" class="color-swatch" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>背景图（选填）</label>
+                    <div class="row">
+                      <input v-model="setting.bgImage" class="input long" placeholder="C:\Users\...\bg.jpg" style="flex:1" />
+                      <button class="btn ghost" @click="pickImage('bg')">选择图片</button>
+                    </div>
+                    <input ref="bgFileInput" type="file" accept="image/*" style="display:none" @change="onBgFile" />
+                  </div>
+                  <div class="field">
+                    <label>铃的头像（emoji / 文字 / 图片）</label>
+                    <div class="row">
+                      <input v-model="setting.avatarSuzu" class="input" placeholder="铃" style="flex:1" />
+                      <button class="btn ghost" @click="pickImage('avatar')">选头像图</button>
+                    </div>
+                    <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="onAvatarFile" />
+                  </div>
+                  <div class="field">
+                    <label>你的头像（选填）</label>
+                    <div class="row">
+                      <input v-model="setting.avatarUser" class="input" placeholder="（留空则不显示）" style="flex:1" />
+                      <button class="btn ghost" @click="pickImage('user')">选头像图</button>
+                    </div>
+                    <input ref="userAvatarFileInput" type="file" accept="image/*" style="display:none" @change="onUserAvatarFile" />
+                  </div>
+                  <div class="field">
+                    <label>圆角：{{ setting.uiRadius ?? 12 }}px</label>
+                    <input v-model.number="setting.uiRadius" type="range" min="0" max="24" class="range" />
+                  </div>
+                  <div class="field">
+                    <label>你的气泡颜色</label>
+                    <div class="row">
+                      <input v-model="setting.bubbleUserColor" class="input" placeholder="#2d2d2d" style="flex:1" />
+                      <input type="color" v-model="setting.bubbleUserColor" class="color-swatch" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>铃的气泡颜色</label>
+                    <div class="row">
+                      <input v-model="setting.bubbleSuzuColor" class="input" placeholder="#3a3438" style="flex:1" />
+                      <input type="color" v-model="setting.bubbleSuzuColor" class="color-swatch" />
+                    </div>
+                  </div>
+                  <button class="btn primary" @click="saveUiCustom">应用自定义外观</button>
+                  <div class="theme-presets">
+                    <div class="row">
+                      <input v-model="presetName" class="input" placeholder="给这套风格起个名字" style="flex:1" />
+                      <button class="btn primary" @click="savePreset">保存组合</button>
+                    </div>
+                    <p class="hint">保存后一键切换你的专属风格，无需复制粘贴</p>
+                    <div v-if="setting.uiThemes && setting.uiThemes.length" class="preset-list">
+                      <div v-for="t in setting.uiThemes" :key="t.name" class="preset-item">
+                        <span class="preset-name">{{ t.name }}</span>
+                        <button class="btn ghost" @click="setting.switchThemePreset(t.name)">切换</button>
+                        <button class="btn ghost" @click="setting.deleteThemePreset(t.name)">删除</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
-          </div>
-          <div v-if="setting.floatingBallEnabled" class="field">
-            <label>透明度</label>
-            <div class="size-btns">
-              <button v-for="o in [1, 0.8, 0.6, 0.4]" :key="o" class="size-btn" :class="{ active: Math.abs(setting.floatingBallOpacity - o) < 0.01 }" @click="setting.floatingBallOpacity = o; saveBallSettings()">{{ o * 100 }}%</button>
-            </div>
-          </div>
-          <div v-if="setting.floatingBallEnabled" class="row">
-            <label class="switch-wrap">
-              <span class="label">呼吸动画</span>
-              <input type="checkbox" class="switch" v-model="setting.floatingBallBreathing" @change="saveBallSettings" />
-            </label>
-            <label class="switch-wrap">
-              <span class="label">消息闪烁</span>
-              <input type="checkbox" class="switch" v-model="setting.floatingBallFlash" @change="saveBallSettings" />
-            </label>
-          </div>
-          <div v-if="setting.floatingBallEnabled" class="actions">
-            <button class="btn ghost" @click="resetBallPosition">重置位置</button>
-          </div>
-        </section>
-      </div>
 
       <!-- ============ 插件 ============ -->
       <div v-else-if="activeTab === 'plugin'">
