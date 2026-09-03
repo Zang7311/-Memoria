@@ -155,11 +155,14 @@ export interface ToolboxItem {
   icon: string // emoji 或名称
   command: string
   enabled: boolean
+  /** 是否需要输入参数（点击先弹输入框） */
   needs_input?: boolean
   input_label?: string | null
   input_placeholder?: string | null
   /** 声明的依赖 id 列表（如 ["ffmpeg"]），由统一 DependencyManager 检查 */
   dependencies?: string[]
+  /** 组合工具（模块化）：非空 = 按顺序执行各步骤；空/缺省 = 单命令工具 */
+  steps?: QuickCommandStep[]
 }
 
 /** 获取监测状态 + 规则列表响应 */

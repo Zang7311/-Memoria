@@ -195,8 +195,8 @@ pub fn delete_quick_command(request: DeleteQuickCommandRequest) -> Result<(), Ap
 
 // ==================== 快捷指令：执行 ====================
 
-/// 执行单个动作，返回可展示的结果说明
-async fn execute_step(app: &AppHandle, step: &QuickCommandStep) -> String {
+/// 执行单个动作，返回可展示的结果说明（pub(crate)：工具箱「组合工具」亦复用）
+pub(crate) async fn execute_step(app: &AppHandle, step: &QuickCommandStep) -> String {
     let tool = step.tool.as_str();
     match tool {
         // 系统工具：音量

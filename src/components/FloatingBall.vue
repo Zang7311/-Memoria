@@ -9,14 +9,18 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { resourceDir } from '@tauri-apps/api/path'
 import { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize, primaryMonitor } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { emit } from '@tauri-apps/api/event'
+import { emit, listen } from '@tauri-apps/api/event'
 import {
   ensureMainWindow,
+  executeToolbox,
   getFloatingBallClickThrough,
   getMonitorRules,
+  listSessions,
+  listToolboxItems,
   onBallClickThroughChanged,
   onConfigUpdated,
   onMonitorTrigger,
+  sendMessage,
   setFloatingBallClickThrough,
   toggleMonitoring,
 } from '../utils/tauri'
@@ -41,6 +45,8 @@ let unlistenTrigger: (() => void) | undefined
 let unlistenCfg: (() => void) | undefined
 let unlistenCt: (() => void) | undefined
 let unlistenFocus: (() => void) | undefined
+let unlistenToggle: (() => void) | undefined
+let unlistenAskHotkey: (() => void) | undefined
 let sizeGuard: number | undefined
 
 // ==================== 常量 ====================
@@ -51,6 +57,8 @@ const SNAP_DIST = 26 // 边缘磁吸距离（px）
 const SNAP_FRAMES = 14 // 磁吸动画帧数
 const PANEL_W = 232 // 展开面板宽
 const PANEL_H = 344 // 展开面板高
+const ASK_W = 300 // 快速提问卡宽
+const ASK_H = 132 // 快速提问卡高
 
 // ==================== 拖拽（v7.1：系统级拖动 startDragging，OS 接管，跟手/防丢） ====================
 let dragging = false
@@ -295,18 +303,23 @@ function showHint() {
   showNotice('双击快速提问 · 右键更多操作')
 }
 
-/** 双击：唤起主窗口 + 聚焦输入框快速提问（事件双发防错过，间隔兜底） */
-async function quickAsk() {
-  await showMain()
-  setTimeout(() => { emit('floating-quick-ask').catch(() => {}) }, 120)
-  setTimeout(() => { emit('floating-quick-ask').catch(() => {}) }, 420)
+/** 向主窗口持续补发事件（主窗被关重建/冷启动时会错过早期事件，多档间隔兜底） */
+function fireToMain(eventName: string) {
+  const delays = [120, 450, 850, 1300, 1900]
+  for (const d of delays) {
+    setTimeout(() => { emit(eventName).catch(() => {}) }, d)
+  }
 }
 
-/** 菜单/面板：打开主窗口设置页（事件双发防错过） */
+/** 双击：快速提问（球边弹迷你输入卡，不唤起主窗口） */
+function quickAsk() {
+  openAsk()
+}
+
+/** 菜单/面板：打开主窗口设置页（事件多档补发防错过） */
 async function openSettings() {
   await showMain()
-  setTimeout(() => { emit('floating-open-settings').catch(() => {}) }, 120)
-  setTimeout(() => { emit('floating-open-settings').catch(() => {}) }, 420)
+  fireToMain('floating-open-settings')
 }
 
 // ==================== 长按蹭蹭动画 ====================
@@ -328,34 +341,63 @@ function playPop() {
 
 // ==================== 右键灵动面板（悬浮球展开为控制面板） ====================
 const panelOpen = ref(false)
+const askOpen = ref(false) // 快速提问迷你卡（与 panel 互斥）
+const panelPage = ref<'main' | 'tools'>('main') // 面板内页：主菜单 / 小工具
+const askText = ref('')
+const askInput = ref<HTMLInputElement | null>(null)
 let panelPrevPos = { x: 0, y: 0 }
 
-async function openPanel() {
-  if (panelOpen.value) return
-  panelOpen.value = true
-  // live2d：先卸模型，避免面板盖住模型时残留渲染
+/** 展开态通用：以球为中心展开到 w×h（互斥关闭另一展开态；记录球位置用于恢复） */
+async function expandTo(w: number, h: number, kind: 'panel' | 'ask') {
+  // 互斥：先把另一展开态标记清掉（窗口形态随后统一 resize，不重复走各自恢复）
+  if (kind === 'ask' && panelOpen.value) panelOpen.value = false
+  if (kind === 'panel' && askOpen.value) askOpen.value = false
+  if (kind === 'ask') askOpen.value = true
+  if (kind === 'panel') panelOpen.value = true
+  // live2d：先卸模型，避免盖住时残留渲染
   if (mode.value === 'live2d' && live2dCleanup) live2dCleanup()
-  await diag('openPanel-before')
+  await diag(`expand-${kind}-before`)
   try {
     const pos = await winLogicalPos()
     panelPrevPos = { x: pos.x, y: pos.y }
-    await diag(`openPanel-pos(${pos.x},${pos.y})`)
-    // 面板以球为中心展开（避免"菜单在球右下角生成"的错位感）：
-    // 中心对齐 → 换算面板左上 = 球左上 + (球尺寸-面板尺寸)/2，再 clamp 到屏内
+    await diag(`expand-${kind}-pos(${pos.x},${pos.y})`)
+    // 中心对齐展开：面板左上 = 球左上 + (球尺寸-目标尺寸)/2，再 clamp 到屏内
     const s = currentWinSize()
     const sh = mode.value === 'live2d' ? 400 : s
     const [cx, cy] = await clampRect(
-      pos.x + Math.round((s - PANEL_W) / 2),
-      pos.y + Math.round((sh - PANEL_H) / 2),
-      PANEL_W,
-      PANEL_H,
+      pos.x + Math.round((s - w) / 2),
+      pos.y + Math.round((sh - h) / 2),
+      w,
+      h,
     )
     // 双保险：先归位 → 放大 → 再归位（吞掉 Windows setSize 缩放锚偏移）
     await win.setPosition(new LogicalPosition(cx, cy))
-    await win.setSize(new LogicalSize(PANEL_W, PANEL_H))
+    await win.setSize(new LogicalSize(w, h))
     await win.setPosition(new LogicalPosition(cx, cy))
   } catch { /* 忽略 */ }
-  await diag('openPanel-after')
+  await diag(`expand-${kind}-after`)
+}
+
+/** 收起展开态：恢复球尺寸 + 回到球原位置 */
+async function restoreBall() {
+  try {
+    const s = currentWinSize()
+    const [cx, cy] = await clampToScreen(panelPrevPos.x, panelPrevPos.y)
+    // 双保险归位：先归位 → 收缩尺寸 → 再归位一次
+    await win.setPosition(new LogicalPosition(cx, cy))
+    await win.setSize(new LogicalSize(s, mode.value === 'live2d' ? 400 : s))
+    await win.setPosition(new LogicalPosition(cx, cy))
+  } catch { /* 忽略 */ }
+  await diag('restoreBall-after')
+  if (mode.value === 'live2d') {
+    nextTick(() => loadLive2D())
+  }
+}
+
+async function openPanel() {
+  if (panelOpen.value) return
+  panelPage.value = 'main'
+  await expandTo(PANEL_W, PANEL_H, 'panel')
   // 刷新监测状态显示
   try {
     const res = await getMonitorRules()
@@ -366,32 +408,56 @@ async function openPanel() {
 async function closePanel() {
   if (!panelOpen.value) return
   panelOpen.value = false
-  await diag(`closePanel-before prev(${panelPrevPos.x},${panelPrevPos.y})`)
-  try {
-    const s = currentWinSize()
-    const [cx, cy] = await clampToScreen(panelPrevPos.x, panelPrevPos.y)
-    // 双保险归位：先归位 → 收缩尺寸 → 再归位一次
-    // （Windows 上 setSize 的缩放锚点会让窗口左上偏移，需二次 setPosition 吞掉）
-    await win.setPosition(new LogicalPosition(cx, cy))
-    await win.setSize(new LogicalSize(s, mode.value === 'live2d' ? 400 : s))
-    await win.setPosition(new LogicalPosition(cx, cy))
-  } catch { /* 忽略 */ }
-  await diag('closePanel-after')
-  if (mode.value === 'live2d') {
-    nextTick(() => loadLive2D())
-  }
+  await restoreBall()
 }
 
-// —— 面板展开时窗口失焦（点到窗口外）→ 自动收起，防面板尺寸残留 ——
+// —— 快速提问迷你卡：双击 / 面板「快速提问」/ 全局热键 Ctrl+Alt+Q ——
+async function openAsk() {
+  if (askOpen.value) return
+  askText.value = ''
+  await expandTo(ASK_W, ASK_H, 'ask')
+  // 聚焦输入框（等窗口形态稳定后）
+  setTimeout(() => askInput.value?.focus(), 180)
+}
+
+async function closeAsk() {
+  if (!askOpen.value) return
+  askOpen.value = false
+  await restoreBall()
+}
+
+/** 发送快速提问：不弹主窗口，消息发给最近会话（无则走默认上下文），回复存会话 */
+async function submitAsk() {
+  const text = askText.value.trim()
+  if (!text) return
+  askText.value = ''
+  try {
+    let sid: string | null = null
+    try {
+      const sessions = await listSessions()
+      if (sessions && sessions.length > 0) sid = sessions[0].id
+    } catch { /* 无会话则走默认 */ }
+    await sendMessage(text, setting.depth || 2, sid)
+  } catch {
+    showNotice('发送失败，请检查连接')
+    return
+  }
+  await closeAsk()
+  showNotice('已发给铃，回复请打开主窗口查看')
+}
+
+// —— 展开态窗口失焦（点到窗口外）→ 自动收起，防尺寸残留 ——
 async function onWinFocus(focused: boolean) {
-  if (!focused && panelOpen.value && !dragging) {
-    await closePanel()
+  if (!focused && (panelOpen.value || askOpen.value) && !dragging) {
+    await restoreBall()
+    panelOpen.value = false
+    askOpen.value = false
   }
 }
 
 // —— 尺寸自愈守卫：每 5s 校验一次窗口尺寸，防止意外变形残留（球被拉成椭圆）——
 async function guardSize() {
-  if (panelOpen.value || dragging) return
+  if (panelOpen.value || askOpen.value || dragging) return
   try {
     const outer = await win.outerSize()
     const monitor = (await currentMonitor()) || (await primaryMonitor())
@@ -419,7 +485,34 @@ async function afterAction() {
 }
 
 async function menuShowMain() { await afterAction(); await showMain() }
-async function menuQuickAsk() { await afterAction(); await quickAsk() }
+/** 面板「快速提问」：直接切到迷你提问卡（不先收起再展开，避免闪烁） */
+async function menuQuickAsk() {
+  await afterAction()
+  quickAsk()
+}
+
+// —— 小工具页：动态加载全部工具箱条目（预设 + 用户自定义 + 组合工具），悬浮球内不做编辑 ——
+const toolsList = ref<{ id: string; label: string; steps: number }[]>([])
+async function goTools() {
+  panelPage.value = 'tools'
+  // 打开时刷新（用户可能在设置页增删了工具）
+  try {
+    const res = await listToolboxItems()
+    toolsList.value = res.items
+      .filter((i) => i.enabled !== false)
+      .map((i) => ({ id: i.id, label: i.name || i.id, steps: (i.steps?.length) || 0 }))
+  } catch {
+    toolsList.value = []
+  }
+}
+async function runTool(id: string) {
+  try {
+    await executeToolbox(id)
+    showNotice('已启动')
+  } catch {
+    showNotice('工具执行失败')
+  }
+}
 
 /** 切换显示模式（面板开着时仅存配置；窗口形态等收起后由 closePanel 统一处理） */
 async function switchMode(m: 'avatar' | 'simple' | 'live2d') {
@@ -488,6 +581,24 @@ onMounted(async () => {
   unlistenFocus = await win.onFocusChanged(({ payload: focused }) => onWinFocus(focused))
   sizeGuard = window.setInterval(() => guardSize(), 5000)
 
+  // 托盘切换悬浮球显示/隐藏时：若被隐藏且面板还开着 → 收起面板复位（防"控制台残留"）
+  unlistenToggle = await listen('floating-ball-toggled', async () => {
+    try {
+      const vis = await win.isVisible()
+      if (!vis && (panelOpen.value || askOpen.value)) {
+        await restoreBall()
+        panelOpen.value = false
+        askOpen.value = false
+      }
+    } catch { /* 忽略 */ }
+  })
+
+  // 全局热键 Ctrl+Alt+Q：Rust 已显示悬浮球，这里打开快速提问卡
+  unlistenAskHotkey = await listen('ball-hotkey-ask', () => {
+    if (clickThrough.value) return
+    openAsk()
+  })
+
   unlistenTrigger = await onMonitorTrigger(() => {
     if (!flash.value) return
     hasMessage.value = true
@@ -534,6 +645,8 @@ onUnmounted(() => {
   unlistenCfg?.()
   unlistenCt?.()
   unlistenFocus?.()
+  unlistenToggle?.()
+  unlistenAskHotkey?.()
   if (live2dCleanup) live2dCleanup()
 })
 
@@ -601,16 +714,31 @@ async function loadLive2D() {
     const modelPath = `${dir}live2d/haru/haru_greeter_t03.model3.json`
     const modelUrl = convertFileSrc(modelPath)
 
-    const oml2d = loadOml2d({
-      parentElement: container,
-      models: [{ path: modelUrl, scale: 0.12 }],
-    })
-    oml2d.onLoad((status) => {
+    let oml2d: { onLoad: (fn: (s: string) => void) => void; destroy?: () => void } | null = null
+    try {
+      oml2d = loadOml2d({
+        parentElement: container,
+        // 纯模型展示：隐藏 oml2d 自带的菜单（书签按钮）与状态条（"看板娘休息中"等）
+        statusBar: { disable: true },
+        menus: { disable: true },
+        models: [{ path: modelUrl, scale: 0.12 }],
+      })
+    } catch {
+      // 初始化异常（老显卡 WebGL 兼容问题）→ 回退头像模式，避免渲染循环卡死
+      showNotice('Live2D 不可用，已切换头像模式')
+      setting.update({ floating_ball_mode: 'avatar' }).catch(() => {})
+      return
+    }
+    oml2d?.onLoad((status) => {
       if (status === 'fail') {
-        container.innerHTML = '<div class="l2d-fail">Live2D 加载失败</div>'
+        showNotice('Live2D 加载失败，已切换头像模式')
+        setting.update({ floating_ball_mode: 'avatar' }).catch(() => {})
+        try { oml2d?.destroy?.() } catch { /* 忽略 */ }
       }
     })
     live2dCleanup = () => {
+      // 优先调用 oml2d 自毁（释放 pixi 渲染循环），失败则清 DOM 兜底
+      try { oml2d?.destroy?.() } catch { /* 忽略 */ }
       if (live2dMount.value) live2dMount.value.innerHTML = ''
     }
   } catch {
@@ -629,7 +757,7 @@ async function loadLive2D() {
     @contextmenu="onContextMenu"
   >
     <!-- ====== 收起态：三种显示模式 ====== -->
-    <template v-if="!panelOpen">
+    <template v-if="!panelOpen && !askOpen">
       <!-- 头像模式 -->
       <div
         v-if="mode === 'avatar'"
@@ -672,46 +800,82 @@ async function loadLive2D() {
       </Transition>
     </template>
 
-    <!-- ====== 展开态：灵动控制面板 ====== -->
-    <div v-else class="panel">
+    <!-- ====== 展开态一：灵动控制面板（主菜单 / 小工具页） ====== -->
+    <div v-else-if="panelOpen" class="panel">
       <div class="panel-head">
         <span class="mini-ball">
           <img v-if="mode === 'avatar'" :src="ballAvatar" class="avatar-img" draggable="false" />
           <span v-else-if="mode === 'simple'" class="mini-text">{{ setting.selfName || '铃' }}</span>
         </span>
-        <span class="panel-title">铃 · 控制台</span>
+        <span class="panel-title">{{ panelPage === 'tools' ? '小工具' : '铃 · 控制台' }}</span>
         <span class="panel-dot" :class="monitorOn ? 'on' : 'off'" :title="monitorOn ? '屏幕监测中' : '监测已暂停'"></span>
       </div>
 
       <div class="panel-body">
-        <div class="p-item" @click="menuShowMain">打开主窗口</div>
-        <div class="p-item" @click="menuQuickAsk">快速提问</div>
+        <!-- 主菜单页 -->
+        <template v-if="panelPage === 'main'">
+          <div class="p-item" @click="menuShowMain">打开主窗口</div>
+          <div class="p-item" @click="menuQuickAsk">快速提问</div>
+          <div class="p-item" @click="goTools">工具箱<span class="p-hint">小工具 ›</span></div>
 
-        <div class="p-sep"></div>
+          <div class="p-sep"></div>
 
-        <div class="p-seg-title">显示模式</div>
-        <div class="p-seg">
-          <div class="seg-btn" :class="{ active: mode === 'avatar' }" @click="switchMode('avatar')">头像</div>
-          <div class="seg-btn" :class="{ active: mode === 'simple' }" @click="switchMode('simple')">文字</div>
-          <div class="seg-btn" :class="{ active: mode === 'live2d' }" @click="switchMode('live2d')">Live2D</div>
-        </div>
+          <div class="p-seg-title">显示模式</div>
+          <div class="p-seg">
+            <div class="seg-btn" :class="{ active: mode === 'avatar' }" @click="switchMode('avatar')">头像</div>
+            <div class="seg-btn" :class="{ active: mode === 'simple' }" @click="switchMode('simple')">文字</div>
+            <div class="seg-btn" :class="{ active: mode === 'live2d' }" @click="switchMode('live2d')">Live2D</div>
+          </div>
 
-        <div class="p-sep"></div>
+          <div class="p-sep"></div>
 
-        <div class="p-item" @click="menuToggleClickThrough">
-          {{ clickThrough ? '关闭鼠标穿透' : '鼠标穿透' }}
-          <span class="p-hint">{{ clickThrough ? '已开启' : '' }}</span>
-        </div>
-        <div class="p-item" @click="menuToggleMonitor">
-          {{ monitorOn ? '暂停屏幕监测' : '恢复屏幕监测' }}
-          <span class="p-hint">{{ monitorOn ? '监测中' : '已暂停' }}</span>
-        </div>
+          <div class="p-item" @click="menuToggleClickThrough">
+            {{ clickThrough ? '关闭鼠标穿透' : '鼠标穿透' }}
+            <span class="p-hint">{{ clickThrough ? '已开启' : '' }}</span>
+          </div>
+          <div class="p-item" @click="menuToggleMonitor">
+            {{ monitorOn ? '暂停屏幕监测' : '恢复屏幕监测' }}
+            <span class="p-hint">{{ monitorOn ? '监测中' : '已暂停' }}</span>
+          </div>
 
-        <div class="p-sep"></div>
+          <div class="p-sep"></div>
 
-        <div class="p-item" @click="openSettings">设置…</div>
-        <div class="p-item danger" @click="menuExit">退出</div>
+          <div class="p-item" @click="openSettings">设置…</div>
+          <div class="p-item danger" @click="menuExit">退出</div>
+        </template>
+
+        <!-- 小工具页 -->
+        <template v-else>
+          <div class="p-item" @click="panelPage = 'main'"><span class="back-arrow">‹</span> 返回主菜单</div>
+          <div class="p-sep"></div>
+          <div class="tools-grid">
+            <div v-for="t in toolsList" :key="t.id" class="tool-btn" @click="runTool(t.id)">
+              {{ t.label }}<span v-if="t.steps > 0" class="tool-badge">×{{ t.steps }}</span>
+            </div>
+            <div v-if="toolsList.length === 0" class="tools-hint">工具箱暂无可用工具，可在主窗口设置中添加</div>
+          </div>
+          <div class="tools-hint">快捷工具启动后自动收起</div>
+        </template>
       </div>
+    </div>
+
+    <!-- ====== 展开态二：快速提问迷你卡 ====== -->
+    <div v-else-if="askOpen" class="ask-card">
+      <div class="ask-head">
+        <span class="ask-title">{{ setting.selfName || '铃' }} · 快速提问</span>
+        <span class="ask-close" @click="closeAsk">×</span>
+      </div>
+      <div class="ask-row">
+        <input
+          ref="askInput"
+          v-model="askText"
+          class="ask-input"
+          placeholder="问点什么… Enter 发送"
+          @keydown.enter.prevent="submitAsk"
+        />
+        <button class="ask-send" :disabled="!askText.trim()" @click="submitAsk">发送</button>
+      </div>
+      <div class="ask-sub">发送给最近会话，回复可在主窗口查看</div>
     </div>
   </div>
 </template>
@@ -996,6 +1160,135 @@ async function loadLive2D() {
   background: var(--accent, #ff7a94);
   border-color: var(--accent, #ff7a94);
   font-weight: 600;
+}
+
+/* ===== 小工具页 ===== */
+.back-arrow {
+  font-size: var(--fs-16, 16px);
+  line-height: 1;
+  margin-right: 2px;
+}
+.tools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.tool-btn {
+  padding: 10px 6px;
+  text-align: center;
+  border-radius: calc(var(--radius-ui, 14px) - 6px);
+  font-size: var(--fs-12, 12px);
+  color: var(--text-main, #eee6e7);
+  background: color-mix(in srgb, var(--input-bg, #2a272b) 80%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-btn:hover {
+  color: #fff;
+  background: var(--accent, #ff7a94);
+  border-color: var(--accent, #ff7a94);
+}
+.tool-badge {
+  margin-left: 4px;
+  font-size: var(--fs-10, 10px);
+  opacity: 0.75;
+}
+.tools-hint {
+  padding: 2px 10px;
+  font-size: var(--fs-11, 11px);
+  color: var(--text-secondary, #9a9294);
+  text-align: center;
+}
+
+/* ===== 快速提问迷你卡 ===== */
+.ask-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-bar, rgba(34, 32, 36, 0.94));
+  border-radius: var(--radius-ui, 14px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-sizing: border-box;
+}
+.ask-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  flex-shrink: 0;
+}
+.ask-title {
+  font-size: var(--fs-13, 13px);
+  font-weight: 600;
+  color: var(--text-main, #eee6e7);
+  flex: 1;
+}
+.ask-close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: var(--fs-14, 14px);
+  line-height: 1;
+  color: var(--text-secondary, #9a9294);
+  cursor: pointer;
+}
+.ask-close:hover {
+  background: color-mix(in srgb, var(--danger, #ff6b6b) 25%, transparent);
+  color: var(--danger, #ff6b6b);
+}
+.ask-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: calc(var(--radius-ui, 14px) - 6px);
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  background: var(--input-bg, #2a272b);
+  color: var(--text-main, #eee6e7);
+  font-size: var(--fs-13, 13px);
+  font-family: inherit;
+  outline: none;
+}
+.ask-input:focus {
+  border-color: var(--accent, #ff7a94);
+}
+.ask-send {
+  padding: 0 14px;
+  border: none;
+  border-radius: calc(var(--radius-ui, 14px) - 6px);
+  background: var(--accent, #ff7a94);
+  color: #fff;
+  font-size: var(--fs-13, 13px);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ask-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ask-sub {
+  padding: 0 12px 8px;
+  font-size: var(--fs-11, 11px);
+  color: var(--text-secondary, #9a9294);
+  flex-shrink: 0;
 }
 </style>
 

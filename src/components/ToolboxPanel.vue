@@ -102,10 +102,57 @@ const outputTitle = ref('执行输出')
 // —— moon10：二维码预览图片 URL（生成成功后展示）——
 const qrImageUrl = ref<string | null>(null)
 
-// —— 添加弹窗 ——
+// —— 添加/编辑弹窗 ——
 const showEditor = ref(false)
 const editingItem = ref<ToolboxItem>({ id: '', name: '', icon: '🔧', command: '', enabled: true })
 const editorError = ref('')
+// —— v0.6 组合工具（模块化，模仿快捷指令）——
+const editorKind = ref<'cmd' | 'combo'>('cmd')
+const SYS_MODULES: { tool: string; label: string; needInput?: boolean }[] = [
+  { tool: 'volume', label: '设置音量', needInput: true },
+  { tool: 'music', label: '播放音乐' },
+  { tool: 'power-balanced', label: '电源：均衡' },
+  { tool: 'power-high', label: '电源：高性能' },
+  { tool: 'power-saver', label: '电源：节能' },
+]
+const pickedToolId = ref('')
+/** 步骤 → 展示名（系统动作 / 工具箱工具） */
+function stepName(tool: string): string {
+  const sys = SYS_MODULES.find((m) => m.tool === tool)
+  if (sys) return sys.label
+  const it = desktop.toolboxItems.find((i) => i.id === tool)
+  return it ? it.name : tool
+}
+/** 编辑器打开统一初始化 */
+function initEditor(item: ToolboxItem, kind: 'cmd' | 'combo') {
+  editingItem.value = { ...item, steps: item.steps ? [...item.steps] : [] }
+  editorKind.value = kind
+  editorError.value = ''
+  pickedToolId.value = ''
+  showEditor.value = true
+}
+/** 添加步骤：系统模块 */
+function addSysStep(m: { tool: string; label: string; needInput?: boolean }) {
+  const steps = editingItem.value.steps ?? (editingItem.value.steps = [])
+  steps.push({ tool: m.tool, input: m.needInput ? '' : null })
+}
+/** 添加步骤：已有工具箱工具 */
+function addToolStep() {
+  const id = pickedToolId.value
+  if (!id) return
+  const steps = editingItem.value.steps ?? (editingItem.value.steps = [])
+  if (steps.some((s) => s.tool === id)) return // 同工具不重复
+  steps.push({ tool: id, input: null })
+}
+function moveStep(i: number, dir: -1 | 1) {
+  const steps = editingItem.value.steps ?? []
+  const j = i + dir
+  if (j < 0 || j >= steps.length) return
+  ;[steps[i], steps[j]] = [steps[j], steps[i]]
+}
+function removeStep(i: number) {
+  editingItem.value.steps?.splice(i, 1)
+}
 
 // —— 删除确认 ——
 const showDeleteConfirm = ref(false)
@@ -327,9 +374,21 @@ async function runItem(item: ToolboxItem) {
 
 // —— 添加 ——
 function openAdd() {
-  editingItem.value = { id: `user_${Date.now()}`, name: '', icon: '🔧', command: '', enabled: true }
-  editorError.value = ''
-  showEditor.value = true
+  initEditor({ id: `user_${Date.now()}`, name: '', icon: '🔧', command: '', enabled: true }, 'cmd')
+}
+
+/** 添加组合工具（模块化多步） */
+function openAddCombo() {
+  initEditor({ id: `user_${Date.now()}`, name: '', icon: '🔧', command: '', enabled: true, steps: [] }, 'combo')
+}
+
+/** 双击自定义工具 → 编辑（内置 preset 不可编辑） */
+function editItem(item: ToolboxItem) {
+  if (!item.id.startsWith('user_')) {
+    feedback.value = { ok: false, text: '内置工具不可编辑，可点 ＋ 创建自己的组合工具' }
+    return
+  }
+  initEditor(item, (item.steps?.length ?? 0) > 0 ? 'combo' : 'cmd')
 }
 
 async function saveItem() {
@@ -338,9 +397,21 @@ async function saveItem() {
     editorError.value = '请输入工具名称'
     return
   }
-  if (!it.command.trim()) {
-    editorError.value = '请输入要执行的命令'
-    return
+  if (editorKind.value === 'combo') {
+    // 组合工具：至少一步；command 仅作展示占位（执行由后端按 steps 分发）
+    const steps = (it.steps ?? []).filter((s) => s.tool)
+    if (steps.length === 0) {
+      editorError.value = '请至少添加一步动作'
+      return
+    }
+    it.steps = steps
+    it.command = `【组合工具 · ${steps.length} 步】`
+  } else {
+    if (!it.command.trim()) {
+      editorError.value = '请输入要执行的命令'
+      return
+    }
+    it.steps = []
   }
   try {
     await desktop.addOrUpdateToolboxItem({ ...it, icon: it.icon.trim() || '🔧' })
@@ -376,7 +447,8 @@ async function confirmDelete() {
     <div class="panel-header">
       <span class="panel-title">铃的工具箱<span class="title-sub">（{{ desktop.toolboxItems.length }} 个工具）</span></span>
       <div class="header-btns">
-        <button class="add-btn" title="添加工具" @click="openAdd">＋</button>
+        <button class="add-btn" title="添加命令工具" @click="openAdd">＋</button>
+        <button class="add-btn combo-add" title="添加组合工具（多步模块化）" @click="openAddCombo">⚙</button>
         <button class="close-btn" title="关闭工具箱" @click="emit('close')">✕</button>
       </div>
     </div>
@@ -403,12 +475,15 @@ async function confirmDelete() {
         v-for="item in desktop.toolboxItems"
         :key="item.id"
         class="cell"
-        :class="{ running: executingId === item.id, disabled: !item.enabled }"
+        :class="{ running: executingId === item.id, disabled: !item.enabled, combo: (item.steps?.length ?? 0) > 0 }"
+        :title="item.id.startsWith('user_') ? '左键执行 · 双击编辑' : '左键执行'"
         @click="runItem(item)"
+        @dblclick="editItem(item)"
         @contextmenu.prevent="requestDelete(item)"
       >
         <span v-if="setting.emojiMode !== 'off'" class="cell-icon">{{ item.icon }}</span>
         <span class="cell-name">{{ item.name }}</span>
+        <span v-if="(item.steps?.length ?? 0) > 0" class="cell-badge">×{{ item.steps!.length }}</span>
         <span v-if="executingId === item.id" class="spinner">⏳</span>
       </div>
       <div v-if="desktop.toolboxLoading" class="cell loading-cell">加载中…</div>
@@ -453,18 +528,60 @@ async function confirmDelete() {
     <div v-if="showEditor" class="modal-mask" @click.self="showEditor = false">
       <div class="modal">
         <div class="modal-title">{{ editingItem.id.startsWith('user_') && !editingItem.name ? '添加工具' : '编辑工具' }}</div>
+        <!-- 类型切换 -->
+        <div class="editor-tabs">
+          <div class="etab" :class="{ active: editorKind === 'cmd' }" @click="editorKind = 'cmd'">命令工具</div>
+          <div class="etab" :class="{ active: editorKind === 'combo' }" @click="editorKind = 'combo'">组合工具</div>
+        </div>
         <label class="field">
           <span>名称</span>
-          <input v-model="editingItem.name" placeholder="如：打开我的世界" />
+          <input v-model="editingItem.name" placeholder="如：晚安模式 / 打开我的世界" />
         </label>
         <label class="field">
           <span>图标（emoji）</span>
           <input v-model="editingItem.icon" placeholder="如：🎮" />
         </label>
-        <label class="field">
-          <span>命令</span>
-          <textarea v-model="editingItem.command" rows="3" placeholder="如：D:\game\mc.exe 或 notepad" />
-        </label>
+
+        <!-- 命令模式 -->
+        <template v-if="editorKind === 'cmd'">
+          <label class="field">
+            <span>命令</span>
+            <textarea v-model="editingItem.command" rows="3" placeholder="如：D:\game\mc.exe 或 notepad" />
+          </label>
+        </template>
+
+        <!-- 组合模式：模块库 + 步骤编排 -->
+        <template v-else>
+          <div class="field">
+            <span>动作模块（点击追加为一步）</span>
+            <div class="module-chips">
+              <button v-for="m in SYS_MODULES" :key="m.tool" type="button" class="chip" @click="addSysStep(m)">{{ m.label }}</button>
+            </div>
+            <div class="tool-pick">
+              <select v-model="pickedToolId" class="pick-select">
+                <option value="">— 从工具箱选一个已有工具 —</option>
+                <option v-for="it in desktop.toolboxItems.filter((i) => i.id !== editingItem.id)" :key="it.id" :value="it.id">{{ it.name }}</option>
+              </select>
+              <button type="button" class="chip chip-add" :disabled="!pickedToolId" @click="addToolStep">追加</button>
+            </div>
+          </div>
+          <div class="field">
+            <span>执行顺序（{{ (editingItem.steps ?? []).length }} 步）</span>
+            <div v-if="(editingItem.steps ?? []).length === 0" class="step-empty">还没有步骤，从上方模块添加～</div>
+            <div v-for="(s, i) in editingItem.steps ?? []" :key="i" class="step-row">
+              <span class="step-idx">{{ i + 1 }}</span>
+              <span class="step-name">{{ stepName(s.tool) }}</span>
+              <input v-if="s.tool === 'volume'" v-model="s.input" class="step-input" placeholder="音量 0-100" />
+              <div class="step-ops">
+                <button type="button" class="op" :disabled="i === 0" @click="moveStep(i, -1)">↑</button>
+                <button type="button" class="op" :disabled="i === (editingItem.steps ?? []).length - 1" @click="moveStep(i, 1)">↓</button>
+                <button type="button" class="op del" @click="removeStep(i)">✕</button>
+              </div>
+            </div>
+          </div>
+          <div class="combo-hint">组合工具执行时按顺序运行每一步，可混搭系统动作与工具箱工具</div>
+        </template>
+
         <div v-if="editorError" class="editor-error">{{ editorError }}</div>
         <div class="modal-actions">
           <button class="btn cancel" @click="showEditor = false">取消</button>
@@ -539,6 +656,129 @@ async function confirmDelete() {
   cursor: pointer;
 }
 .close-btn:hover { background: var(--danger-bg); color: var(--danger); }
+
+/* ===== v0.6 组合工具：徽标/编辑器 ===== */
+.combo-add { background: color-mix(in srgb, var(--info, #6db3ff) 70%, transparent); }
+.combo-add:hover { background: var(--info, #6db3ff); }
+.cell.combo { border-color: color-mix(in srgb, var(--accent, #ff7a94) 55%, transparent); }
+.cell-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent, #ff7a94);
+  color: #fff;
+  font-size: var(--fs-10);
+  line-height: 14px;
+}
+.editor-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.etab {
+  flex: 1;
+  text-align: center;
+  padding: 6px 0;
+  border-radius: 8px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--input-bg, #2a272b) 80%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  cursor: pointer;
+}
+.etab.active {
+  color: #fff;
+  background: var(--accent, #ff7a94);
+  border-color: var(--accent, #ff7a94);
+  font-weight: 600;
+}
+.module-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  background: color-mix(in srgb, var(--input-bg, #2a272b) 80%, transparent);
+  color: var(--text-main, #eee6e7);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent, #ff7a94); color: var(--accent, #ff7a94); }
+.tool-pick { display: flex; gap: 6px; }
+.pick-select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  background: var(--input-bg, #2a272b);
+  color: var(--text-main, #eee6e7);
+  font-size: var(--fs-12);
+  font-family: inherit;
+}
+.chip-add:disabled { opacity: 0.4; cursor: not-allowed; }
+.step-empty {
+  padding: 10px;
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--input-bg, #2a272b) 70%, transparent);
+  font-size: var(--fs-12);
+}
+.step-idx {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent, #ff7a94);
+  color: #fff;
+  font-size: var(--fs-11);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.step-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-input {
+  width: 84px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  background: var(--input-bg, #2a272b);
+  color: var(--text-main, #eee6e7);
+  font-size: var(--fs-11);
+  font-family: inherit;
+}
+.step-ops { display: flex; gap: 2px; flex-shrink: 0; }
+.op {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(128, 128, 128, 0.2);
+  color: var(--text-main, #eee6e7);
+  font-size: var(--fs-11);
+  line-height: 1;
+  cursor: pointer;
+}
+.op:disabled { opacity: 0.3; cursor: not-allowed; }
+.op.del { color: var(--danger, #ff6b6b); }
+.combo-hint {
+  margin-top: 2px;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
 .feedback {
   flex-shrink: 0; /* 防止被九宫格挤压，保证文字完整显示 */
   min-height: 32px;
