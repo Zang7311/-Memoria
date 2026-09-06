@@ -37,6 +37,10 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // —— 主窗口/悬浮球卡顿修复：WebView2 强制软件渲染（老显卡 R7 350 GPU 合成不稳定）
+    // 注意：必须在任何 webview 创建前设置；若报 0x8007139F 通常是残留实例占用
+    // WebView2 user data 锁（先杀干净 mem 进程再启动），非本参数问题。
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // —— AI-6：全局快捷键插件 ——
