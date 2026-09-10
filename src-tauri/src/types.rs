@@ -651,10 +651,48 @@ fn default_persona() -> String {
     "daily".to_string()
 }
 
+impl AppConfig {
+    /// 生成脱敏配置（发往前端的唯一形态）
+    ///
+    /// 去掉两个敏感字段，替换为布尔标记：
+    /// - `api_key_plain`（明文 Key）→ `has_plain_key`
+    /// - `api_key_encrypted`（AES-256-GCM 密文，可离线爆破弱主密码）→ 与明文一起归并到 `has_api_key`
+    ///
+    /// 用 serde_json::Value 而非另建一份结构体：AppConfig 有 50+ 字段且持续增长，
+    /// 手抄副本必然与主结构漂移，脱敏字段反而可能漏掉。
+    pub fn to_public(&self) -> Result<serde_json::Value, serde_json::Error> {
+        let has_plain_key = self.api_key_plain.is_some();
+        let has_api_key = has_plain_key || self.api_key_encrypted.is_some();
+        let mut v = serde_json::to_value(self)?;
+        if let Some(obj) = v.as_object_mut() {
+            obj.remove("api_key_plain");
+            obj.remove("api_key_encrypted");
+            obj.insert("has_api_key".into(), serde_json::Value::Bool(has_api_key));
+            obj.insert("has_plain_key".into(), serde_json::Value::Bool(has_plain_key));
+        }
+        Ok(v)
+    }
+}
+
 /// 获取配置响应
+///
+/// `config` 是 AppConfig 的**脱敏投影**（见 `AppConfig::to_public`），不含 API Key
+/// 明文或密文。前端对应类型见 src/types/index.ts 的 `AppConfig`（含 has_api_key /
+/// has_plain_key，无 api_key_* 字段）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetConfigResponse {
-    pub config: AppConfig,
+    pub config: serde_json::Value,
+}
+
+impl GetConfigResponse {
+    /// 从完整配置构造脱敏响应
+    pub fn from_config(cfg: &AppConfig) -> Result<Self, crate::error::AppError> {
+        Ok(Self {
+            config: cfg.to_public().map_err(|e| {
+                crate::error::AppError::InternalError(format!("配置脱敏序列化失败：{e}"))
+            })?,
+        })
+    }
 }
 
 /// 更新配置请求（增量：仅更新传入的字段，null 表示置 None/删除）
@@ -1043,4 +1081,78 @@ pub struct ExecuteQuickCommandResponse {
     pub say: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造一份带 Key 的配置用于脱敏断言
+    fn cfg_with_keys(plain: Option<&str>, enc: Option<&str>) -> AppConfig {
+        let mut c = crate::config::defaults::default_config();
+        c.api_key_plain = plain.map(|s| s.to_string());
+        c.api_key_encrypted = enc.map(|s| s.to_string());
+        c
+    }
+
+    #[test]
+    fn 配置脱敏_明文与密文都不出现在响应里() {
+        let c = cfg_with_keys(Some("sk-super-secret-plain"), Some("ENCRYPTED_BLOB_BASE64"));
+        let v = c.to_public().unwrap();
+        let obj = v.as_object().unwrap();
+
+        // 两个敏感字段被移除
+        assert!(!obj.contains_key("api_key_plain"));
+        assert!(!obj.contains_key("api_key_encrypted"));
+        // 整个 JSON 文本里不含 Key 内容
+        let text = serde_json::to_string(&v).unwrap();
+        assert!(!text.contains("sk-super-secret-plain"));
+        assert!(!text.contains("ENCRYPTED_BLOB_BASE64"));
+
+        // 布尔标记正确
+        assert_eq!(obj["has_api_key"], serde_json::Value::Bool(true));
+        assert_eq!(obj["has_plain_key"], serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn 配置脱敏_布尔标记各种组合() {
+        // 仅密文：有 Key，但不是明文存储
+        let v = cfg_with_keys(None, Some("enc")).to_public().unwrap();
+        assert_eq!(v["has_api_key"], serde_json::Value::Bool(true));
+        assert_eq!(v["has_plain_key"], serde_json::Value::Bool(false));
+
+        // 仅明文
+        let v = cfg_with_keys(Some("sk-x"), None).to_public().unwrap();
+        assert_eq!(v["has_api_key"], serde_json::Value::Bool(true));
+        assert_eq!(v["has_plain_key"], serde_json::Value::Bool(true));
+
+        // 都没有
+        let v = cfg_with_keys(None, None).to_public().unwrap();
+        assert_eq!(v["has_api_key"], serde_json::Value::Bool(false));
+        assert_eq!(v["has_plain_key"], serde_json::Value::Bool(false));
+    }
+
+    #[test]
+    fn 配置脱敏_非敏感字段完整保留() {
+        let mut c = cfg_with_keys(Some("sk-x"), None);
+        c.theme = "dark".into();
+        c.api_model = "gpt-4o-mini".into();
+        c.context_length = 20;
+        let v = c.to_public().unwrap();
+
+        assert_eq!(v["theme"], "dark");
+        assert_eq!(v["api_model"], "gpt-4o-mini");
+        assert_eq!(v["context_length"], 20);
+        // api_base_url 之类的非敏感字段仍在（前端要用）
+        assert!(v.as_object().unwrap().contains_key("api_base_url"));
+    }
+
+    #[test]
+    fn 配置响应_from_config走脱敏路径() {
+        let c = cfg_with_keys(Some("sk-leak-me"), None);
+        let resp = GetConfigResponse::from_config(&c).unwrap();
+        let text = serde_json::to_string(&resp).unwrap();
+        assert!(!text.contains("sk-leak-me"));
+        assert!(text.contains("has_plain_key"));
+    }
 }

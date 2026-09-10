@@ -7,5 +7,5 @@ use crate::types::GetConfigResponse;
 #[tauri::command]
 pub fn reset_config() -> Result<GetConfigResponse, AppError> {
     let cfg = store::reset()?;
-    Ok(GetConfigResponse { config: cfg })
+    GetConfigResponse::from_config(&cfg)
 }

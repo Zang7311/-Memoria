@@ -224,6 +224,8 @@ export function useStreamRender() {
   })
 
   onUnmounted(() => {
+    // 若正在流式输出，保留监听器，避免 chat_end 无人处理导致 isLoading 卡死
+    if (activeId !== null) return
     unlisteners.value.forEach((fn) => fn())
     unlisteners.value = []
   })

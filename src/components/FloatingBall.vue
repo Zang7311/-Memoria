@@ -11,7 +11,6 @@ import { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize, primary
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { emit, listen } from '@tauri-apps/api/event'
 import {
-  ensureMainWindow,
   executeToolbox,
   getFloatingBallClickThrough,
   getMonitorRules,
@@ -196,7 +195,7 @@ function handleClick() {
     lastClickAt = 0
     focusMain()
     playPop()
-  }, 250)
+  }, CLICK_WINDOW + 20) // 300ms，确保双击判定窗口(280ms)先完成，避免 251~280ms 的第二次点击被误判为单击
 }
 
 // ==================== 边缘磁吸动画（ease-out 平滑滑向边缘） ====================
@@ -212,15 +211,11 @@ async function snapAndSave(x: number, y: number) {
       const scale = monitor.scaleFactor || 1
       const lw = Math.round(monitor.size.width / scale)
       const lh = Math.round(monitor.size.height / scale)
-      // 距哪条边近就吸哪条（磁吸距离 SNAP_DIST）
-      const edges = [
-        { d: x, set: () => (tx = 0) },
-        { d: lw - s - x, set: () => (tx = lw - s) },
-        { d: y, set: () => (ty = 0) },
-        { d: lh - h - y, set: () => (ty = lh - h) },
-      ]
-      edges.sort((a, b) => a.d - b.d)
-      if (edges[0].d < SNAP_DIST) edges[0].set()
+      // 四条边独立判定（不互斥），角落可同时吸附两轴，避免残留偏移
+      if (x < SNAP_DIST) tx = 0
+      if (lw - s - x < SNAP_DIST) tx = lw - s
+      if (y < SNAP_DIST) ty = 0
+      if (lh - h - y < SNAP_DIST) ty = lh - h
     }
   } catch { /* 忽略 */ }
   await animateTo(tx, ty, SNAP_FRAMES)
@@ -257,19 +252,21 @@ function animateTo(x: number, y: number, frames: number): Promise<void> {
 
 /** 唤起主窗口（主窗被关则重建；最小化则还原；弹出后悬浮球重新置顶防被盖） */
 async function showMain() {
-  let main = await WebviewWindow.getByLabel('main').catch(() => null)
-  if (!main) {
-    try { await ensureMainWindow() } catch { /* 重建失败忽略 */ }
-    main = await WebviewWindow.getByLabel('main').catch(() => null)
+  // 注意：ensure_main_window 重建主窗口会导致白屏（v0.5.3 起存在的问题），
+  // 暂时改为：仅当主窗口已存在时才显示/聚焦，不重建。
+  // 用户如需打开主窗口，请使用系统托盘图标。
+  try {
+    const main = await WebviewWindow.getByLabel('main').catch(() => null)
+    if (main) {
+      await main.show().catch(() => {})
+      await main.unminimize().catch(() => {})
+      await main.setFocus().catch(() => {})
+    } else {
+      showNotice('请通过系统托盘图标打开主窗口')
+    }
+  } catch {
+    showNotice('打开主窗口失败')
   }
-  emit('ball-diag', `showMain main=${main ? 'exists' : 'MISSING'}`).catch(() => {})
-  if (main) {
-    await main.unminimize().catch(() => {})
-    await main.show().catch(() => {})
-    await main.setFocus().catch(() => {})
-  }
-  // 关键：透明小窗的置顶位在别的窗口激活后容易丢，重新置顶确保球始终在最上层
-  try { await win.setAlwaysOnTop(true) } catch { /* 忽略 */ }
 }
 
 /** 调试：把当前窗口位置（逻辑）/尺寸（物理原始+逻辑换算）上报到 Rust 日志（v0.6 开发期用） */
@@ -307,10 +304,16 @@ function showHint() {
 }
 
 /** 向主窗口持续补发事件（主窗被关重建/冷启动时会错过早期事件，多档间隔兜底） */
+let fireToMainTimers: number[] = []
 function fireToMain(eventName: string) {
+  // 先清上一批，防止快速开关面板累积悬置定时器
+  fireToMainTimers.forEach(clearTimeout)
+  fireToMainTimers = []
   const delays = [120, 450, 850, 1300, 1900]
   for (const d of delays) {
-    setTimeout(() => { emit(eventName).catch(() => {}) }, d)
+    fireToMainTimers.push(
+      window.setTimeout(() => { emit(eventName).catch(() => {}) }, d)
+    )
   }
 }
 
@@ -352,6 +355,7 @@ const askInput = ref<HTMLInputElement | null>(null)
 const askMsgs = ref<{ role: 'user' | 'suzu'; text: string }[]>([])
 const askStreaming = ref('')
 const askBusy = ref(false)
+const askComposing = ref(false) // 输入法组合中标记（防 IME 回车误触发发送）
 let askUnlisten: (() => void)[] = []
 let panelPrevPos = { x: 0, y: 0 }
 
@@ -470,9 +474,18 @@ function scrollAskToBottom() {
 }
 
 /** 发送快速提问：消息与回复都在提问卡内对话展示（同时存档最近会话） */
+const MAX_ASK_INPUT = 4000
+function onAskEnter() {
+  if (askComposing.value) return // 输入法组合中按回车（确认候选词）不发送
+  submitAsk()
+}
 async function submitAsk() {
   const text = askText.value.trim()
   if (!text || askBusy.value) return
+  if (text.length > MAX_ASK_INPUT) {
+    showNotice(`内容过长（${text.length}/${MAX_ASK_INPUT}字）`)
+    return
+  }
   askText.value = ''
   askMsgs.value.push({ role: 'user', text })
   scrollAskToBottom()
@@ -494,10 +507,10 @@ async function submitAsk() {
 
 // —— 展开态窗口失焦（点到窗口外）→ 自动收起，防尺寸残留 ——
 async function onWinFocus(focused: boolean) {
-  if (!focused && (panelOpen.value || askOpen.value) && !dragging) {
-    await restoreBall()
-    panelOpen.value = false
-    askOpen.value = false
+  if (!focused && !dragging) {
+    // 走各自关闭函数，确保 askUnlisten 等监听器被正确清理（原实现只 reset 状态，泄漏监听器）
+    if (askOpen.value) await closeAsk()
+    if (panelOpen.value) await closePanel()
   }
 }
 
@@ -582,11 +595,10 @@ async function menuToggleClickThrough() {
     const st = await setFloatingBallClickThrough(next)
     clickThrough.value = st
   } catch { /* 忽略 */ }
+  // 只收起一次，避免 afterAction 双重调用导致窗口位置二次跳变
+  await afterAction()
   if (clickThrough.value) {
-    await afterAction()
     showNotice('鼠标穿透已开启，点系统托盘图标可关闭')
-  } else {
-    await afterAction()
   }
 }
 
@@ -686,6 +698,8 @@ onUnmounted(() => {
   if (popTimer) clearTimeout(popTimer)
   if (noticeTimer) clearTimeout(noticeTimer)
   if (sizeGuard) clearInterval(sizeGuard)
+  fireToMainTimers.forEach(clearTimeout)
+  fireToMainTimers = []
   if (snapRaf !== null) cancelAnimationFrame(snapRaf)
   unlistenTrigger?.()
   unlistenCfg?.()
@@ -932,7 +946,9 @@ async function loadLive2D() {
           class="ask-input"
           placeholder="问点什么… Enter 发送"
           :disabled="askBusy"
-          @keydown.enter.prevent="submitAsk"
+          @compositionstart="askComposing = true"
+          @compositionend="askComposing = false"
+          @keydown.enter.prevent="onAskEnter"
         />
         <button class="ask-send" :disabled="askBusy || !askText.trim()" @click="submitAsk">发送</button>
       </div>

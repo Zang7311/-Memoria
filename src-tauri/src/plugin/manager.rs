@@ -316,66 +316,57 @@ impl PluginManager {
         Ok(plugin)
     }
 
-    /// 从 Git URL 安装插件（git clone → 复制到用户插件目录）
-    pub fn install_from_git(&mut self, url: &str) -> Result<Plugin, AppError> {
-        let repo_name = url
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .and_then(|s| s.strip_suffix(".git"))
-            .unwrap_or("plugin")
-            .to_string();
+    /// 指定 id 的插件是否已安装（Git 安装前的重名预检）
+    pub fn is_installed(&self, id: &str) -> bool {
+        self.plugins.iter().any(|p| p.id == id)
+    }
 
-        if self.plugins.iter().any(|p| p.id == repo_name) {
-            return Err(AppError::PluginAlreadyExists(format!(
-                "插件「{repo_name}」已安装（请先卸载）"
-            )));
-        }
-
-        let tmp = std::env::temp_dir().join(format!("ling_plugin_clone_{}", uuid::Uuid::new_v4().simple()));
-        let clone_result = tokio::task::block_in_place(|| {
-            std::process::Command::new("git")
-                .args(["clone", "--depth", "1", url, tmp.to_str().unwrap_or_default()])
-                .output()
-        });
-        let output = clone_result.map_err(|e| {
-            let _ = fs::remove_dir_all(&tmp);
-            AppError::PluginInstallError(format!("git 命令不可用：{e}"))
-        })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let _ = fs::remove_dir_all(&tmp);
-            return Err(AppError::PluginInstallError(format!(
-                "git clone 失败：{}",
-                stderr.trim()
-            )));
-        }
-
+    /// 完成 Git 安装的后半段：从已克隆的临时目录校验 → 复制到用户插件目录 → 注册
+    /// （clone 本身在 `install_from_git` 中通过 spawn_blocking 执行，见该函数注释）
+    pub fn install_from_cloned_dir(
+        &mut self,
+        tmp: &Path,
+        repo_name: &str,
+    ) -> Result<Plugin, AppError> {
         // 插件可能位于仓库根或子目录（含 manifest.json 的子目录）
-        let mut plugin_dir = tmp.clone();
+        let mut plugin_dir = tmp.to_path_buf();
+        let mut sub_name: Option<String> = None;
         if !tmp.join("manifest.json").exists() && !tmp.join("config.json").exists() {
-            if let Ok(entries) = fs::read_dir(&tmp) {
+            if let Ok(entries) = fs::read_dir(tmp) {
                 let found = entries.flatten().find(|e| {
                     let d = e.path();
                     d.is_dir() && (d.join("manifest.json").exists() || d.join("config.json").exists())
                 });
                 if let Some(found) = found {
                     plugin_dir = found.path();
+                    sub_name = found.file_name().to_str().map(|s| s.to_string());
                 }
             }
         }
 
-        let id = plugin_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&repo_name)
-            .to_string();
+        // 插件 id：仓库根 → repo_name；子目录 → 子目录名。
+        // 两者都必须过 sanitize_repo_name，杜绝 ".."/"." 等目录遍历写到 user_dir 之外
+        let id = match sub_name {
+            Some(name) => sanitize_repo_name(&name)?,
+            None => sanitize_repo_name(repo_name)?,
+        };
         loader::load_plugin_from_dir(&plugin_dir, &id)
             .map_err(|e| AppError::PluginInstallError(format!("插件校验失败：{e}")))?;
 
+        if self.plugins.iter().any(|p| p.id == id) {
+            return Err(AppError::PluginAlreadyExists(format!(
+                "插件「{id}」已安装（请先卸载）"
+            )));
+        }
+
         let dst = self.user_dir.join(&id);
+        if dst.exists() {
+            return Err(AppError::PluginAlreadyExists(format!(
+                "插件目录已存在：{}",
+                dst.display()
+            )));
+        }
         copy_dir_all(&plugin_dir, &dst)?;
-        let _ = fs::remove_dir_all(&tmp);
 
         let mut plugin = loader::load_plugin_from_dir(&dst, &id)
             .map_err(|e| AppError::PluginInstallError(format!("安装后加载失败：{e}")))?;
@@ -497,6 +488,113 @@ impl PluginManager {
         }
         let _ = fs::rename(&tmp, &path);
     }
+}
+
+// ==================== Git 安装（URL 校验 + 异步 clone） ====================
+
+/// 校验 Git URL：只允许 https:// 与 git@ 两种形态。
+/// 拒绝理由：
+/// - `ext::<cmd>` / `file://` 等 scheme 可让 git 直接执行本地命令；
+/// - 以 `-` 开头会被 git 当作选项解析（如 `--upload-pack=calc.exe`）；
+/// - 换行/回车可污染日志或后续拼接。
+pub fn validate_git_url(url: &str) -> Result<(), AppError> {
+    let ok = (url.starts_with("https://") || url.starts_with("git@"))
+        && !url.starts_with('-')
+        && !url.contains('\n')
+        && !url.contains('\r')
+        && !url.contains('\0');
+    if !ok {
+        return Err(AppError::PluginInstallError(
+            "仅允许 https:// 或 git@ 开头的 Git URL（禁止 ext::/file:// 等协议）".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// 校验并归一化仓库名/插件目录名：仅允许字母、数字、下划线、中划线。
+/// 这道校验拦住 `..` / `.` / 含分隔符的名字，防止 `user_dir.join(name)` 逃出插件目录。
+pub fn sanitize_repo_name(name: &str) -> Result<String, AppError> {
+    if name.is_empty()
+        || name == ".."
+        || name == "."
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AppError::PluginInstallError(format!(
+            "Git 仓库名含非法字符（仅允许字母、数字、下划线、中划线）：{name}"
+        )));
+    }
+    Ok(name.to_string())
+}
+
+/// 从 URL 末段派生仓库名（去掉 .git 后缀）并做合法性校验
+pub fn derive_repo_name(url: &str) -> Result<String, AppError> {
+    let last = url
+        .trim_end_matches('/')
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or_default();
+    let name = last.strip_suffix(".git").unwrap_or(last);
+    sanitize_repo_name(name)
+}
+
+/// 从 Git URL 安装插件（异步：clone 走 spawn_blocking，不占用插件管理器锁）
+///
+/// 与旧实现的差别：
+/// 1. 入口先 `validate_git_url`，仓库名过 `sanitize_repo_name`；
+/// 2. `git clone` 参数加 `--` 终止选项解析，并禁用 ext 协议、关闭凭据交互提示；
+/// 3. 用 `spawn_blocking` 取代 `block_in_place`（后者在 current_thread runtime 下会 panic）。
+pub async fn install_from_git(url: &str) -> Result<Plugin, AppError> {
+    let url = url.trim().to_string();
+    validate_git_url(&url)?;
+    let repo_name = derive_repo_name(&url)?;
+
+    if crate::plugin::with_manager(|m| m.is_installed(&repo_name)) {
+        return Err(AppError::PluginAlreadyExists(format!(
+            "插件「{repo_name}」已安装（请先卸载）"
+        )));
+    }
+
+    let tmp = std::env::temp_dir().join(format!(
+        "ling_plugin_clone_{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    let tmp_for_clone = tmp.clone();
+    let url_for_clone = url.clone();
+    let clone_result = tokio::task::spawn_blocking(move || {
+        let dst = tmp_for_clone.to_string_lossy().to_string();
+        std::process::Command::new("git")
+            // 禁用 ext:: 协议（即便 URL 校验已拦住，多一层兜底）
+            .args(["-c", "protocol.ext.allow=never"])
+            // `--` 之后的内容一律按位置参数解析，URL 无法再被当作选项
+            .args(["clone", "--depth", "1", "--", &url_for_clone, &dst])
+            // 私有库缺凭据时直接失败，避免卡在交互式提示上
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+    })
+    .await
+    .map_err(|e| {
+        let _ = fs::remove_dir_all(&tmp);
+        AppError::PluginInstallError(format!("git clone 线程异常：{e}"))
+    })?;
+
+    let output = clone_result.map_err(|e| {
+        let _ = fs::remove_dir_all(&tmp);
+        AppError::PluginInstallError(format!("git 命令不可用：{e}"))
+    })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(AppError::PluginInstallError(format!(
+            "git clone 失败：{}",
+            stderr.trim()
+        )));
+    }
+
+    let result = crate::plugin::with_manager(|m| m.install_from_cloned_dir(&tmp, &repo_name));
+    let _ = fs::remove_dir_all(&tmp);
+    result
 }
 
 /// 读取注册表（损坏时重置为空并备份）
@@ -664,6 +762,60 @@ mod tests {
         assert!(mgr.add_terminal_command("bad name!", "echo hi", "x").is_err());
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn git_url校验_合法形态通过() {
+        assert!(validate_git_url("https://github.com/user/repo.git").is_ok());
+        assert!(validate_git_url("git@github.com:user/repo.git").is_ok());
+    }
+
+    #[test]
+    fn git_url校验_危险形态被拒绝() {
+        // ext:: 协议可让 git 直接执行本地命令
+        assert!(validate_git_url("ext::calc.exe%20arg").is_err());
+        // file:// / ssh:// / http:// 一律不放行
+        assert!(validate_git_url("file:///C:/evil").is_err());
+        assert!(validate_git_url("http://evil.com/x.git").is_err());
+        // 以 - 开头会被 git 解析为选项
+        assert!(validate_git_url("--upload-pack=calc.exe").is_err());
+        // 换行
+        assert!(validate_git_url("https://a.com/x.git\nrm -rf /").is_err());
+        assert!(validate_git_url("").is_err());
+    }
+
+    #[test]
+    fn 仓库名校验_目录遍历被拦截() {
+        assert_eq!(sanitize_repo_name("my-plugin_1").unwrap(), "my-plugin_1");
+        // 目录遍历
+        assert!(sanitize_repo_name("..").is_err());
+        assert!(sanitize_repo_name(".").is_err());
+        assert!(sanitize_repo_name("../../evil").is_err());
+        assert!(sanitize_repo_name("a/b").is_err());
+        assert!(sanitize_repo_name("a\\b").is_err());
+        // 空名
+        assert!(sanitize_repo_name("").is_err());
+        // 带点的名字（可能是 .git / 隐藏目录）
+        assert!(sanitize_repo_name("plugin.js").is_err());
+    }
+
+    #[test]
+    fn 仓库名派生_正常与遍历用例() {
+        assert_eq!(
+            derive_repo_name("https://github.com/user/my_plugin.git").unwrap(),
+            "my_plugin"
+        );
+        assert_eq!(
+            derive_repo_name("https://github.com/user/my_plugin/").unwrap(),
+            "my_plugin"
+        );
+        // git@host:user/repo.git 形态（rsplit 同时按 ':' 切，避免整段 host:user/repo 混入）
+        assert_eq!(
+            derive_repo_name("git@github.com:user/repo.git").unwrap(),
+            "repo"
+        );
+        // URL 末段为 .. → 派生出的名字非法，拒绝（旧实现会写到 user_dir 上一级）
+        assert!(derive_repo_name("https://x.com/a/../").is_err());
     }
 
     #[test]

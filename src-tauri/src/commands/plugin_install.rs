@@ -11,17 +11,19 @@ pub async fn install_plugin(req: InstallPluginRequest) -> Result<Plugin, AppErro
         return Err(AppError::PluginInstallError("安装源不能为空".into()));
     }
 
-    let is_git = source.starts_with("http://")
-        || source.starts_with("https://")
-        || source.ends_with(".git")
-        || source.contains("github.com")
-        || source.contains("git@");
+    // Git 源判定：只按 scheme 前缀判断（与后端 validate_git_url 一致）。
+    // 旧实现用 contains("github.com") 之类的模糊匹配，会把本地路径误判为 Git URL。
+    let is_git = source.starts_with("https://")
+        || source.starts_with("http://")
+        || source.starts_with("git@")
+        || source.ends_with(".git");
 
     let plugin = if is_git {
-        crate::plugin::with_manager(|m| m.install_from_git(&source))
+        // clone 为耗时 IO，在 async 上下文中执行，避免持锁 await
+        crate::plugin::manager::install_from_git(&source).await?
     } else {
-        crate::plugin::with_manager(|m| m.install_from_path(&source))
-    }?;
+        crate::plugin::with_manager(|m| m.install_from_path(&source))?
+    };
 
     log::info!("install_plugin：{} 安装成功", plugin.name);
     Ok(plugin)
