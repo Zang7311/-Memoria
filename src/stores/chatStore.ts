@@ -67,11 +67,17 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // —— 切换会话 ——
+  let _switchLock: Promise<void> | null = null
   async function switchSession(id: string) {
     if (id === activeSessionId.value) return
-    await saveCurrentSession().catch(() => {})
-    activeSessionId.value = id
-    await loadInto(id)
+    // 串行化切换，防止快速连点导致 messages 混入多个会话
+    if (_switchLock) await _switchLock.catch(() => {})
+    _switchLock = (async () => {
+      await saveCurrentSession().catch(() => {})
+      activeSessionId.value = id
+      await loadInto(id)
+    })()
+    await _switchLock.finally(() => { _switchLock = null })
   }
 
   // —— 保存当前会话到后端（更新标题/计数/时间）串行化防并发 ——

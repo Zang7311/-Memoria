@@ -13,5 +13,5 @@ pub fn update_config(
 ) -> Result<GetConfigResponse, AppError> {
     let cfg = store::update(&request.updates)?;
     let _ = app.emit("config-updated", ());
-    Ok(GetConfigResponse { config: cfg })
+    GetConfigResponse::from_config(&cfg)
 }

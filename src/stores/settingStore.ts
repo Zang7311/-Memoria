@@ -36,10 +36,12 @@ export const useSettingStore = defineStore('setting', () => {
   const aiToolbox = ref(false)
   const contextLength = ref(10)
   const apiBaseUrl = ref<string | null>(null)
-  /** 加密存储的密文（不用于回显明文） */
-  const apiKeyEncrypted = ref<string | null>(null)
-  /** 明文存储的 API Key（未设置主密码时使用；不直接暴露，通过 hasPlainKey 判断是否存在） */
-  const _apiKeyPlain = ref<string | null>(null)
+  /** 是否已配置 API Key（明文或密文任一存在）。后端只下发布尔，不下发 Key 内容 */
+  const _hasApiKey = ref<boolean>(false)
+  /** 明文 API Key 是否存在（只存布尔，不把明文落地到前端内存） */
+  const _apiKeyPlain = ref<boolean>(false)
+  /** 是否已配置 API Key（只读布尔） */
+  const hasApiKey = computed(() => !!_hasApiKey.value)
   /** 是否存在明文 API Key（只读布尔，不暴露明文内容） */
   const hasPlainKey = computed(() => !!_apiKeyPlain.value)
   /** API 模型名 */
@@ -49,7 +51,7 @@ export const useSettingStore = defineStore('setting', () => {
   const languageMixRate = ref(8)
   const floatingBallMode = ref<'avatar' | 'simple' | 'live2d'>('avatar')
   const floatingBallEnabled = ref(true)
-  const floatingBallSize = ref(100)
+  const floatingBallSize = ref(200) // 与后端默认 200 一致，避免冷启动窗口尺寸从 100 突变到 200
   const floatingBallOpacity = ref(1.0)
   const floatingBallBreathing = ref(false)
   const floatingBallFlash = ref(true)
@@ -87,8 +89,8 @@ export const useSettingStore = defineStore('setting', () => {
     aiToolbox.value = c.ai_toolbox ?? false
     contextLength.value = (typeof c.context_length === 'number' && c.context_length > 0) ? Math.min(c.context_length, 100) : 10
     apiBaseUrl.value = c.api_base_url ?? null
-    apiKeyEncrypted.value = c.api_key_encrypted ?? null
-    _apiKeyPlain.value = c.api_key_plain ?? null
+    _hasApiKey.value = !!c.has_api_key
+    _apiKeyPlain.value = !!c.has_plain_key
     apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
     depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
@@ -249,7 +251,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, apiBaseUrl, apiKeyEncrypted, hasPlainKey, apiModel, modelMode, depth,
+    theme, contextLength, apiBaseUrl, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,

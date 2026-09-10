@@ -84,15 +84,19 @@ async function onInstall() {
     installError.value = '请输入本地路径或 Git URL'
     return
   }
+  // 拒绝明显含 shell 元字符的输入（防命令注入；后端需同步校验）
+  if (/[;&|`$<>]/.test(src)) {
+    installError.value = '路径包含非法字符，请检查后重试'
+    return
+  }
   installError.value = ''
   try {
-    await store.install(src)
+    const newPlugin = await store.install(src)
     showInstall.value = false
     installSource.value = ''
-    // 安装成功 → 弹权限确认单（P2：安全关键，默认全不勾，最小权限原则）
-    const installed = store.plugins.find((p) => p.manifest.permissions?.length)
-    if (installed && installed.manifest.permissions.length > 0) {
-      openPermConfirm(installed)
+    // 安装成功 → 弹权限确认单（用刚安装的插件对象，不是 find 列表里第一个有权限的插件）
+    if (newPlugin && newPlugin.manifest.permissions?.length > 0) {
+      openPermConfirm(newPlugin)
     } else {
       alert('安装成功！请先启用插件（如无权限申请则直接可用）。')
     }

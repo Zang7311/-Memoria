@@ -12,7 +12,5 @@ pub fn import_config(request: ImportConfigRequest) -> Result<GetConfigResponse, 
         .map_err(|e| AppError::ConfigImportError(format!("JSON 解析失败：{e}")))?;
     let cfg = migration::migrate(raw)?;
     store::set_config(cfg)?;
-    Ok(GetConfigResponse {
-        config: store::get_config(),
-    })
+    GetConfigResponse::from_config(&store::get_config())
 }

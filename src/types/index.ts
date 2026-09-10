@@ -229,10 +229,14 @@ export interface AppConfig {
   theme: 'light' | 'dark' | string
   context_length: number
   api_base_url?: string | null
-  /** 加密存储的 API Key（AES-256-GCM 密文，非明文） */
-  api_key_encrypted?: string | null
-  /** 明文存储的 API Key（未设置主密码时使用；设置后自动转为加密） */
-  api_key_plain?: string | null
+  /**
+   * 是否已配置 API Key（明文或密文任一存在）。
+   * 后端 get_config 不再下发 api_key_plain / api_key_encrypted —— Key 明文与密文
+   * 都不出后端，前端只拿布尔标记。要改 Key 走 update_config 的 api_key 字段。
+   */
+  has_api_key?: boolean
+  /** 是否为未加密的明文存储（用于提示「未加密」，不含 Key 内容本身） */
+  has_plain_key?: boolean
   /** API 模型名（如 gpt-4o-mini / deepseek-chat） */
   api_model?: string
   model_mode: 'script' | 'api' | 'local' | string

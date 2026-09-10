@@ -69,7 +69,33 @@ pub async fn execute_skill(
     }
 }
 
+/// 把参数值转成 cmd /C 下的安全字面量：整体用双引号包裹，值内的双引号翻倍转义。
+///
+/// cmd.exe 的引号是「开关」语义 —— 每个 `"` 切换一次引用状态。值内 `"` 写成 `""`
+/// 之后，`& | < > ^ ( )` 始终落在引用区内，失去命令分隔/重定向语义。例如
+/// `a" & calc.exe & "b` → `"a"" & calc.exe & ""b"`，其中 ` & calc.exe & ` 仍在引号内，
+/// calc 不会被执行。
+///
+/// 换行/回车/NUL 无法用引号表达（换行会直接另起一条命令），只能拒绝。
+///
+/// 已知残留：`%VAR%` 在双引号内仍会被 cmd 展开（`cmd /C` 下 `%%` 不是有效转义）。
+/// 这只会把环境变量内容代入命令，不构成命令注入；要彻底消除需改为分离传参、不走 cmd /C。
+fn quote_cmd_arg(key: &str, val: &str) -> Result<String, AppError> {
+    if val.contains('\n') || val.contains('\r') || val.contains('\0') {
+        return Err(AppError::PluginExecutionError(format!(
+            "参数「{key}」含换行或空字符，已拒绝执行（防命令注入）"
+        )));
+    }
+    Ok(format!("\"{}\"", val.replace('"', "\"\"")))
+}
+
 /// 执行系统命令（Windows 下通过 cmd /C；支持 {参数名} 占位符替换；30s 超时）
+///
+/// 安全：占位符替换后整条字符串交给 `cmd /C`，等价于 shell 拼接。因此每个参数值
+/// 都先过 `quote_cmd_arg` 用双引号包裹并把值内双引号翻倍，
+/// 避免 `& calc.exe`、`| del /F /S /Q C:\` 之类的注入。
+/// 命令模板本身（manifest 的 action）仍按原样执行——那是插件作者声明的意图，
+/// 且执行前已由 permissions 校验过 `system` 权限。
 async fn run_system_command(cmd: &str, params: &HashMap<String, Value>) -> Result<String, AppError> {
     let mut expanded = cmd.to_string();
     for (k, v) in params {
@@ -79,7 +105,8 @@ async fn run_system_command(cmd: &str, params: &HashMap<String, Value>) -> Resul
                 Value::String(s) => s.clone(),
                 other => other.to_string(),
             };
-            expanded = expanded.replace(&placeholder, &val);
+            let quoted = quote_cmd_arg(k, &val)?;
+            expanded = expanded.replace(&placeholder, &quoted);
         }
     }
 
@@ -319,6 +346,57 @@ mod tests {
         params.insert("msg".to_string(), Value::from("你好"));
         let r = run_js_blocking(code, "go", &serde_json::to_string(&params).unwrap(), &[]).unwrap();
         assert!(r.contains("echo测试"));
+    }
+
+    #[test]
+    fn 参数转义_普通值加引号() {
+        assert_eq!(quote_cmd_arg("p", "hello").unwrap(), "\"hello\"");
+        // & | < > ^ ( ) 落在引号内，失去 shell 语义
+        assert_eq!(
+            quote_cmd_arg("p", "a & calc.exe").unwrap(),
+            "\"a & calc.exe\""
+        );
+        assert_eq!(quote_cmd_arg("p", "a|b<c>d").unwrap(), "\"a|b<c>d\"");
+    }
+
+    #[test]
+    fn 参数转义_内部双引号翻倍() {
+        // 经典闭合注入：值内的 " 翻倍后无法闭合外层引号，& calc.exe 仍在引号内
+        assert_eq!(
+            quote_cmd_arg("p", "a\" & calc.exe & \"b").unwrap(),
+            "\"a\"\" & calc.exe & \"\"b\""
+        );
+        // 单个双引号
+        assert_eq!(quote_cmd_arg("p", "\"").unwrap(), "\"\"\"\"");
+    }
+
+    #[test]
+    fn 参数转义_换行被拒绝() {
+        // 换行会另起一条命令，引号无法表达 → 拒绝
+        assert!(quote_cmd_arg("p", "a\ncalc.exe").is_err());
+        assert!(quote_cmd_arg("p", "a\r\ncalc.exe").is_err());
+        assert!(quote_cmd_arg("p", "a\0b").is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn 系统命令_注入参数被包裹转义() {
+        // 注入值不再逃出引号：命令实际执行 echo "x"" & calc.exe & """，
+        // 只回显字面文本，不会启动 calc
+        let mut params = HashMap::new();
+        params.insert("name".to_string(), Value::from("x\" & calc.exe & \""));
+        let r = run_system_command("echo {name}", &params).await.unwrap();
+        assert!(r.contains("calc.exe"), "应作为文本回显，实际：{r}");
+    }
+
+    // 纯校验逻辑，不实际起进程，跨平台可跑
+    #[tokio::test]
+    async fn 系统命令_换行参数被拒绝执行() {
+        let mut params = HashMap::new();
+        params.insert("name".to_string(), Value::from("x\ncalc.exe"));
+        let r = run_system_command("echo {name}", &params).await;
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("换行"));
     }
 
     #[test]
