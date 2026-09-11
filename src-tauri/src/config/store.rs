@@ -194,8 +194,13 @@ pub fn unlock(password: &str) -> Result<bool, AppError> {
         // 旧数据：无校验段，退回用 api_key 验证（兼容）
         encryption::decrypt_with_key(&key, enc)
             .map_err(|_| AppError::MasterPasswordWrong("主密码不正确".into()))?;
+    } else if cfg.has_master_password {
+        // 有主密码标记但既无校验段又无加密 key，说明数据损坏，拒绝接受
+        return Err(AppError::MasterPasswordWrong(
+            "主密码校验数据丢失，无法验证密码（配置可能已损坏）".into(),
+        ));
     }
-    // 若既无校验段又无加密 key，则无法验证 —— 直接接受（防止旧数据被锁死）
+    // has_master_password 为假且无任何校验材料：首次兼容旧数据，直接接受
     encryption::set_key(key);
     Ok(true)
 }

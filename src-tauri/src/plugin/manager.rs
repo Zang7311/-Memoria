@@ -122,6 +122,11 @@ impl PluginManager {
         };
         for entry in entries.flatten() {
             let path = entry.path();
+            // 跳过符号链接（防止遍历逃逸到插件目录外）
+            if path.is_symlink() {
+                log::warn!("插件目录中发现符号链接，已跳过：{}", path.display());
+                continue;
+            }
             if !path.is_dir() {
                 continue; // 跳过 registry.json 等文件
             }

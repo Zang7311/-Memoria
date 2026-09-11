@@ -22,6 +22,7 @@ import {
   onChatError,
   onConfigUpdated,
   onMonitorTrigger,
+  quitApp,
   sendMessage,
   setFloatingBallClickThrough,
   toggleMonitoring,
@@ -603,7 +604,7 @@ async function menuToggleClickThrough() {
 }
 
 async function menuExit() {
-  WebviewWindow.getByLabel('main').then((m) => m?.close())
+  await quitApp()
 }
 
 // ==================== 小提示条（穿透/消息等临时提示，显示于球上方） ====================

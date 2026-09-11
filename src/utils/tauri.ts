@@ -325,9 +325,10 @@ export function listToolboxItems(): Promise<{ items: ToolboxItem[] }> {
   return invoke('list_toolbox_items')
 }
 
-/** 执行工具箱命令（需要输入参数的工具传 input，对应 {input} 占位符） */
-export function executeToolbox(item_id: string, input?: string): Promise<ExecuteToolboxResponse> {
-  return invoke('execute_toolbox', { request: { item_id, input: input ?? null } })
+/** 执行工具箱命令（需要输入参数的工具传 input，对应 {input} 占位符）
+ *  confirmDanger：危险自定义命令（后端返回 needs_confirm）二次确认后重试时传 true */
+export function executeToolbox(item_id: string, input?: string, confirmDanger = false): Promise<ExecuteToolboxResponse> {
+  return invoke('execute_toolbox', { request: { item_id, input: input ?? null, confirm: confirmDanger } })
 }
 
 // ==================== AI-9 快捷指令 IPC 封装 ====================
@@ -675,4 +676,9 @@ export function scanModelFiles(): Promise<ModelCandidate[]> {
 /** 将指定模型文件及同级 config.json/tokenizer.json 安装到 ~/.铃记忆体/models/ */
 export function installModel(path: string): Promise<InstallModelResult> {
   return invoke<InstallModelResult>('install_model', { path })
+}
+
+/** 彻底退出应用（关闭全部窗口 + 终止进程） */
+export function quitApp(): Promise<void> {
+  return invoke<void>('quit_app')
 }

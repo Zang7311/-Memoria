@@ -27,9 +27,13 @@ pub fn is_admin() -> bool {
 pub fn restart_as_admin() -> Result<(), AppError> {
     let exe = std::env::current_exe()
         .map_err(|e| AppError::InternalError(format!("获取程序路径失败：{e}")))?;
+    let exe_str = exe.to_string_lossy();
     let mut cmd = std::process::Command::new("powershell");
-    cmd.args(["-NoProfile", "-WindowStyle", "Hidden", "-Command"])
-        .arg(format!("Start-Process -FilePath '{}' -Verb RunAs", exe.display()));
+    // -FilePath 与 -Verb 分开传参，避免 exe 路径含单引号时破坏 PS 字符串边界
+    cmd.args(["-NoProfile", "-WindowStyle", "Hidden", "-Command",
+              "Start-Process",
+              "-FilePath", &exe_str,
+              "-Verb", "RunAs"]);
     // 隐藏控制台窗口
     #[cfg(windows)]
     {

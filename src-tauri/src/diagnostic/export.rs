@@ -90,11 +90,21 @@ fn redact_config() -> String {
             };
             obj.insert("api_key_encrypted".to_string(), Value::String(masked));
         }
+        // api_key_plain 脱敏
+        if obj.contains_key("api_key_plain") {
+            obj.insert("api_key_plain".to_string(), Value::String("********".to_string()));
+        }
         // 盐也打码（虽非密钥材料，一并脱敏更稳妥）
         if let Some(Value::String(salt)) = obj.get("master_password_salt") {
-            let masked = format!("{}...({} 字符)", &salt[..6], salt.len());
+            let masked = format!("{}...({} 字符)", &salt[..6.min(salt.len())], salt.len());
             obj.insert("master_password_salt".to_string(), Value::String(masked));
         }
+        // toolbox_items 含用户自定义命令（可能含敏感路径/脚本），导出时清空
+        obj.insert("toolbox_items".to_string(), Value::Array(vec![]));
+        // monitor_rules 可能含进程名/路径，导出时清空
+        obj.insert("monitor_rules".to_string(), Value::Array(vec![]));
+        // quick_commands 可能含用户自定义脚本，导出时清空
+        obj.insert("quick_commands".to_string(), Value::Array(vec![]));
     }
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }

@@ -284,6 +284,8 @@ pub fn run() {
             commands::search_mode::check_vector_model_status,
             commands::search_mode::scan_model_files,
             commands::search_mode::install_model,
+            // —— 应用生命周期 ——
+            commands::app_lifecycle::quit_app,
             // —— VBIL 虚拟形象互联层命令 ——
             vbil::commands::scan_windows,
             vbil::commands::get_vbil_status,

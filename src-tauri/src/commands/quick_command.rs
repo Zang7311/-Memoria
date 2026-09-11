@@ -143,13 +143,10 @@ async fn play_music_inner(path: Option<&str>) -> Result<String, AppError> {
             .map(|u| format!("{u}\\Music"))
             .unwrap_or_default(),
     };
-    let mut cmd = tokio::process::Command::new("cmd");
-    cmd.arg("/C").arg("start").arg("").arg(&target);
+    // 用 explorer.exe 替代 cmd /C start，避免 cmd 对参数进行额外的 shell 解析
+    let mut cmd = tokio::process::Command::new("explorer.exe");
+    cmd.arg(&target);
     cmd.kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x08000000);
-    }
     match tokio::time::timeout(Duration::from_secs(15), cmd.output()).await {
         Err(_) => Err(AppError::ToolboxError("启动音乐超时".into())),
         Ok(Err(e)) => Err(AppError::ToolboxError(e.to_string())),
