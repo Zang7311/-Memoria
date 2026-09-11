@@ -45,18 +45,6 @@ const onboarded = ref(false)
 // moon12：旧版数据迁移完成提示（一次性横幅，5 秒自动消失）
 const legacyMigrated = ref('')
 
-// —— 诊断：全局捕获 JS 错误，白屏时弹出可见的报错（发布后移除） ——
-window.addEventListener('error', (e) => {
-  const msg = `[诊断-全局错误] ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`
-  console.error(msg)
-  try { document.body.insertAdjacentHTML('beforeend', `<div style="position:fixed;z-index:99999;top:0;left:0;right:0;background:#c00;color:#fff;font-size:12px;padding:8px;">${msg}</div>`) } catch {}
-})
-window.addEventListener('unhandledrejection', (e) => {
-  const msg = `[诊断-未捕获Promise] ${String(e.reason)}`
-  console.error(msg)
-  try { document.body.insertAdjacentHTML('beforeend', `<div style="position:fixed;z-index:99999;top:30px;left:0;right:0;background:#c60;color:#fff;font-size:12px;padding:8px;">${msg}</div>`) } catch {}
-})
-
 onMounted(async () => {
   try {
     winLabel.value = getCurrentWindow().label
