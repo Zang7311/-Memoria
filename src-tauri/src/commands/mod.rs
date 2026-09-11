@@ -58,3 +58,5 @@ pub mod qrcode;
 pub mod ocr;
 // —— 离线检索增强：搜索引擎模式配置 ——
 pub mod search_mode;
+// —— 应用生命周期 ——
+pub mod app_lifecycle;

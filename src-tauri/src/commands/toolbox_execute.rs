@@ -11,6 +11,18 @@ use crate::types::{
 };
 use tauri::{AppHandle, Manager};
 
+/// 危险命令关键词：命令中含这些词时，用户自定义条目需要 confirm=true 才执行
+const DANGEROUS_KEYWORDS: &[&str] = &[
+    "format", "del ", "rd ", "rmdir", "rm -", "remove-item",
+    "diskpart", "fdisk", "mkfs", "dd ", "shutdown", "restart-computer",
+    "reg delete", "reg add", "bcdedit", "powercfg /h",
+];
+
+fn contains_dangerous_keyword(cmd: &str) -> bool {
+    let lower = cmd.to_lowercase();
+    DANGEROUS_KEYWORDS.iter().any(|kw| lower.contains(kw))
+}
+
 /// 获取资源目录（开发模式 = src-tauri，打包模式 = 安装目录 resources）
 fn resource_dir(app: &AppHandle) -> std::path::PathBuf {
     app.path()
@@ -51,6 +63,12 @@ pub async fn execute_toolbox(
 
     match toolbox::find_item(&resource_dir(&app), &request.item_id) {
         Some(item) => {
+            // 用户自定义条目（id 以 "user_" 开头）：含危险关键词时需二次确认
+            if item.id.starts_with("user_") && contains_dangerous_keyword(&item.command) && !request.confirm {
+                return Err(AppError::ToolboxError(
+                    "needs_confirm:该自定义命令包含危险操作，请确认后再执行".into(),
+                ));
+            }
             // 组合工具（steps 非空）：按顺序执行各步骤，结果合并返回（复用快捷指令步骤执行器）
             if !item.steps.is_empty() {
                 let mut outs: Vec<String> = Vec::with_capacity(item.steps.len());
