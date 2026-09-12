@@ -228,6 +228,8 @@ export interface AppConfig {
   config_version: number
   theme: 'light' | 'dark' | string
   context_length: number
+  /** 长期记忆注入条数：按相关性检索后注入这么多条（0 = 完全不注入长期记忆） */
+  long_term_memory_limit: number
   api_base_url?: string | null
   /**
    * 是否已配置 API Key（明文或密文任一存在）。

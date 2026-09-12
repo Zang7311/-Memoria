@@ -26,6 +26,7 @@ pub async fn plan_task(
     model: &str,
     task: &str,
     tool_names: &[String],
+    experience: Option<&str>,
 ) -> Vec<SubTask> {
     let fallback = vec![SubTask {
         step: 1,
@@ -39,11 +40,18 @@ pub async fn plan_task(
         tool_names.join("、")
     };
 
+    // 历史成功经验：有就带进提示，让规划少走弯路（首跑时为空）
+    let exp_block = match experience.map(str::trim) {
+        Some(e) if !e.is_empty() => format!("\n{e}\n"),
+        _ => String::new(),
+    };
+
     let prompt = format!(
         "你是任务规划助手。请把下面的用户任务拆解为有序的子步骤，输出纯 JSON 数组，\
          格式：[{{\"step\":1,\"goal\":\"...\",\"tool_hint\":\"工具名或null\"}}]\n\
          \n\
          可用工具：{tools_hint}\n\
+         {exp_block}\
          \n\
          用户任务：{task}\n\
          \n\
@@ -51,7 +59,8 @@ pub async fn plan_task(
          1. 只输出 JSON 数组，不要任何额外解释；\
          2. tool_hint 填最可能用到的一个工具名，没有合适工具则填 null；\
          3. 步骤数控制在 1-6 步之间；\
-         4. 如果任务本身就是单步，就只输出一个元素的数组。"
+         4. 如果任务本身就是单步，就只输出一个元素的数组；\
+         5. 如果上面给了「参考经验」，优先沿用它那条成功路线来拆步骤。"
     );
 
     let body = json!({

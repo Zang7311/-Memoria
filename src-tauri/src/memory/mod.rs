@@ -3,6 +3,7 @@ pub mod category;
 pub mod center;
 pub mod compress;
 pub mod index;
+pub mod retrieve;
 pub mod search;
 pub mod storage;
 pub mod vector;

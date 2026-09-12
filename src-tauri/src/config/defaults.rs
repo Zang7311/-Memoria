@@ -9,6 +9,8 @@ pub fn default_config() -> AppConfig {
         config_version: 1,
         theme: "dark".to_string(),
         context_length: 10,
+        // 长期记忆按相关性注入 5 条（0 = 关闭长期记忆注入）
+        long_term_memory_limit: 5,
         api_base_url: None,
         api_key_encrypted: None,
         api_key_plain: None,

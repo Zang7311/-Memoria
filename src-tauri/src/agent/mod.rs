@@ -7,6 +7,8 @@
 //   - recovery.rs        错误恢复策略（诊断错误类型 → 给 LLM 换方案建议）
 //   - stream_progress.rs Agent 流式进度推送（chat_chunk / chat_end）
 //   - vision.rs          视觉理解（把图片送给多模态模型，实现「看图」）
+//   - experience.rs      经验记忆（成功的工具序列沉淀下来，下次复用少走弯路）
+pub mod experience;
 pub mod loop_;
 pub mod planner;
 pub mod recovery;
