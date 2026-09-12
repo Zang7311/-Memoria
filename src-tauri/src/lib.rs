@@ -21,6 +21,8 @@ pub mod types;
 mod update;
 mod utils;
 mod vbil;
+// AI-10：Agent 能力增强（工具描述生成器 + Agent 循环）
+pub mod agent;
 
 use tauri::Manager;
 use tauri::Emitter;
@@ -40,7 +42,8 @@ pub fn run() {
     // —— 主窗口/悬浮球卡顿修复：WebView2 强制软件渲染（老显卡 R7 350 GPU 合成不稳定）
     // 注意：必须在任何 webview 创建前设置；若报 0x8007139F 通常是残留实例占用
     // WebView2 user data 锁（先杀干净 mem 进程再启动），非本参数问题。
-    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu");
+    // 【临时诊断 2026-09-12 铃】注释掉下一行，排查 webview 创建失败 0x8007139F
+    // std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // —— AI-6：全局快捷键插件 ——
@@ -173,6 +176,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            // —— AI-10 Agent 命令 ——
+            commands::agent_run::agent_run,
             commands::send_message::send_message,
             commands::test_connection::test_api_connection,
             // —— AI-4 记忆命令 ——

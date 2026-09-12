@@ -7,7 +7,7 @@
 第一眼，她是"我的铃"
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-ff7a94" alt="version">
+  <img src="https://img.shields.io/badge/version-0.7.0-ff7a94" alt="version">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="platform">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/offline--first-yes-success" alt="offline-first">
@@ -130,6 +130,7 @@ src-tauri/                  # Rust 后端
 
 | 版本 | 内容 |
 |------|------|
+| v0.7.0 | **Agent 能力大版本**：新增 Agent 模式（多轮工具调用循环 + 任务规划 + 错误自愈 + 流式进度）；52 个 Agent 专用工具覆盖系统查询/文件读写搜索/网页搜索抓取/软件装卸/鼠标键盘模拟/窗口控制/电源/音量亮度/网卡/截屏/OCR 识字/主动记忆/定时提醒/压缩解压/PDF/Excel/剪贴板/命令执行/图片处理/Git/语音朗读/快捷指令/服务/计划任务/网络诊断/硬件详情；**视觉理解**（截图交给多模态模型真正看懂画面内容）；4 项权限开关（下载文件/安装卸载/写入删除/执行命令），未授权工具不进入模型工具列表；普通模式防幻觉声明；气泡不再露出 Markdown 符号 |
 | v0.6.0 | 悬浮球 v7 全面重构（系统级拖动 + 边缘磁吸 + 单击/双击/长按分级 + 右键灵动控制面板 + 鼠标穿透 + 配置实时同步 + DPI 坐标修复 + 光晕防削边）；前端 bug 修复 13 处；后端安全修复 3 项（Git 注入/参数注入/明文 Key 泄漏） |
 | v0.5.5 | 悬浮球全面改进 v5/v6（内置猫娘头像 + Live2D 本地离线加载 Haru + DPI 拖拽修复 + 呼吸动画修复 + 位置持久化 + 滚动条隐藏）+ 悬浮球设置并入个性化 tab |
 | v0.5.3 | 悬浮球全面改进（三种显示模式/大小/透明度/动画自定义 + Live2D 集成 oh-my-live2d + Haru/Shizuku 内置模型 + 设置页悬浮球 tab） |
@@ -175,5 +176,5 @@ Claude Sonnet 5，Claude Opus 5，GLM 5.3。作者已对输出做了人工审查
 
 ## 🌿 分支说明
 
-- **`main`（推荐）**：当前稳定主线，随版本持续更新（当前 v0.6.0）。
+- **`main`（推荐）**：当前稳定主线，随版本持续更新（当前 v0.7.0）。
 - **`v1.0`（实验分支）**：曾尝试"内置 Qwen2.5 小模型做离线对话"的实验分支（含 0.5B / 1.5B GGUF 模型）。**结论：小模型（1.5B 及以下）无法稳定承担复杂对话，体验不佳，此方案已放弃，不再内置模型。** 该分支代码与安装包仍可下载参考，但**不推荐日常使用**，请以 main 主线为准。

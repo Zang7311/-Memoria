@@ -1,0 +1,431 @@
+// 《铃·记忆体》AI-10 Agent 循环核心（loop_.rs）
+//
+// 这是 Agent 能力的核心：多轮 function calling 循环。
+//
+// 流程：
+//   1. 组装 tools（工具箱 + 插件技能，见 tools.rs）
+//   2. 拉取相关记忆作为规划上下文
+//   3. POST /chat/completions，注入 tools
+//   4. 解析响应：
+//      - 有 tool_calls → 路由执行 → 结果回传 → 回到步骤 3
+//      - 有纯文本 → 作为最终回复返回
+//   5. 达到 max_steps 仍无最终回复 → 强制让 LLM 总结已执行的步骤并返回
+//
+// 安全约束：
+//   - 危险工具已在 tools.rs 层面过滤，LLM 根本看不到
+//   - 每次工具执行前，危险操作二次确认走 toolbox_execute 现有逻辑
+//   - 工具结果摘要化（截断），防止上下文爆炸
+use std::collections::HashMap;
+use std::time::Duration;
+
+use serde_json::{json, Value};
+use tauri::AppHandle;
+
+use crate::agent::planner;
+use crate::agent::recovery;
+use crate::agent::router::dispatch_tool_call;
+use crate::agent::stream_progress::StreamEmitter;
+use crate::agent::tools::{build_tools, AgentPermissions};
+use crate::commands::agent_run::{AgentRunRequest, AgentRunResponse};
+use crate::config;
+use crate::engine;
+use crate::error::AppError;
+use crate::types::Memory;
+
+/// 单条工具结果的最大字符数（超出截断，防上下文爆炸）
+const TOOL_RESULT_MAX_CHARS: usize = 2000;
+
+/// 最大迭代步数（run 内部兜底，即使请求未传 max_steps）
+const HARD_MAX_STEPS: usize = 20;
+
+/// 工具执行结果摘要化：截断超长文本
+fn summarize_tool_result(text: &str) -> String {
+    if text.chars().count() <= TOOL_RESULT_MAX_CHARS {
+        text.to_string()
+    } else {
+        let head: String = text.chars().take(TOOL_RESULT_MAX_CHARS).collect();
+        format!("{head}\n…（结果过长，已截断）")
+    }
+}
+
+/// 从配置读取 API 相关参数
+fn api_config() -> Result<(String, String, String), AppError> {
+    let cfg = config::store::get_config();
+    let base = cfg.api_base_url.clone().ok_or_else(|| {
+        AppError::ConfigError("未配置 API 地址（Agent 模式需要云端 API）".into())
+    })?;
+    // 优先加密 key，其次明文 key
+    let key = cfg
+        .api_key_encrypted
+        .clone()
+        .or_else(|| cfg.api_key_plain.clone())
+        .ok_or_else(|| AppError::ConfigError("未配置 API Key".into()))?;
+    let model = cfg.api_model.clone();
+    Ok((base, key, model))
+}
+
+/// Agent 循环主入口
+pub async fn run_agent_loop(
+    app: &AppHandle,
+    request: AgentRunRequest,
+) -> Result<AgentRunResponse, AppError> {
+    let (base, key, model) = api_config()?;
+    let depth = config::store::get_config().depth;
+
+    // 流式发射器：后续所有进度提示与最终回复都通过它推给前端。
+    // progress_events 由请求控制（默认 true），关闭时只推最终回复。
+    let emitter = StreamEmitter::new(app.clone(), request.progress_events);
+
+    // 1. 组装工具列表
+    // 用 list_agent_items：在普通预设之外，额外包含「Agent 专用工具」
+    //（如查磁盘空间/列进程等，前端工具箱 UI 不显示这些，避免界面变乱）
+    let toolbox_items = crate::desktop::toolbox::list_agent_items();
+    let plugins = crate::plugin::with_manager(|m| m.plugins.clone());
+    // 权限开关：危险类工具（下载 / 安装卸载 / 写删文件）需用户在设置页开启后才注入
+    let cfg = config::store::get_config();
+    let perms = AgentPermissions {
+        allow_download: cfg.agent_allow_download,
+        allow_software: cfg.agent_allow_software,
+        allow_file_write: cfg.agent_allow_file_write,
+        allow_shell: cfg.agent_allow_shell,
+    };
+    let tools = build_tools(&toolbox_items, &plugins, &perms);
+
+    // 2. 拉取相关记忆（默认记忆集，取最近 N 条作为上下文）
+    let memories = load_recent_memories(10);
+
+    // 3. 构造 system prompt（含工具说明 + 行为约束）
+    let system = build_system_prompt(&tools);
+
+    // 4. 初始化消息流
+    let mut messages: Vec<Value> = Vec::new();
+    messages.push(json!({ "role": "system", "content": system }));
+    for m in &memories {
+        messages.push(json!({ "role": m.role, "content": m.content }));
+    }
+    messages.push(json!({ "role": "user", "content": request.task }));
+
+    // 5. 循环
+    let mut steps = 0usize;
+    let max_steps = request.max_steps.min(HARD_MAX_STEPS);
+    let client = reqwest::Client::new();
+    let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(&base));
+    let (temperature, top_p, _) = engine::apply_depth(depth);
+
+    // 循环前：仅对「看起来是多步」的任务调用 planner
+    //（单步任务如「打开QQ」直接跳过，省掉一次 LLM 往返，明显更快）
+    let looks_multi_step = request.task.chars().count() > 15
+        || ["然后", "并且", "接着", "之后", "同时", "再"]
+            .iter()
+            .any(|k| request.task.contains(k));
+
+    if looks_multi_step {
+        log::info!("[agent] 任务较长，启用多步规划");
+        let tool_names: Vec<String> = tools
+            .iter()
+            .filter_map(|t| {
+                t.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        let t_plan = std::time::Instant::now();
+        let subtasks = planner::plan_task(
+            &client,
+            &url,
+            &key,
+            &model,
+            &request.task,
+            &tool_names,
+        )
+        .await;
+        log::info!(
+            "[agent] 规划完成：{} 个子任务，耗时 {}ms",
+            subtasks.len(),
+            t_plan.elapsed().as_millis()
+        );
+        if subtasks.len() > 1 {
+            // 把子任务列表拼成文字，作为额外 user 上下文注入，帮助 LLM 按步骤执行
+            let plan_text = subtasks
+                .iter()
+                .map(|s| {
+                    if let Some(hint) = &s.tool_hint {
+                        format!("{}. {}（建议工具：{}）", s.step, s.goal, hint)
+                    } else {
+                        format!("{}. {}", s.step, s.goal)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            messages.push(json!({
+                "role": "user",
+                "content": format!("任务已拆解为以下步骤，请依次执行：\n{plan_text}")
+            }));
+        }
+    }
+
+    loop {
+        steps += 1;
+        if steps > max_steps {
+            // 超过步数：强制总结
+            messages.push(json!({
+                "role": "user",
+                "content": "已达到最大工具调用步数，请基于已执行的结果，用自然语言向用户总结当前进度和完成情况，不要再调用任何工具。"
+            }));
+            let summary = call_llm_text(&client, &url, &key, &model, &messages, temperature, top_p)
+                .await?;
+            // 流式推送：进度提示 + 最终总结
+            emitter.push_progress("已达到最大工具调用步数，为你总结当前进度…");
+            emitter.push_final_reply(&summary);
+            return Ok(AgentRunResponse {
+                success: true,
+                final_reply: Some(summary),
+                steps,
+                error: None,
+            });
+        }
+
+        // 调用 LLM（带 tools）
+        let t_llm = std::time::Instant::now();
+        let resp = call_llm(&client, &url, &key, &model, &messages, &tools, temperature, top_p)
+            .await?;
+        log::info!(
+            "[agent] 第 {}/{} 轮决策完成，LLM 耗时 {}ms",
+            steps,
+            max_steps,
+            t_llm.elapsed().as_millis()
+        );
+
+        // 解析：tool_calls 还是纯文本？
+        let choice = resp
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .cloned()
+            .ok_or_else(|| AppError::InternalError("LLM 响应缺少 choices".into()))?;
+
+        let message = choice.get("message").cloned().unwrap_or(json!({}));
+
+        // 有工具调用？
+        let tool_calls = message.get("tool_calls").cloned();
+        let has_tool_calls = tool_calls
+            .as_ref()
+            .and_then(|t| t.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+
+        if has_tool_calls {
+            // 把 assistant 消息（含 tool_calls）追加进消息流
+            messages.push(json!({ "role": "assistant", "content": message.get("content"), "tool_calls": tool_calls }));
+
+            // 逐个执行工具
+            let calls = tool_calls.unwrap();
+            if let Some(arr) = calls.as_array() {
+                for call in arr {
+                    let call_id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let fn_name = call
+                        .get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let args_raw = call
+                        .get("function")
+                        .and_then(|f| f.get("arguments"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}")
+                        .to_string();
+
+                    // 解析参数
+                    let args: HashMap<String, Value> =
+                        serde_json::from_str(&args_raw).unwrap_or_default();
+
+                    // 执行工具
+                    let result = dispatch_tool_call(app, &fn_name, &args).await;
+
+                    // 结果摘要化后回传
+                    let content = match result {
+                        Ok(text) => summarize_tool_result(&text),
+                        Err(e) => {
+                            // 诊断错误类型，给 LLM 提供结构化建议
+                            let err_str = e.to_string();
+                            let kind = recovery::classify_error(&err_str);
+                            // HashMap<String,Value> → HashMap<String,String>，供 suggest_fallback 使用
+                            let args_str_map: std::collections::HashMap<String, String> = args
+                                .iter()
+                                .map(|(k, v)| {
+                                    let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                                    (k.clone(), s)
+                                })
+                                .collect();
+                            let suggestion = recovery::suggest_fallback(&kind, &fn_name, &args_str_map);
+                            let mut msg = format!(
+                                "工具执行出错：{err_str}\n错误类型：{}",
+                                kind.label()
+                            );
+                            if let Some(hint) = suggestion {
+                                msg.push_str(&format!("\n建议：{hint}"));
+                            }
+                            msg
+                        }
+                    };
+
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "name": fn_name,
+                        "content": content,
+                    }));
+                }
+            }
+            // 继续循环，让 LLM 看结果
+            continue;
+        }
+
+        // 纯文本回复 → 最终答案
+        let content = message
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if content.is_empty() {
+            return Err(AppError::InternalError("LLM 返回空回复".into()));
+        }
+        // 流式推送最终回复（漏了这里会导致前端收不到）
+        emitter.push_final_reply(&content);
+        return Ok(AgentRunResponse {
+            success: true,
+            final_reply: Some(content),
+            steps,
+            error: None,
+        });
+    }
+}
+
+/// 加载最近 N 条记忆（默认记忆集，作为 Agent 规划上下文）
+fn load_recent_memories(limit: usize) -> Vec<Memory> {
+    let path = crate::memory::storage::default_index_path();
+    let all = crate::memory::storage::read_all(&path).unwrap_or_default();
+    // 取最后 N 条（最新在后）
+    let start = if all.len() > limit { all.len() - limit } else { 0 };
+    all[start..].to_vec()
+}
+
+/// 构造 system prompt
+fn build_system_prompt(tools: &[Value]) -> String {
+    let tool_names: Vec<String> = tools
+        .iter()
+        .filter_map(|t| {
+            t.get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+
+    format!(
+        "你是「铃」，一只生活在用户 Windows 电脑里的猫娘助手。你可以调用工具帮用户完成任务。\n\
+         \n\
+         【可用工具】共 {} 个：{}\n\
+         \n\
+         【行为准则】\n\
+         1. 用户提出任务后，先判断是否需要调用工具；能自己回答的就直接回答。\n\
+         2. 需要执行操作时，调用对应的工具，根据工具返回结果判断下一步。\n\
+         3. 每一步只调用必要的工具，不要重复调用同一工具。\n\
+         4. 完成任务后，用自然、亲切的语气向用户汇报结果。\n\
+         5. 遇到工具报错，如实告诉用户，并尝试换一种方式。\n\
+         6. 语气自然口语化，像真人聊天，适度使用 emoji。\n\
+         7. 【严禁编造·重要】只汇报工具实际返回的结果。工具没被调用、或调用失败时，绝不能声称操作已经完成（例如说「已经帮你打开啦」「窗口应该弹出来了」）——那是在骗主人。必须如实说明「我没能做到，原因是…」。\n\
+         8. 【没有合适工具时】如果工具列表里没有能完成该任务的能力，如实告诉用户「我现在的工具做不到这件事」，绝不要假装做了。\n\
+         9. 【格式·重要】不要使用 Markdown 符号——星号（*）、井号（#）、反引号、下划线这些都不要用，聊天气泡不渲染它们，只会变成乱糟糟的符号。要强调语气就用 emoji 或颜文字，不要用加粗/斜体标记。\n\
+         \n\
+         【重要】你只能调用上面列出的工具，不要调用不存在的工具。",
+        tools.len(),
+        tool_names.join("、")
+    )
+}
+
+/// 调用 LLM（带 tools），返回完整 JSON 响应体
+async fn call_llm(
+    client: &reqwest::Client,
+    url: &str,
+    key: &str,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    temperature: f64,
+    top_p: f64,
+) -> Result<Value, AppError> {
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+        // 规整到 2 位小数（部分中转 API 严格限制，超出即 400）
+        "temperature": engine::round2(temperature),
+        "top_p": engine::round2(top_p),
+    });
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
+    }
+
+    let resp = client
+        .post(url)
+        .bearer_auth(key)
+        .json(&body)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(AppError::from)?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::NetworkError(format!("API 返回 {status}：{text}")));
+    }
+
+    resp.json::<Value>().await.map_err(AppError::from)
+}
+
+/// 调用 LLM（纯文本，无 tools），返回文本内容
+async fn call_llm_text(
+    client: &reqwest::Client,
+    url: &str,
+    key: &str,
+    model: &str,
+    messages: &[Value],
+    temperature: f64,
+    top_p: f64,
+) -> Result<String, AppError> {
+    let body = json!({
+        "model": model,
+        "messages": messages,
+        // 规整到 2 位小数（部分中转 API 严格限制，超出即 400）
+        "temperature": engine::round2(temperature),
+        "top_p": engine::round2(top_p),
+    });
+
+    let resp = client
+        .post(url)
+        .bearer_auth(key)
+        .json(&body)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(AppError::from)?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::NetworkError(format!("API 返回 {status}：{text}")));
+    }
+
+    let v: Value = resp.json().await.map_err(AppError::from)?;
+    let content = v
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(content)
+}

@@ -682,3 +682,16 @@ export function installModel(path: string): Promise<InstallModelResult> {
 export function quitApp(): Promise<void> {
   return invoke<void>('quit_app')
 }
+
+// ==================== Agent 模式 IPC 封装 ====================
+import type { AgentRunRequest, AgentRunResponse } from '../types'
+
+/** 执行 Agent 任务（多轮 function calling 循环，进度通过 chat_chunk/chat_end 流式推送） */
+export function agentRun(task: string, opts?: { max_steps?: number; progress_events?: boolean }): Promise<AgentRunResponse> {
+  const request: AgentRunRequest = {
+    task,
+    max_steps: opts?.max_steps ?? 10,
+    progress_events: opts?.progress_events ?? true,
+  }
+  return invoke('agent_run', { request })
+}

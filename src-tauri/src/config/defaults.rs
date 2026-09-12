@@ -13,6 +13,8 @@ pub fn default_config() -> AppConfig {
         api_key_encrypted: None,
         api_key_plain: None,
         api_model: "gpt-3.5-turbo".to_string(),
+        // 视觉模型留空 = 回退主模型；用户可填 glm-4v 等多模态模型
+        vision_model: None,
         model_mode: "script".to_string(),
         depth: 2,
         language_mix_rate: 8,
@@ -56,5 +58,10 @@ pub fn default_config() -> AppConfig {
         // —— AI-9 快捷指令（默认空，用户自行创建）——
         quick_commands: Vec::new(),
         search_mode: "bigram".to_string(),
+        // —— Agent 权限开关（默认全关，需用户在设置页显式开启）——
+        agent_allow_download: false,
+        agent_allow_software: false,
+        agent_allow_file_write: false,
+        agent_allow_shell: false,
     }
 }

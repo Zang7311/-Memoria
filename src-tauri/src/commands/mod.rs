@@ -1,6 +1,8 @@
 // 《铃·记忆体》commands 模块
 pub mod send_message;
 pub mod test_connection;
+// —— AI-10 Agent 命令 ——
+pub mod agent_run;
 // —— AI-4 记忆命令 ——
 pub mod memory_delete;
 pub mod memory_get;

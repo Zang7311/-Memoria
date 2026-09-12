@@ -40,6 +40,32 @@ fn load_presets(_resource_dir: &std::path::Path) -> Vec<ToolboxItem> {
     }
 }
 
+/// 加载 Agent 专用预设（编译期内嵌）
+///
+/// 这些工具**不显示在前端工具箱 UI**，只注入 Agent 的工具列表，
+/// 供「铃」自主调用完成用户任务（如查磁盘空间、列进程等只读查询）。
+fn load_agent_presets() -> Vec<ToolboxItem> {
+    match serde_json::from_str::<Vec<ToolboxItem>>(
+        include_str!("../../resources/agent_tools.json"),
+    ) {
+        Ok(items) => items,
+        Err(e) => {
+            log::warn!("[toolbox] 解析内嵌 Agent 预设失败：{e}");
+            Vec::new()
+        }
+    }
+}
+
+/// 合并返回「给 Agent 用」的工具条目：普通预设 + Agent 专用预设 + 用户自定义
+///
+/// 与 `list_items` 的唯一区别：多出 Agent 专用预设（前端工具箱 UI 不显示这些）。
+pub fn list_agent_items() -> Vec<ToolboxItem> {
+    let mut items = load_presets(std::path::Path::new(""));
+    items.extend(load_agent_presets());
+    items.extend(load_user_items());
+    items
+}
+
 /// 加载用户自定义条目
 fn load_user_items() -> Vec<ToolboxItem> {
     let path = crate::desktop::toolbox_items_path();
@@ -59,9 +85,12 @@ fn save_user_items(items: &[ToolboxItem]) -> Result<(), AppError> {
     Ok(())
 }
 
-/// 按 id 查找条目（预设 + 用户）
+/// 按 id 查找条目（预设 + Agent 专用预设 + 用户自定义）
 pub fn find_item(resource_dir: &std::path::Path, item_id: &str) -> Option<ToolboxItem> {
-    list_items(resource_dir).into_iter().find(|i| i.id == item_id)
+    list_items(resource_dir)
+        .into_iter()
+        .chain(load_agent_presets())
+        .find(|i| i.id == item_id)
 }
 
 /// 保存（新增或更新）用户自定义条目
@@ -143,5 +172,41 @@ pub async fn execute(item: &ToolboxItem, input: Option<String>) -> Result<Execut
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 架构契约：Agent 专用工具只对 Agent 可见，前端工具箱 UI 不应出现它们
+    #[test]
+    fn agent专用工具_只对agent可见() {
+        // Agent 侧：应包含新加的专用工具
+        let agent_items = list_agent_items();
+        let agent_ids: Vec<&str> = agent_items.iter().map(|i| i.id.as_str()).collect();
+        assert!(
+            agent_ids.contains(&"agent_disk_space"),
+            "Agent 工具列表缺少「磁盘空间查询」"
+        );
+        assert!(
+            agent_ids.contains(&"agent_proc_list"),
+            "Agent 工具列表缺少「进程列表」"
+        );
+
+        // 前端侧：不应包含任何 agent_ 前缀工具（保持工具箱 UI 干净）
+        let ui_items = list_items(std::path::Path::new(""));
+        assert!(
+            !ui_items.iter().any(|i| i.id.starts_with("agent_")),
+            "前端工具箱列表不应包含 Agent 专用工具"
+        );
+    }
+
+    /// 执行路由：find_item 必须能找到 Agent 专用工具（否则执行时会报「条目不存在」）
+    #[test]
+    fn agent专用工具_可被查找() {
+        let found = find_item(std::path::Path::new(""), "agent_disk_space");
+        assert!(found.is_some(), "find_item 未能找到 Agent 专用工具");
+        assert_eq!(found.unwrap().name, "磁盘空间查询（各盘剩余/已用）");
     }
 }
