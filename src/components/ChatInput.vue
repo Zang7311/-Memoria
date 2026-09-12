@@ -1,7 +1,7 @@
 <!-- 《铃·记忆体》输入栏：textarea + 纸飞机发送按钮
      任务 4：Enter 发送、Shift+Enter 换行、发送中禁用、清空输入 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '../stores/chatStore'
 import { useStreamRender } from '../composables/useStreamRender'
@@ -9,9 +9,16 @@ import { useSettingStore } from '../stores/settingStore'
 
 const chat = useChatStore()
 const setting = useSettingStore()
-const { send } = useStreamRender()
+const { send, sendAgent } = useStreamRender()
 
 const taRef = ref<HTMLTextAreaElement | null>(null)
+// Agent 模式开关
+// 持久化到 localStorage：用户开启过一次后，下次启动默认就是开启状态
+const AGENT_MODE_KEY = 'ling_agent_mode_enabled'
+const agentMode = ref(localStorage.getItem(AGENT_MODE_KEY) === '1')
+watch(agentMode, (v) => {
+  localStorage.setItem(AGENT_MODE_KEY, v ? '1' : '0')
+})
 
 // v0.6：悬浮球「双击快速提问」→ 唤起主窗口后聚焦输入框
 onMounted(() => {
@@ -28,23 +35,31 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-// 发送逻辑：携带设置里的思考深度（文库/API/本地模式均生效）
+// 发送逻辑：Agent 模式走 sendAgent，普通模式走 send
 async function handleSend() {
   const content = chat.inputText.trim()
   if (!content || chat.isLoading) return
-  await send(content, setting.depth)
+  if (agentMode.value) {
+    await sendAgent(content)
+  } else {
+    await send(content, setting.depth)
+  }
   chat.inputText = ''
 }
 </script>
 
 <template>
   <div class="chat-input">
+    <label class="agent-toggle" :class="{ active: agentMode }" title="开启后铃会自主调用工具完成任务">
+      <input type="checkbox" v-model="agentMode" />
+      Agent 模式
+    </label>
     <textarea
       v-model="chat.inputText"
       ref="taRef"
       class="input-area"
       name="chat"
-      placeholder="说点什么…"
+      :placeholder="agentMode ? '说出你的任务，铃会自己想办法完成…' : '说点什么…'"
       :disabled="chat.isLoading"
       rows="1"
       @keydown="onKeydown"
@@ -67,6 +82,27 @@ async function handleSend() {
   gap: 8px;
   padding: 8px 16px 22px;
   border-top: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+}
+.agent-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-12, 12px);
+  color: var(--text-sub, #888);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  transition: border-color 0.15s, color 0.15s;
+}
+.agent-toggle input {
+  display: none;
+}
+.agent-toggle.active {
+  color: var(--accent, #ff8fa3);
+  border-color: var(--accent, #ff8fa3);
 }
 .input-area {
   flex: 1;

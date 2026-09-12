@@ -34,6 +34,11 @@ export const useSettingStore = defineStore('setting', () => {
   const runAsAdmin = ref(false)
   const emojiMode = ref<'off' | 'partial' | 'all'>('off')
   const aiToolbox = ref(false)
+  // Agent 权限开关（默认 false，需用户主动授权）
+  const agentAllowDownload = ref(false)
+  const agentAllowSoftware = ref(false)
+  const agentAllowFileWrite = ref(false)
+  const agentAllowShell = ref(false)
   const contextLength = ref(10)
   const apiBaseUrl = ref<string | null>(null)
   /** 是否已配置 API Key（明文或密文任一存在）。后端只下发布尔，不下发 Key 内容 */
@@ -87,6 +92,10 @@ export const useSettingStore = defineStore('setting', () => {
     runAsAdmin.value = c.run_as_admin ?? false
     emojiMode.value = (c.emoji_mode as 'off' | 'partial' | 'all') || 'off'
     aiToolbox.value = c.ai_toolbox ?? false
+    agentAllowDownload.value = c.agent_allow_download ?? false
+    agentAllowSoftware.value = c.agent_allow_software ?? false
+    agentAllowFileWrite.value = c.agent_allow_file_write ?? false
+    agentAllowShell.value = c.agent_allow_shell ?? false
     contextLength.value = (typeof c.context_length === 'number' && c.context_length > 0) ? Math.min(c.context_length, 100) : 10
     apiBaseUrl.value = c.api_base_url ?? null
     _hasApiKey.value = !!c.has_api_key
@@ -256,6 +265,7 @@ export const useSettingStore = defineStore('setting', () => {
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,
     emojiMode, aiToolbox,
+    agentAllowDownload, agentAllowSoftware, agentAllowFileWrite, agentAllowShell,
     saveThemePreset, switchThemePreset, deleteThemePreset,
     languageMixRate, floatingBallMode, floatingBallEnabled, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,

@@ -11,7 +11,7 @@ import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { sendMessage, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
+import { sendMessage, agentRun, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
 import type { ChatUsage, QuickCommand } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
@@ -215,6 +215,41 @@ export function useStreamRender() {
     })
   }
 
+  // Agent 模式发送：复用同一套流式渲染（chat_chunk/chat_end/chat_error），只是触发命令不同
+  async function sendAgent(task: string) {
+    if (chat.isLoading) return
+    milestone.recordChat(task).catch(() => {})
+    if (!chat.activeSessionId) {
+      await chat.createSession()
+    }
+    const userMsg = {
+      id: makeId(),
+      role: 'user' as const,
+      content: task,
+      timestamp: new Date().toISOString(),
+    }
+    const assistantId = makeId()
+    const assistantMsg = {
+      id: assistantId,
+      role: 'assistant' as const,
+      content: '',
+      timestamp: new Date().toISOString(),
+    }
+    chat.addMessage(userMsg)
+    chat.addMessage(assistantMsg)
+    activeId = assistantId
+    chat.beginStream(assistantId)
+
+    try {
+      await agentRun(task)
+      // 后端会通过 chat_chunk/chat_end 推送进度与最终回复，handleEnd 会在事件到达时被调用
+    } catch (e) {
+      console.warn('[agent_run] 调用失败：', e)
+      handleChunk(`Agent 执行出错：${e}`)
+      handleEnd()
+    }
+  }
+
   onMounted(() => {
     if (!USE_MOCK) {
       Promise.all([onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError), onChatUsage(handleUsage)]).then(
@@ -230,5 +265,5 @@ export function useStreamRender() {
     unlisteners.value = []
   })
 
-  return { send }
+  return { send, sendAgent }
 }

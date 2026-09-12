@@ -676,6 +676,36 @@ async function toggleAiToolbox() {
         </section>
 
         <section class="card">
+          <div class="card-title">Agent 权限</div>
+          <p class="hint">以下操作会改动系统或文件，请确认你信任后再开启。</p>
+          <label class="switch-wrap">
+            <input type="checkbox" :checked="setting.agentAllowDownload" class="switch"
+              @change="setting.agentAllowDownload = !setting.agentAllowDownload; setting.update({ agent_allow_download: setting.agentAllowDownload })" />
+            <span class="label">允许下载文件</span>
+          </label>
+          <p class="hint" style="margin-left:48px">开启后铃可以下载文件到本地</p>
+          <label class="switch-wrap" style="margin-top:8px">
+            <input type="checkbox" :checked="setting.agentAllowSoftware" class="switch"
+              @change="setting.agentAllowSoftware = !setting.agentAllowSoftware; setting.update({ agent_allow_software: setting.agentAllowSoftware })" />
+            <span class="label">允许安装/卸载软件</span>
+          </label>
+          <p class="hint" style="margin-left:48px">开启后铃可以用 winget 安装或卸载软件</p>
+          <label class="switch-wrap" style="margin-top:8px">
+            <input type="checkbox" :checked="setting.agentAllowFileWrite" class="switch"
+              @change="setting.agentAllowFileWrite = !setting.agentAllowFileWrite; setting.update({ agent_allow_file_write: setting.agentAllowFileWrite })" />
+            <span class="label">允许写入/删除文件</span>
+          </label>
+          <p class="hint" style="margin-left:48px">开启后铃可以生成文件、创建文件夹、删除文件</p>
+          <!-- 执行命令权限：能力最强也最危险，单独放最后 -->
+          <label class="switch-wrap" style="margin-top:8px">
+            <input type="checkbox" :checked="setting.agentAllowShell" class="switch"
+              @change="setting.agentAllowShell = !setting.agentAllowShell; setting.update({ agent_allow_shell: setting.agentAllowShell })" />
+            <span class="label">允许执行命令</span>
+          </label>
+          <p class="hint" style="margin-left:48px">开启后铃可以执行系统命令（能力最强，也最危险，请谨慎开启）</p>
+        </section>
+
+        <section class="card">
           <div class="card-title">开机自启动</div>
           <label class="switch-wrap">
             <input v-model="autostart" type="checkbox" class="switch" @change="toggleAutostart" />

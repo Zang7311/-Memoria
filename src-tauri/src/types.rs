@@ -355,6 +355,11 @@ pub struct ToolboxItem {
     /// 空 = 传统单命令工具（向后兼容旧数据）
     #[serde(default)]
     pub steps: Vec<QuickCommandStep>,
+    /// Agent 权限分类（仅 Agent 专用工具使用；None = 无需特殊授权，默认可用）
+    /// 取值：`download` / `software` / `file_write` / `shell`
+    /// 未授权的分类不会出现在 Agent 的工具列表里（前端设置页可开关）
+    #[serde(default)]
+    pub agent_permission: Option<String>,
 }
 
 /// 获取前台窗口信息响应
@@ -500,6 +505,10 @@ pub struct AppConfig {
     /// API 模型名（如 gpt-4o-mini / deepseek-chat），默认 gpt-3.5-turbo
     #[serde(default = "default_api_model")]
     pub api_model: String,
+    /// 视觉（看图）专用模型名，如 glm-4v。
+    /// 留空则回退到 api_model；填了就用它做「看图」。
+    #[serde(default)]
+    pub vision_model: Option<String>,
     /// "script" | "api" | "local"
     pub model_mode: String,
     /// 思考深度 1|2|3|4
@@ -609,6 +618,19 @@ pub struct AppConfig {
     /// 搜索引擎模式："bigram"（默认）/ "bm25" / "vector"
     #[serde(default = "default_search_mode")]
     pub search_mode: String,
+    /// —— Agent 权限开关（默认全部关闭，需用户在设置页显式开启）——
+    /// 允许 Agent 下载文件
+    #[serde(default)]
+    pub agent_allow_download: bool,
+    /// 允许 Agent 安装 / 卸载软件
+    #[serde(default)]
+    pub agent_allow_software: bool,
+    /// 允许 Agent 写入 / 删除文件
+    #[serde(default)]
+    pub agent_allow_file_write: bool,
+    /// 允许 Agent 执行任意命令（shell，最高危：能改系统、装东西、删数据）
+    #[serde(default)]
+    pub agent_allow_shell: bool,
 }
 
 fn default_search_mode() -> String {

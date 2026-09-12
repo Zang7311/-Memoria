@@ -286,6 +286,14 @@ export interface AppConfig {
   ai_toolbox?: boolean
   /** —— AI-9 快捷指令列表 —— */
   quick_commands?: QuickCommand[]
+  /** Agent 权限：允许下载文件（默认 false） */
+  agent_allow_download?: boolean
+  /** Agent 权限：允许安装/卸载软件（默认 false） */
+  agent_allow_software?: boolean
+  /** Agent 权限：允许写入/删除文件（默认 false） */
+  agent_allow_file_write?: boolean
+  /** Agent 权限：允许执行系统命令（最高危，默认 false） */
+  agent_allow_shell?: boolean
 }
 
 /** 一套完整的外观自定义组合（用户命名保存，可一键切换） */
@@ -479,6 +487,23 @@ export interface VersionInfo {
   release_url: string
   release_notes: string
   is_outdated: boolean
+}
+
+// ==================== Agent 模式（与 Rust 端契约对齐） ====================
+
+/** Agent 运行请求 */
+export interface AgentRunRequest {
+  task: string
+  max_steps: number
+  progress_events: boolean
+}
+
+/** Agent 运行响应 */
+export interface AgentRunResponse {
+  success: boolean
+  final_reply: string | null
+  steps: number
+  error: string | null
 }
 
 /** 检查更新响应 */

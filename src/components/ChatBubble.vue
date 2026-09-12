@@ -30,6 +30,33 @@ const isUser = computed(() => props.message.role === 'user')
 const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : suzuAvatar))
 // 用户头像：图片路径则显示图片，否则 emoji/文字
 const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl(setting.avatarUser!) : null))
+
+// 显示文本：聊天气泡不渲染 Markdown，裸的星号/井号很丑
+// 这里把常见 Markdown 标记「降级」成纯文本（去掉符号、保留内容），
+// 这样即使模型偶尔输出了 **加粗** 或 ### 标题，显示出来也是干净的。
+const displayContent = computed(() => {
+  const raw = props.message.content ?? ''
+  if (!raw) return ''
+  return (
+    raw
+      // 代码块围栏（```lang ... ```）→ 只留内容
+      .replace(/```[^\n]*\n?([\s\S]*?)```/g, '$1')
+      // 行内代码 `code` → code
+      .replace(/`([^`\n]+)`/g, '$1')
+      // **粗体** / __粗体__ → 粗体
+      .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+      .replace(/__([^_\n]+)__/g, '$1')
+      // *斜体* / _斜体_ → 斜体（避免误伤 URL 和乘号，要求两侧非空白且不与其他星号相连）
+      .replace(/(^|[^*\w])\*(\S(?:[^*\n]*?\S)?)\*(?!\*)/g, '$1$2')
+      .replace(/(^|[^_\w])_(\S(?:[^_\n]*?\S)?)_(?!_)/g, '$1$2')
+      // 行首标题 ### → 去掉井号
+      .replace(/^#{1,6}\s+/gm, '')
+      // 行首引用 > → 去掉
+      .replace(/^>\s?/gm, '')
+      // 无序列表标记 "- " / "* " / "+ " 保留缩进但去掉符号（保留换行结构）
+      .replace(/^[ \t]*[-*+]\s+/gm, '· ')
+  )
+})
 </script>
 
 <template>
@@ -41,7 +68,7 @@ const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl
     </div>
 
     <div class="bubble" :class="isUser ? 'bubble-user' : 'bubble-suzu'">
-      <span class="content">{{ message.content }}</span>
+      <span class="content">{{ displayContent }}</span>
       <!-- 流式光标：闪烁 -->
       <span v-if="isStreaming" class="cursor">▍</span>
       <!-- 中断提示 -->
