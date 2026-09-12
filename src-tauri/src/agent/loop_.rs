@@ -69,6 +69,41 @@ fn is_read_only_tool(name: &str) -> bool {
     READ_ONLY_TOOLS.contains(&name)
 }
 
+/// 合并相邻的同角色 user 消息。
+///
+/// 为什么需要：我们的消息流天然会出现「连续两条 user」——
+/// 记忆注入、经验提示、任务拆解都是直接 push 进去的，中间没有 assistant 回应。
+/// 后果有两层：
+///   1. 语义混乱：两段 user 文字之间没有 assistant 回复，模型容易读串；
+///   2. **直接报错**：Anthropic 原生 API 与部分严格的 OpenAI 兼容中转，
+///      遇到连续同角色消息会返回 400，整个 Agent 直接跑不起来。
+///
+/// 只合并 `user`：`assistant` 可能带 tool_calls、`tool` 带 tool_call_id，
+/// 合并它们会破坏工具调用协议。
+///
+/// 非字符串 content（例如多模态数组）不参与合并，原样保留，避免静默丢内容。
+fn normalize_roles(messages: &[Value]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    for m in messages {
+        if m.get("role").and_then(|r| r.as_str()) == Some("user") {
+            if let Some(last) = out.last_mut() {
+                let last_is_user = last.get("role").and_then(|r| r.as_str()) == Some("user");
+                if last_is_user {
+                    if let (Some(a), Some(b)) = (
+                        last.get("content").and_then(|c| c.as_str()),
+                        m.get("content").and_then(|c| c.as_str()),
+                    ) {
+                        *last = json!({ "role": "user", "content": format!("{a}\n\n{b}") });
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(m.clone());
+    }
+    out
+}
+
 #[cfg(test)]
 mod parallel_tests {
     use super::*;
@@ -134,6 +169,54 @@ mod parallel_tests {
         let n = sorted.len();
         sorted.dedup();
         assert_eq!(n, sorted.len(), "白名单里有重复项");
+    }
+
+    #[test]
+    fn 归一化_合并连续的_user() {
+        // 这正是现实里的消息流：任务 / 经验提示 / 任务拆解 连着三条 user
+        let msgs = vec![
+            json!({"role": "system", "content": "S"}),
+            json!({"role": "user", "content": "任务"}),
+            json!({"role": "user", "content": "经验"}),
+            json!({"role": "user", "content": "计划"}),
+        ];
+        let out = normalize_roles(&msgs);
+        assert_eq!(out.len(), 2, "三条连续 user 应合并成一条");
+        let c = out[1]["content"].as_str().unwrap();
+        assert!(c.contains("任务") && c.contains("经验") && c.contains("计划"), "内容不能丢");
+    }
+
+    #[test]
+    fn 归一化_绝不合并_assistant_与_tool() {
+        // assistant 可能带 tool_calls、tool 带 tool_call_id，合并会破坏工具调用协议
+        let msgs = vec![
+            json!({"role": "user", "content": "U"}),
+            json!({"role": "assistant", "content": "A"}),
+            json!({"role": "tool", "tool_call_id": "1", "content": "T"}),
+            json!({"role": "tool", "tool_call_id": "2", "content": "T2"}),
+        ];
+        assert_eq!(normalize_roles(&msgs).len(), 4, "非 user 消息一律不许动");
+    }
+
+    #[test]
+    fn 归一化_非字符串内容不参与合并() {
+        // 多模态数组内容若被当成空字符串合并，会把图片静默丢掉
+        let msgs = vec![
+            json!({"role": "user", "content": [{"type": "text", "text": "看图"}]}),
+            json!({"role": "user", "content": "文字"}),
+        ];
+        assert_eq!(normalize_roles(&msgs).len(), 2, "含非字符串 content 时保持原样");
+    }
+
+    #[test]
+    fn 归一化_正常交替对话不受影响() {
+        let msgs = vec![
+            json!({"role": "system", "content": "S"}),
+            json!({"role": "user", "content": "你好"}),
+            json!({"role": "assistant", "content": "你好呀"}),
+            json!({"role": "user", "content": "在吗"}),
+        ];
+        assert_eq!(normalize_roles(&msgs).len(), 4, "角色本身就交替，不该有任何改动");
     }
 }
 
@@ -293,8 +376,16 @@ pub async fn run_agent_loop(
                 "role": "user",
                 "content": "已达到最大工具调用步数，请基于已执行的结果，用自然语言向用户总结当前进度和完成情况，不要再调用任何工具。"
             }));
+            // 兜底：这一步只是「生成总结」而不是干活，失败也必须降级返回 ——
+            // 原本这里用了 `?`，一旦网络抖动，整个 Agent 请求就变成报错，前端什么内容都收不到。
             let summary = call_llm_text(&client, &url, &key, &model, &messages, temperature, top_p)
-                .await?;
+                .await
+                .unwrap_or_else(|e| {
+                    log::warn!("[agent] 超步总结调用失败，降级返回：{e}");
+                    format!(
+                        "已经连续执行了 {max_steps} 步并停下。上面是实际做过的操作，但我没能生成总结（模型调用失败）。"
+                    )
+                });
             // 流式推送：进度提示 + 最终总结
             emitter.push_progress("已达到最大工具调用步数，为你总结当前进度…");
             emitter.push_final_reply(&summary);
@@ -545,7 +636,8 @@ async fn call_llm(
 ) -> Result<Value, AppError> {
     let mut body = json!({
         "model": model,
-        "messages": messages,
+        // 发请求前合并连续的 user 消息，避免严格 API 报 400
+        "messages": normalize_roles(messages),
         // 规整到 2 位小数（部分中转 API 严格限制，超出即 400）
         "temperature": engine::round2(temperature),
         "top_p": engine::round2(top_p),
@@ -584,7 +676,8 @@ async fn call_llm_text(
 ) -> Result<String, AppError> {
     let body = json!({
         "model": model,
-        "messages": messages,
+        // 发请求前合并连续的 user 消息，避免严格 API 报 400
+        "messages": normalize_roles(messages),
         // 规整到 2 位小数（部分中转 API 严格限制，超出即 400）
         "temperature": engine::round2(temperature),
         "top_p": engine::round2(top_p),
