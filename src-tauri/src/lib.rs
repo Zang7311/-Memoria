@@ -178,6 +178,7 @@ pub fn run() {
             greet,
             // —— AI-10 Agent 命令 ——
             commands::agent_run::agent_run,
+            commands::agent_cancel::agent_cancel,
             commands::send_message::send_message,
             commands::test_connection::test_api_connection,
             // —— AI-4 记忆命令 ——

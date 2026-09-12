@@ -21,6 +21,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
+use crate::agent::cancel;
 use crate::agent::evaluator;
 use crate::agent::experience;
 use crate::agent::planner;
@@ -220,6 +221,15 @@ mod parallel_tests {
     }
 }
 
+// 说明：这里曾经放过一个 `cancel_tests` 模块，但它只断言了 `cancel::is_cancelled`
+// 的返回值，**根本没测到 run_agent_loop 的中断行为**（名字却叫「循环应正常继续」
+// 「中断后返回 Ok」），既与 cancel.rs 的测试重复，又制造了「已经验证过」的假象。
+// loop_ 级集成验证需要 AppHandle，单元测试做不了 —— 所以删掉，而不是留着骗自己。
+// 真正的保障分工：
+//   - 取消标志本身的正确性   → cancel.rs 的测试
+//   - 「无论从哪条路返回都清理」→ CancelGuard 的 Drop 从结构上保证（cancel.rs）
+//   - 端到端行为             → 真机手测（运行中点停止按钮）
+
 /// 单条工具结果的最大字符数（超出截断，防上下文爆炸）
 const TOOL_RESULT_MAX_CHARS: usize = 2000;
 
@@ -252,6 +262,19 @@ fn api_config() -> Result<(String, String, String), AppError> {
     Ok((base, key, model))
 }
 
+/// 构造「用户中断」响应并推送中断通知
+fn interrupted_response(emitter: &StreamEmitter, steps: usize) -> AgentRunResponse {
+    let msg = format!("好，我已经停下来了。刚才做到第 {steps} 步。");
+    emitter.push_final_reply(&msg);
+    AgentRunResponse {
+        success: true,
+        final_reply: Some(msg),
+        steps,
+        error: None,
+        interrupted: true,
+    }
+}
+
 /// Agent 循环主入口
 pub async fn run_agent_loop(
     app: &AppHandle,
@@ -259,6 +282,13 @@ pub async fn run_agent_loop(
 ) -> Result<AgentRunResponse, AppError> {
     let (base, key, model) = api_config()?;
     let depth = config::store::get_config().depth;
+
+    // 注册取消标志 + RAII 守卫。
+    // ⚠️ 必须用守卫，不能靠「每个 return 前手写 cleanup」——函数里一旦出现
+    // `?` 提前返回（如 call_llm(...).await?、.ok_or_else(...)?），手写清理就会被
+    // 跳过，条目永久留在全局表里泄漏。守卫的 Drop 保证无论从哪条路返回都清理。
+    let _request_id = request.request_id.clone();
+    let _cancel_guard = cancel::CancelGuard::new(&_request_id);
 
     // 流式发射器：后续所有进度提示与最终回复都通过它推给前端。
     // progress_events 由请求控制（默认 true），关闭时只推最终回复。
@@ -321,6 +351,12 @@ pub async fn run_agent_loop(
             .iter()
             .any(|k| request.task.contains(k));
 
+    // 取消检查点：任务规划前
+    if cancel::is_cancelled(&_request_id) {
+
+        return Ok(interrupted_response(&emitter, 0));
+    }
+
     if looks_multi_step {
         log::info!("[agent] 任务较长，启用多步规划");
         let tool_names: Vec<String> = tools
@@ -370,6 +406,12 @@ pub async fn run_agent_loop(
 
     loop {
         steps += 1;
+        // 取消检查点：每轮开头
+        if cancel::is_cancelled(&_request_id) {
+
+            return Ok(interrupted_response(&emitter, steps - 1));
+        }
+
         if steps > max_steps {
             // 超过步数：强制总结
             messages.push(json!({
@@ -389,11 +431,13 @@ pub async fn run_agent_loop(
             // 流式推送：进度提示 + 最终总结
             emitter.push_progress("已达到最大工具调用步数，为你总结当前进度…");
             emitter.push_final_reply(&summary);
+
             return Ok(AgentRunResponse {
                 success: true,
                 final_reply: Some(summary),
                 steps,
                 error: None,
+                interrupted: false,
             });
         }
 
@@ -407,6 +451,12 @@ pub async fn run_agent_loop(
             max_steps,
             t_llm.elapsed().as_millis()
         );
+
+        // 取消检查点：call_llm 返回后立即检查（省掉等待一轮再发现）
+        if cancel::is_cancelled(&_request_id) {
+
+            return Ok(interrupted_response(&emitter, steps));
+        }
 
         // 解析：tool_calls 还是纯文本？
         let choice = resp
@@ -426,6 +476,12 @@ pub async fn run_agent_loop(
             .unwrap_or(false);
 
         if has_tool_calls {
+            // 取消检查点：工具调用之前（已启动的进程无法杀，但不再发起新的）
+            if cancel::is_cancelled(&_request_id) {
+
+                return Ok(interrupted_response(&emitter, steps));
+            }
+
             // 把 assistant 消息（含 tool_calls）追加进消息流
             messages.push(json!({ "role": "assistant", "content": message.get("content"), "tool_calls": tool_calls }));
 
@@ -528,6 +584,7 @@ pub async fn run_agent_loop(
             .unwrap_or("")
             .to_string();
         if content.is_empty() {
+
             return Err(AppError::InternalError("LLM 返回空回复".into()));
         }
         // 【任务完成自评】依据 Anthropic 的 evaluator-optimizer 模式：
@@ -570,12 +627,14 @@ pub async fn run_agent_loop(
             );
         }
 
+
         return Ok(AgentRunResponse {
-            success: true,
-            final_reply: Some(content),
-            steps,
-            error: None,
-        });
+                success: true,
+                final_reply: Some(content),
+                steps,
+                error: None,
+                interrupted: false,
+            });
     }
 }
 

@@ -687,11 +687,17 @@ export function quitApp(): Promise<void> {
 import type { AgentRunRequest, AgentRunResponse } from '../types'
 
 /** 执行 Agent 任务（多轮 function calling 循环，进度通过 chat_chunk/chat_end 流式推送） */
-export function agentRun(task: string, opts?: { max_steps?: number; progress_events?: boolean }): Promise<AgentRunResponse> {
+export function agentRun(task: string, requestId: string, opts?: { max_steps?: number; progress_events?: boolean }): Promise<AgentRunResponse> {
   const request: AgentRunRequest = {
     task,
+    request_id: requestId,
     max_steps: opts?.max_steps ?? 10,
     progress_events: opts?.progress_events ?? true,
   }
   return invoke('agent_run', { request })
+}
+
+/** 取消正在运行的 Agent 任务 */
+export function agentCancel(requestId: string): Promise<void> {
+  return invoke('agent_cancel', { requestId })
 }

@@ -11,7 +11,7 @@ import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { sendMessage, agentRun, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
+import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
 import type { ChatUsage, QuickCommand } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
@@ -27,6 +27,8 @@ export function useStreamRender() {
   const unlisteners = ref<UnlistenFn[]>([])
   // 当前正在流式的消息 id
   let activeId: string | null = null
+  // 当前 Agent 任务的 request_id（用于取消）
+  let activeRequestId: string | null = null
 
   // —— AI 工具箱意图检测：开启 ai_toolbox 且消息匹配工具意图时，直接执行工具箱工具 ——
   // AI 危险操作清单（不可逆/系统级，执行前需用户确认）
@@ -78,6 +80,7 @@ export function useStreamRender() {
   function handleEnd() {
     if (activeId) chat.finishStream(activeId)
     activeId = null
+    activeRequestId = null
     // 流式结束后把当前会话保存到后端（多会话持久化）
     chat.saveCurrentSession().catch(() => {})
   }
@@ -86,6 +89,7 @@ export function useStreamRender() {
   function handleError(_error: string) {
     if (activeId) chat.errorStream(activeId)
     activeId = null
+    activeRequestId = null
     chat.saveCurrentSession().catch(() => {})
   }
 
@@ -238,15 +242,31 @@ export function useStreamRender() {
     chat.addMessage(userMsg)
     chat.addMessage(assistantMsg)
     activeId = assistantId
+    // 生成本次任务的唯一 request_id，供取消使用
+    const requestId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    activeRequestId = requestId
     chat.beginStream(assistantId)
 
     try {
-      await agentRun(task)
-      // 后端会通过 chat_chunk/chat_end 推送进度与最终回复，handleEnd 会在事件到达时被调用
+      const result = await agentRun(task, requestId)
+      // interrupted=true 时后端已经推送了「已停下来了」的文本并发出 chat_end，
+      // handleEnd 已经正常收尾；此处不需要额外操作。
+      void result
     } catch (e) {
       console.warn('[agent_run] 调用失败：', e)
       handleChunk(`Agent 执行出错：${e}`)
       handleEnd()
+    }
+  }
+
+  // 取消正在运行的 Agent 任务
+  async function cancelAgent() {
+    if (!activeRequestId) return
+    const rid = activeRequestId
+    try {
+      await agentCancel(rid)
+    } catch (e) {
+      console.warn('[agent_cancel] 调用失败：', e)
     }
   }
 
@@ -265,5 +285,5 @@ export function useStreamRender() {
     unlisteners.value = []
   })
 
-  return { send, sendAgent }
+  return { send, sendAgent, cancelAgent }
 }

@@ -500,6 +500,7 @@ export interface VersionInfo {
 /** Agent 运行请求 */
 export interface AgentRunRequest {
   task: string
+  request_id: string
   max_steps: number
   progress_events: boolean
 }
@@ -510,6 +511,8 @@ export interface AgentRunResponse {
   final_reply: string | null
   steps: number
   error: string | null
+  /** 是否被用户主动中断（true = 用户点了停止，不是错误） */
+  interrupted: boolean
 }
 
 /** 检查更新响应 */

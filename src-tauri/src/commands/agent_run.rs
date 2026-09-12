@@ -18,6 +18,9 @@ use crate::error::AppError;
 pub struct AgentRunRequest {
     /// 用户的自然语言任务描述
     pub task: String,
+    /// 任务唯一标识（前端生成，供 agent_cancel 定位）
+    #[serde(default = "default_request_id")]
+    pub request_id: String,
     /// 最大工具调用步数（防止无限循环，默认 10）
     #[serde(default = "default_max_steps")]
     pub max_steps: usize,
@@ -26,6 +29,13 @@ pub struct AgentRunRequest {
     pub progress_events: bool,
 }
 
+fn default_request_id() -> String {
+    // 未传时用时间戳兜底，保证唯一性
+    format!("agent_{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis())
+}
 fn default_max_steps() -> usize {
     10
 }
@@ -40,6 +50,8 @@ pub struct AgentRunResponse {
     pub final_reply: Option<String>,
     pub steps: usize,
     pub error: Option<String>,
+    /// 是否被用户主动中断（true = 用户点了停止，不是错误）
+    pub interrupted: bool,
 }
 
 /// Agent 任务入口（Tauri 命令）
