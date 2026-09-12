@@ -230,6 +230,10 @@ export interface AppConfig {
   context_length: number
   /** 长期记忆注入条数：按相关性检索后注入这么多条（0 = 完全不注入长期记忆） */
   long_term_memory_limit: number
+  /** 难度路由用的便宜模型名：留空 = 关闭路由（所有消息都走 api_model） */
+  cheap_model?: string | null
+  /** Agent 任务完成后自检（只对「调用过工具」的任务生效，纯聊天零开销） */
+  self_check_enabled: boolean
   api_base_url?: string | null
   /**
    * 是否已配置 API Key（明文或密文任一存在）。

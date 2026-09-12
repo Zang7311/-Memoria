@@ -21,6 +21,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
+use crate::agent::evaluator;
 use crate::agent::experience;
 use crate::agent::planner;
 use crate::agent::recovery;
@@ -222,6 +223,10 @@ pub async fn run_agent_loop(
     let max_steps = request.max_steps.min(HARD_MAX_STEPS);
     // 本次任务实际调用过的工具（成功结束后沉淀成经验）
     let mut used_tools: Vec<String> = Vec::new();
+    // 动作账本：工具名 → 结果，供「任务完成自评」核对是不是真做成了
+    let mut action_log: Vec<String> = Vec::new();
+    // 自评只做一次 —— 避免「未通过 → 补一轮 → 又未通过」无限循环
+    let mut self_checked = false;
     let client = reqwest::Client::new();
     let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(&base));
     let (temperature, top_p, _) = engine::apply_depth(depth);
@@ -410,6 +415,9 @@ pub async fn run_agent_loop(
                         }
                     };
 
+                    // 记进「动作账本」：任务完成自评要靠它核对「是不是真做成了」
+                    action_log.push(format!("{fn_name} → {content}"));
+
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": call_id,
@@ -431,6 +439,32 @@ pub async fn run_agent_loop(
         if content.is_empty() {
             return Err(AppError::InternalError("LLM 返回空回复".into()));
         }
+        // 【任务完成自评】依据 Anthropic 的 evaluator-optimizer 模式：
+        // 动手类任务先让独立一次调用核对「是不是真的做成了」，再决定要不要收尾。
+        // 纯聊天不触发（used_tools 为空直接跳过）= 零额外开销；
+        // 只做一次，未通过就补一轮，补完无论结果如何都收尾 —— 绝不无限循环。
+        if cfg.self_check_enabled && !used_tools.is_empty() && !self_checked {
+            self_checked = true;
+            if let Some(v) =
+                evaluator::evaluate(&client, &url, &key, &model, &request.task, &action_log, &content)
+                    .await
+            {
+                if !v.done {
+                    log::warn!("[agent] 自检未通过：{}", v.reason);
+                    emitter.push_progress("让我再确认一下…");
+                    messages.push(json!({
+                        "role": "user",
+                        "content": format!(
+                            "【验收未通过】{}\n请继续把这个任务做完；如果确实做不到，就直说卡在哪里，不要谎报成功。",
+                            v.reason
+                        )
+                    }));
+                    continue;
+                }
+                log::info!("[agent] 自检通过");
+            }
+        }
+
         // 流式推送最终回复（漏了这里会导致前端收不到）
         emitter.push_final_reply(&content);
 
