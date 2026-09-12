@@ -202,8 +202,17 @@ pub fn record(task: &str, tools: &[String]) {
     }
 }
 
+/// 写锁：`record_at` 是「读 → 改 → 写」三步。两个任务同时收尾时会各读旧列表、各写回，
+/// 后写的覆盖先写的（丢一条经验）；更坏的情况是两次 `fs::write` 交叉把 JSON 写截断 ——
+/// 下次读取解析失败会退化成空库，**整个经验库全丢**。
+/// 这个函数里没有 await，用标准库 Mutex 就够（不要用 tokio 的，也别跨 await 持有）。
+static EXP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// 针对指定经验库文件记录（测试走这条，逻辑与线上完全一致）
 fn record_at(path: &std::path::Path, task: &str, tools: &[String]) {
+    // 把「读 → 改 → 写」串行化，并发调用时不会互相踩踏
+    let _guard = EXP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     if task.trim().is_empty() || tools.is_empty() {
         return;
     }

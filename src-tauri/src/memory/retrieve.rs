@@ -41,8 +41,11 @@ pub fn retrieve_long_term(all: &[Memory], query: &str, limit: usize) -> Vec<Memo
     let mut picked: Vec<Memory> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    // 1) important 保底：用户显式标过的重要记忆，最多 IMPORTANT_MAX 条（取最新的）
-    let important_quota = IMPORTANT_MAX.min(limit / 2).max(1);
+    // 1) important 保底：用户显式标过的重要记忆，最多 IMPORTANT_MAX 条（取最新的）。
+    //    ⚠️ 不能写 .max(1)：limit = 1 时「2.min(0).max(1) = 1」会把唯一的名额全给
+    //    important，相关性检索与时间兜底彻底没有机会 —— 反而违背「按相关性挑」的初衷。
+    //    limit 很小时允许 important_quota = 0，让相关性做主。
+    let important_quota = IMPORTANT_MAX.min(limit / 2);
     if important_quota > 0 {
         for m in all.iter().rev().filter(|m| is_important(m)) {
             if picked.len() >= important_quota {
@@ -126,6 +129,19 @@ mod tests {
     fn 上限为0时不注入() {
         let all = vec![mem("1", "主人喜欢猫", false)];
         assert!(retrieve_long_term(&all, "猫", 0).is_empty());
+    }
+
+    #[test]
+    fn 上限为1时按相关性挑而不是被important独占() {
+        // 回归测试：曾经写成 `IMPORTANT_MAX.min(limit / 2).max(1)`，
+        // limit=1 时算出来是 1 —— 唯一的名额全给 important，
+        // 相关性检索和时间兜底彻底没机会，等于没做检索。
+        let mut all = vec![mem("imp", "主人的生日是 3 月 14 日", true)];
+        all.push(mem("rel", "主人最喜欢的游戏是千恋万花", false));
+
+        let got = retrieve_long_term(&all, "我喜欢的游戏是什么", 1);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].id, "rel", "limit=1 时应给最相关的那条，而不是 important");
     }
 
     #[test]
