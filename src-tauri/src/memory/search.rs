@@ -390,9 +390,22 @@ mod tests {
     #[test]
     fn vector_model_status() {
         let status = check_vector_model();
-        // 无模型文件时应返回 available=false
         if !status.available {
-            assert!(status.message.contains("未安装"));
+            // 不可用时必须给出「可操作的提示」：说明缺什么、该放到哪里。
+            // 注意：不要断言具体措辞（这里曾经断言 contains("未安装")，
+            // 而源码写的是「未完整安装」，中间夹了「完整」两字导致断言永远不成立，
+            // 且只有「本机没装模型」时才会走到这个分支，所以长期被误当成环境问题）。
+            assert!(!status.message.is_empty(), "不可用时应给出说明文字");
+            assert!(
+                status.message.contains("models")
+                    || status.message.contains("model.safetensors")
+                    || status.message.contains("config.json"),
+                "不可用时应告诉用户模型该放在哪里 / 缺哪些文件，实际：{}",
+                status.message
+            );
+        } else {
+            // 可用时应回报模型所在位置
+            assert!(!status.message.is_empty(), "可用时也应给出模型路径说明");
         }
     }
 
