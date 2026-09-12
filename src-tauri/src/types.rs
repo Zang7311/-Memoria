@@ -508,10 +508,20 @@ pub struct AppConfig {
     /// API 模型名（如 gpt-4o-mini / deepseek-chat），默认 gpt-3.5-turbo
     #[serde(default = "default_api_model")]
     pub api_model: String,
+    /// 难度路由用的「便宜模型」名（如 deepseek-v4-flash）。
+    /// 留空 = 关闭路由（默认），所有消息都用 api_model，行为与旧版完全一致。
+    /// 填了之后：闲聊/短消息走它省钱，任务类消息仍走 api_model 保质量。
+    #[serde(default)]
+    pub cheap_model: Option<String>,
     /// 视觉（看图）专用模型名，如 glm-4v。
     /// 留空则回退到 api_model；填了就用它做「看图」。
     #[serde(default)]
     pub vision_model: Option<String>,
+    /// Agent 任务完成后的「自我检查」开关（默认开启）。
+    /// 只对「真的动了手」（调用过工具）的任务生效，纯聊天不受影响、零额外开销。
+    /// 开启后由独立一次模型调用核对任务是否真的完成，未完成则再补一轮，减少「假装完成」。
+    #[serde(default = "default_true")]
+    pub self_check_enabled: bool,
     /// "script" | "api" | "local"
     pub model_mode: String,
     /// 思考深度 1|2|3|4

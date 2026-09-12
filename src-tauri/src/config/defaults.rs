@@ -11,6 +11,10 @@ pub fn default_config() -> AppConfig {
         context_length: 10,
         // 长期记忆按相关性注入 5 条（0 = 关闭长期记忆注入）
         long_term_memory_limit: 5,
+        // 难度路由：留空 = 关闭（所有消息都用 api_model）
+        cheap_model: None,
+        // 任务完成自检：默认开启，但只对「调用过工具」的任务生效
+        self_check_enabled: true,
         api_base_url: None,
         api_key_encrypted: None,
         api_key_plain: None,

@@ -93,6 +93,8 @@ const exportPath = ref('')
 const modelMode = ref<'script' | 'api' | 'local'>('script')
 const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
+/** 便宜模型：留空 = 关闭难度路由，所有消息都走 apiModel */
+const cheapModel = ref('')
 const apiKeyInput = ref('')
 const depth = ref(2)
 // 离线语义检索模型（bge, 方案3）状态
@@ -285,6 +287,7 @@ function syncFromStore() {
   modelMode.value = setting.modelMode
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
   apiModel.value = setting.apiModel
+  cheapModel.value = setting.cheapModel ?? ''
   depth.value = setting.depth
   mixRate.value = setting.languageMixRate
   selfName.value = setting.selfName
@@ -385,6 +388,7 @@ async function saveModel() {
       model_mode: modelMode.value,
       api_base_url: apiBaseUrl.value.trim() || null,
       api_model: apiModel.value.trim() || 'gpt-3.5-turbo',
+      cheap_model: cheapModel.value.trim() || null,
       depth: depth.value,
     })
     generalMsg.value = '✓ 模型设置已保存'
@@ -684,6 +688,15 @@ async function toggleAiToolbox() {
             <span class="label">允许下载文件</span>
           </label>
           <p class="hint" style="margin-left:48px">开启后铃可以下载文件到本地</p>
+          <!-- 任务完成自检：不是权限，是 Agent 的自律开关，所以放在权限开关前面 -->
+          <label class="switch-wrap" style="margin-top:8px">
+            <input type="checkbox" :checked="setting.selfCheckEnabled" class="switch"
+              @change="setting.selfCheckEnabled = !setting.selfCheckEnabled; setting.update({ self_check_enabled: setting.selfCheckEnabled })" />
+            <span class="label">任务完成后自检</span>
+          </label>
+          <p class="hint" style="margin-left:48px">
+            铃动手做完事后，额外让模型核对一遍「是不是真的做成了」；没做成会自动再补一轮。只对动手的任务生效，纯聊天不额外花钱。
+          </p>
           <label class="switch-wrap" style="margin-top:8px">
             <input type="checkbox" :checked="setting.agentAllowSoftware" class="switch"
               @change="setting.agentAllowSoftware = !setting.agentAllowSoftware; setting.update({ agent_allow_software: setting.agentAllowSoftware })" />
@@ -832,6 +845,13 @@ async function toggleAiToolbox() {
               <datalist id="model-presets">
                 <option v-for="m in MODEL_PRESETS" :key="m" :value="m" />
               </datalist>
+            </div>
+            <div class="field">
+              <label>便宜模型（可选 · 用来省 token）</label>
+              <input v-model="cheapModel" class="input long" list="model-presets" placeholder="留空 = 不启用；例如 deepseek-v4-flash" />
+              <p class="hint">
+                填了之后：闲聊、短消息自动走这个便宜的模型；要动手干活的任务仍走上面的主力模型。留空则全部走主力模型（默认，最稳）。
+              </p>
             </div>
             <div class="row">
               <button class="btn ghost" :disabled="testing" @click="testConnection">

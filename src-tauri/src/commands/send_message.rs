@@ -55,7 +55,21 @@ async fn generate_and_emit(
         context_length: cfg.context_length,
         api_base_url: cfg.api_base_url.clone(),
         api_key: decrypt_api_key(&cfg)?,
-        api_model: cfg.api_model.clone(),
+        api_model: {
+            // 难度路由：闲聊走便宜模型、任务类走主力模型。
+            // 未配置 cheap_model 时 pick_model 一律返回主力模型 = 路由关闭，行为与旧版一致。
+            let picked = crate::engine::model_router::pick_model(
+                input,
+                false, // 本命令不接收图片，天然无视觉风险
+                false, // Agent 模式走 agent_run，是另一条独立入口
+                cfg.cheap_model.as_deref(),
+                &cfg.api_model,
+            );
+            if picked != cfg.api_model {
+                log::info!("[router] 闲聊走便宜模型 {picked}（主力 {}）", cfg.api_model);
+            }
+            picked
+        },
         model_mode: cfg.model_mode.clone(),
         depth: cfg.depth,
         self_name: cfg.self_name.clone(),

@@ -2,6 +2,8 @@
 pub mod script;
 pub mod api;
 pub mod local;
+// 难度路由：闲聊走便宜模型、任务走主力模型（默认关闭，见 model_router.rs）
+pub mod model_router;
 
 /// 思考深度映射表：depth -> (temperature, top_p, reasoning_effort)
 /// 在 API 模式与本地模式中应用
