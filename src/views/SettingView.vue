@@ -706,6 +706,21 @@ async function toggleAiToolbox() {
         </section>
 
         <section class="card">
+          <div class="card-title">长期记忆</div>
+          <div class="field">
+            <label>每次注入条数</label>
+            <input v-model.number="setting.longTermMemoryLimit" type="range" min="0" max="20" step="1" class="range"
+              @change="setting.update({ long_term_memory_limit: setting.longTermMemoryLimit })" />
+            <span class="label">
+              当前：{{ setting.longTermMemoryLimit }} 条{{ setting.longTermMemoryLimit === 0 ? '（已关闭长期记忆）' : '' }}
+            </span>
+            <p class="hint">
+              铃会按「跟你这句话的相关性」，从过往记忆里挑出最相关的几条一起送进对话。条数越多越不容易忘事，但也更费 token；设为 0 则完全不注入长期记忆（当前会话的聊天记录不受影响，照旧连续）。
+            </p>
+          </div>
+        </section>
+
+        <section class="card">
           <div class="card-title">开机自启动</div>
           <label class="switch-wrap">
             <input v-model="autostart" type="checkbox" class="switch" @change="toggleAutostart" />

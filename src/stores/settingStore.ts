@@ -40,6 +40,8 @@ export const useSettingStore = defineStore('setting', () => {
   const agentAllowFileWrite = ref(false)
   const agentAllowShell = ref(false)
   const contextLength = ref(10)
+  /** 长期记忆注入条数（按相关性检索后注入；0 = 不注入） */
+  const longTermMemoryLimit = ref(5)
   const apiBaseUrl = ref<string | null>(null)
   /** 是否已配置 API Key（明文或密文任一存在）。后端只下发布尔，不下发 Key 内容 */
   const _hasApiKey = ref<boolean>(false)
@@ -97,6 +99,8 @@ export const useSettingStore = defineStore('setting', () => {
     agentAllowFileWrite.value = c.agent_allow_file_write ?? false
     agentAllowShell.value = c.agent_allow_shell ?? false
     contextLength.value = (typeof c.context_length === 'number' && c.context_length > 0) ? Math.min(c.context_length, 100) : 10
+    // 0 是合法值（表示不注入长期记忆），所以判据用 >= 0 而不是 > 0
+    longTermMemoryLimit.value = (typeof c.long_term_memory_limit === 'number' && c.long_term_memory_limit >= 0) ? Math.min(c.long_term_memory_limit, 20) : 5
     apiBaseUrl.value = c.api_base_url ?? null
     _hasApiKey.value = !!c.has_api_key
     _apiKeyPlain.value = !!c.has_plain_key
@@ -260,7 +264,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, apiBaseUrl, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
+    theme, contextLength, longTermMemoryLimit, apiBaseUrl, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,

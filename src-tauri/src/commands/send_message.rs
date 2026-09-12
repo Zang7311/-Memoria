@@ -96,21 +96,32 @@ async fn generate_and_emit(
                     );
                 }
             }
-            // 2) 全局重要记忆兜底（不与会话消息重复时补充）
+            // 2) 长期记忆：按「与当前输入的相关性」检索，而不是按重要标签/时间硬取。
+            //    短期（当前会话历史）已在上面通读，这里只补跨会话的长期记忆，省 token 又不漏。
+            let long_term =
+                memory::retrieve::retrieve_long_term(&all_memories, input, cfg.long_term_memory_limit as usize);
+
             if !ctx.is_empty() {
-                // 已有会话上下文：只补充全局 important 记忆（最多 context_length 条）
-                let important: Vec<crate::types::Memory> = all_memories
-                    .iter()
-                    .filter(|m| m.tags.as_ref().is_some_and(|t| t.iter().any(|x| x == "important")))
-                    .take(setting.context_length as usize)
-                    .cloned()
-                    .collect();
-                ctx.extend(important);
+                // 已有会话上下文：把检索到的长期记忆「按内容去重」后附加在后面，
+                // 避免跟刚聊过的内容重复占 token
+                let mut existing: std::collections::HashSet<String> =
+                    ctx.iter().map(|m| m.content.trim().to_string()).collect();
+                for m in long_term {
+                    let key = m.content.trim().to_string();
+                    if existing.insert(key) {
+                        ctx.push(m);
+                    }
+                }
+                log::info!(
+                    "[send_message] 上下文 = 会话 {} 条 + 长期记忆（相关性检索，上限 {}）",
+                    ctx.len(),
+                    cfg.long_term_memory_limit
+                );
                 ctx
             } else {
-                // 无会话：原行为——全局记忆最近 N 条 + important 加权
+                // 无会话：直接用相关性检索结果当上下文，再在 token 上限内截一次
                 context::loader::build_context(
-                    &all_memories,
+                    &long_term,
                     setting.context_length,
                     context_max_tokens(depth),
                 )

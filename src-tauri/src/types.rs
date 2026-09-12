@@ -494,6 +494,9 @@ pub struct AppConfig {
     pub theme: String,
     /// 上下文长度（对话保留条数，默认 10）
     pub context_length: u8,
+    /// 长期记忆注入条数（按相关性检索后注入，默认 5；设 0 则完全不注入长期记忆）
+    #[serde(default = "default_long_term_limit")]
+    pub long_term_memory_limit: u8,
     #[serde(default)]
     pub api_base_url: Option<String>,
     /// 加密存储的 API Key（AES-256-GCM，非明文）
@@ -666,6 +669,11 @@ fn default_config_version() -> u32 {
 /// 默认 API 模型名
 fn default_api_model() -> String {
     "gpt-3.5-turbo".to_string()
+}
+
+/// 默认长期记忆注入条数（按相关性检索后注入这么多条）
+fn default_long_term_limit() -> u8 {
+    5
 }
 
 /// 默认形象人格（日常）

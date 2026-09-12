@@ -21,9 +21,10 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
+use crate::agent::experience;
 use crate::agent::planner;
 use crate::agent::recovery;
-use crate::agent::router::dispatch_tool_call;
+use crate::agent::router::{dispatch_tool_call, ToolResult};
 use crate::agent::stream_progress::StreamEmitter;
 use crate::agent::tools::{build_tools, AgentPermissions};
 use crate::commands::agent_run::{AgentRunRequest, AgentRunResponse};
@@ -31,6 +32,109 @@ use crate::config;
 use crate::engine;
 use crate::error::AppError;
 use crate::types::Memory;
+
+/// 真正的「只读」工具白名单：只查询、不改变系统状态，因此可以并发执行。
+///
+/// 只要本轮出现任何一个不在名单里的工具（安装、写文件、鼠标键盘、关机…），
+/// 整批退回串行 —— 宁可慢一点，也不能让两个安装/写操作互相踩踏。
+const READ_ONLY_TOOLS: &[&str] = &[
+    "toolbox_agent_disk_space",
+    "toolbox_agent_sys_info",
+    "toolbox_agent_big_files",
+    "toolbox_agent_proc_list",
+    "toolbox_agent_service_list",
+    "toolbox_agent_startup_list",
+    "toolbox_agent_dev_env",
+    "toolbox_agent_web_search",
+    "toolbox_agent_web_fetch",
+    "toolbox_agent_installed_apps",
+    "toolbox_agent_winget_search",
+    "toolbox_agent_list_dir",
+    "toolbox_agent_read_file",
+    "toolbox_agent_search_files",
+    "toolbox_agent_search_content",
+    "toolbox_agent_screenshot",
+    "toolbox_agent_pdf_text",
+    "toolbox_agent_sheet_read",
+    "toolbox_agent_window_list",
+    "toolbox_agent_ocr",
+    "toolbox_agent_netdiag",
+    "toolbox_agent_hardware",
+    "toolbox_agent_look",
+];
+
+/// 该工具是否只读（可安全并发）
+fn is_read_only_tool(name: &str) -> bool {
+    READ_ONLY_TOOLS.contains(&name)
+}
+
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+
+    #[test]
+    fn 只读白名单_查询类放行() {
+        for t in [
+            "toolbox_agent_read_file",
+            "toolbox_agent_list_dir",
+            "toolbox_agent_disk_space",
+            "toolbox_agent_search_content",
+            "toolbox_agent_web_search",
+            "toolbox_agent_web_fetch",
+            "toolbox_agent_ocr",
+            "toolbox_agent_hardware",
+            "toolbox_agent_netdiag",
+            "toolbox_agent_look",
+        ] {
+            assert!(is_read_only_tool(t), "{t} 应该被判定为只读");
+        }
+    }
+
+    #[test]
+    fn 只读白名单_状态改变类一律拒绝() {
+        // 这些绝不能并发执行，否则可能互相踩踏（两个安装、两个写文件…）
+        for t in [
+            "toolbox_agent_winget_install",
+            "toolbox_agent_winget_uninstall",
+            "toolbox_agent_download",
+            "toolbox_agent_write_file",
+            "toolbox_agent_mkdir",
+            "toolbox_agent_delete_file",
+            "toolbox_agent_run_command",
+            "toolbox_agent_power",
+            "toolbox_agent_input_keyboard",
+            "toolbox_agent_input_mouse",
+            "toolbox_agent_window_control",
+            "toolbox_agent_registry",
+            "toolbox_agent_service",
+            "toolbox_agent_schtask",
+            "toolbox_agent_script",
+            "toolbox_agent_git",
+            "toolbox_agent_network",
+            "toolbox_agent_compress",
+            "toolbox_agent_extract",
+        ] {
+            assert!(!is_read_only_tool(t), "{t} 不该被当成只读工具并发执行");
+        }
+    }
+
+    #[test]
+    fn 只读白名单_未知工具保守拒绝() {
+        // 新增工具若忘了登记，必须退回串行 —— 保守优于冒进
+        assert!(!is_read_only_tool("toolbox_agent_brand_new_thing"));
+        assert!(!is_read_only_tool(""));
+        assert!(!is_read_only_tool("skill_file_search__by_keyword"));
+    }
+
+    #[test]
+    fn 只读白名单_无重复项() {
+        let mut sorted = READ_ONLY_TOOLS.to_vec();
+        sorted.sort();
+        let n = sorted.len();
+        sorted.dedup();
+        assert_eq!(n, sorted.len(), "白名单里有重复项");
+    }
+}
 
 /// 单条工具结果的最大字符数（超出截断，防上下文爆炸）
 const TOOL_RESULT_MAX_CHARS: usize = 2000;
@@ -105,9 +209,19 @@ pub async fn run_agent_loop(
     }
     messages.push(json!({ "role": "user", "content": request.task }));
 
+    // 经验记忆：命中相似任务时，把它上次成功的工具路线注入上下文。
+    // 纯文本注入、不额外花 LLM 往返，所以短任务也照样受益。
+    let exp_hint = experience::suggest(&request.task);
+    if let Some(h) = &exp_hint {
+        log::info!("[agent] 命中历史经验，已注入上下文");
+        messages.push(json!({ "role": "user", "content": h.clone() }));
+    }
+
     // 5. 循环
     let mut steps = 0usize;
     let max_steps = request.max_steps.min(HARD_MAX_STEPS);
+    // 本次任务实际调用过的工具（成功结束后沉淀成经验）
+    let mut used_tools: Vec<String> = Vec::new();
     let client = reqwest::Client::new();
     let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(&base));
     let (temperature, top_p, _) = engine::apply_depth(depth);
@@ -138,6 +252,7 @@ pub async fn run_agent_loop(
             &model,
             &request.task,
             &tool_names,
+            exp_hint.as_deref(),
         )
         .await;
         log::info!(
@@ -221,27 +336,52 @@ pub async fn run_agent_loop(
             // 逐个执行工具
             let calls = tool_calls.unwrap();
             if let Some(arr) = calls.as_array() {
-                for call in arr {
-                    let call_id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let fn_name = call
-                        .get("function")
-                        .and_then(|f| f.get("name"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let args_raw = call
-                        .get("function")
-                        .and_then(|f| f.get("arguments"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("{}")
-                        .to_string();
+                // 第一遍：把本轮所有 tool_call 解析出来
+                let batch: Vec<(String, String, HashMap<String, Value>)> = arr
+                    .iter()
+                    .map(|call| {
+                        let call_id = call
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let fn_name = call
+                            .get("function")
+                            .and_then(|f| f.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let args_raw = call
+                            .get("function")
+                            .and_then(|f| f.get("arguments"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("{}")
+                            .to_string();
+                        let args: HashMap<String, Value> =
+                            serde_json::from_str(&args_raw).unwrap_or_default();
+                        (call_id, fn_name, args)
+                    })
+                    .collect();
 
-                    // 解析参数
-                    let args: HashMap<String, Value> =
-                        serde_json::from_str(&args_raw).unwrap_or_default();
+                // 第二遍：执行。本轮「全是只读工具」才并发，否则严格按顺序串行。
+                let can_parallel =
+                    batch.len() > 1 && batch.iter().all(|(_, n, _)| is_read_only_tool(n));
 
-                    // 执行工具
-                    let result = dispatch_tool_call(app, &fn_name, &args).await;
+                let results: Vec<ToolResult> = if can_parallel {
+                    log::info!("[agent] 本轮 {} 个只读工具，并发执行", batch.len());
+                    let futs = batch.iter().map(|(_, n, a)| dispatch_tool_call(app, n, a));
+                    futures_util::future::join_all(futs).await
+                } else {
+                    let mut rs = Vec::with_capacity(batch.len());
+                    for (_, n, a) in batch.iter() {
+                        rs.push(dispatch_tool_call(app, n, a).await);
+                    }
+                    rs
+                };
+
+                // 第三遍：按原顺序把结果回填为 tool 消息
+                for ((call_id, fn_name, args), result) in batch.into_iter().zip(results) {
+                    used_tools.push(fn_name.clone());
 
                     // 结果摘要化后回传
                     let content = match result {
@@ -293,6 +433,18 @@ pub async fn run_agent_loop(
         }
         // 流式推送最终回复（漏了这里会导致前端收不到）
         emitter.push_final_reply(&content);
+
+        // 任务正常收尾：把「这个任务 → 用到的工具路线」沉淀成经验，下次少走弯路。
+        // 失败 / 超步数的分支不记录，避免把错误路线也学进去。
+        if !used_tools.is_empty() {
+            experience::record(&request.task, &used_tools);
+            log::info!(
+                "[agent] 已沉淀经验：本次用 {} 个工具，经验库共 {} 条",
+                used_tools.len(),
+                experience::count()
+            );
+        }
+
         return Ok(AgentRunResponse {
             success: true,
             final_reply: Some(content),
@@ -338,6 +490,7 @@ fn build_system_prompt(tools: &[Value]) -> String {
          7. 【严禁编造·重要】只汇报工具实际返回的结果。工具没被调用、或调用失败时，绝不能声称操作已经完成（例如说「已经帮你打开啦」「窗口应该弹出来了」）——那是在骗主人。必须如实说明「我没能做到，原因是…」。\n\
          8. 【没有合适工具时】如果工具列表里没有能完成该任务的能力，如实告诉用户「我现在的工具做不到这件事」，绝不要假装做了。\n\
          9. 【格式·重要】不要使用 Markdown 符号——星号（*）、井号（#）、反引号、下划线这些都不要用，聊天气泡不渲染它们，只会变成乱糟糟的符号。要强调语气就用 emoji 或颜文字，不要用加粗/斜体标记。\n\
+         10. 【动手后必须验证·重要】凡是会改变电脑状态的操作（启动或关闭软件、写删文件、安装卸载、改注册表或设置、关机等），做完之后必须再调用一次只读工具核对结果，确认真的生效了，才可以汇报成功。核对举例：启动软件后查进程或窗口列表；写完文件读回来看内容；安装或卸载后查已安装列表；改完启动项重新读一次注册表。核对没过就如实说明，绝不谎报成功。\n\
          \n\
          【重要】你只能调用上面列出的工具，不要调用不存在的工具。",
         tools.len(),
