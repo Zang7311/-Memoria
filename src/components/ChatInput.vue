@@ -9,7 +9,7 @@ import { useSettingStore } from '../stores/settingStore'
 
 const chat = useChatStore()
 const setting = useSettingStore()
-const { send, sendAgent } = useStreamRender()
+const { send, sendAgent, cancelAgent } = useStreamRender()
 
 const taRef = ref<HTMLTextAreaElement | null>(null)
 // Agent 模式开关
@@ -65,6 +65,15 @@ async function handleSend() {
       @keydown="onKeydown"
     ></textarea>
     <button
+      v-if="agentMode && chat.isLoading"
+      class="send-btn stop-btn"
+      title="停止"
+      @click="cancelAgent"
+    >
+      停止
+    </button>
+    <button
+      v-else
       class="send-btn"
       :disabled="chat.isLoading || !chat.inputText.trim()"
       title="发送"
@@ -145,5 +154,15 @@ async function handleSend() {
 .send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.stop-btn {
+  background: var(--danger, #d9534f);
+  color: #fff;
+  font-size: var(--fs-13, 13px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.stop-btn:hover {
+  transform: scale(1.06);
 }
 </style>

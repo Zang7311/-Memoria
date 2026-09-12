@@ -9,6 +9,7 @@
 //   - vision.rs          视觉理解（把图片送给多模态模型，实现「看图」）
 //   - experience.rs      经验记忆（成功的工具序列沉淀下来，下次复用少走弯路）
 //   - evaluator.rs       任务完成自评（独立一次调用核对任务是否真的完成，减少「假装完成」）
+pub mod cancel;
 pub mod evaluator;
 pub mod experience;
 pub mod loop_;
