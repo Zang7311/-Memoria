@@ -23,7 +23,7 @@ static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 /// - 有配置文件 → 迁移后加载
 /// - moon12：启动时先做旧版数据目录迁移（旧配置→新配置，配置就绪后旧记忆→新记忆）
 pub fn init(app: AppHandle) {
-    *APP.lock().unwrap() = Some(app.clone());
+    *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
 
     // moon12 ①：旧版配置迁移（仅当新配置不存在时复制，不覆盖用户数据）
     migration::migrate_legacy_config();
@@ -41,7 +41,7 @@ pub fn init(app: AppHandle) {
             }
         }
     };
-    *CONFIG.lock().unwrap() = Some(cfg);
+    *CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = Some(cfg);
 
     // moon12 ②：配置就绪后迁移旧记忆（依赖 data_path；幂等，只复制不覆盖）
     migration::migrate_legacy_memory(&app);
@@ -52,27 +52,25 @@ pub fn init(app: AppHandle) {
 
 /// 获取当前配置（克隆）
 pub fn get_config() -> AppConfig {
-    CONFIG.lock().unwrap().clone().unwrap_or_else(default_config)
+    CONFIG.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(default_config)
 }
 
 /// 保存并广播（写文件 + 更新缓存 + emit 事件）
 pub fn set_config(cfg: AppConfig) -> Result<(), AppError> {
     save_config_file(&cfg)?;
-    *CONFIG.lock().unwrap() = Some(cfg.clone());
+    *CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = Some(cfg.clone());
     notify_changed();
     Ok(())
 }
 
 /// 增量更新配置（仅更新传入字段，null 表示清除该字段）
-/// - 特殊字段 "api_key"（明文）：未解锁时拒绝；解锁后加密写入 api_key_encrypted
+/// - 特殊字段 "api_key"（明文）：已解锁时加密；未解锁时沿用明文存储
 /// - "api_key_encrypted"（已加密串）：未解锁时拒绝直接覆盖，需先解锁
 pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
     let mut cfg = get_config();
 
     // 处理明文 api_key（主密码可选：已解锁→加密存储；未设置主密码→明文存储）
     if let Some(v) = updates.get("api_key") {
-        let mut updates = updates.clone();
-        updates.remove("api_key");
         if v.is_null() {
             cfg.api_key_encrypted = None;
             cfg.api_key_plain = None;
@@ -94,7 +92,6 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
                 cfg.api_key_plain = Some(plain.to_string());
             }
         }
-        return update(&updates); // 递归处理其余字段
     }
 
     if let Some(value) = updates.get("cheap_api_key") {
@@ -110,7 +107,7 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
         .map_err(|e| AppError::ConfigSaveError(format!("配置序列化失败：{e}")))?;
     if let Value::Object(map) = &mut obj {
         for (k, v) in updates {
-            if k == "cheap_api_key" {
+            if k == "api_key" || k == "cheap_api_key" {
                 continue;
             }
             if k == "cheap_api_key_encrypted" {
@@ -286,7 +283,7 @@ fn save_config_file(cfg: &AppConfig) -> Result<(), AppError> {
 
 /// 广播配置变更事件
 fn notify_changed() {
-    if let Some(app) = APP.lock().unwrap().as_ref() {
+    if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         let _ = app.emit("config-changed", ());
     }
 }
@@ -294,6 +291,64 @@ fn notify_changed() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn api_keys_update_persists_without_losing_other_fields() {
+        const CHILD_MARKER: &str = "MEM_CONFIG_UPDATE_TEST_CHILD";
+        if std::env::var_os(CHILD_MARKER).is_none() {
+            // 子进程隔离全局配置与主密码状态，绝不改写用户配置或干扰并行测试。
+            let directory = std::env::temp_dir().join(format!("mem-config-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&directory).expect("test directory");
+            let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+                .args(["--exact", "config::store::tests::api_keys_update_persists_without_losing_other_fields", "--nocapture"])
+                .env(CHILD_MARKER, "1")
+                .env("USERPROFILE", &directory)
+                .output().expect("isolated config test");
+            std::fs::remove_dir_all(&directory).expect("remove test directory");
+            assert!(output.status.success(), "isolated config test failed: {}", String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+
+        encryption::clear_key();
+        set_config(default_config()).expect("initial config");
+        update(&HashMap::from([("api_key".into(), Value::String("sk-test".into()))])).expect("save main key");
+        assert_eq!(get_config().api_key_plain.as_deref(), Some("sk-test"));
+        update(&HashMap::from([("cheap_api_key".into(), Value::String("sk-cheap-test".into()))])).expect("save cheap key");
+        assert_eq!(get_config().cheap_api_key_plain.as_deref(), Some("sk-cheap-test"));
+
+        let updates = HashMap::from([
+            ("api_key".into(), Value::String("sk-new-main".into())),
+            ("cheap_api_key".into(), Value::String("sk-new-cheap".into())),
+            ("api_model".into(), Value::String("new-model".into())),
+        ]);
+        update(&updates).expect("save combined update");
+        for cfg in [get_config(), load_from_file().expect("persisted config")] {
+            assert_eq!(cfg.api_key_plain.as_deref(), Some("sk-new-main"));
+            assert_eq!(cfg.cheap_api_key_plain.as_deref(), Some("sk-new-cheap"));
+            assert_eq!(cfg.api_model, "new-model");
+            assert!(cfg.api_key_encrypted.is_none());
+            assert!(cfg.cheap_api_key_encrypted.is_none());
+            let response = serde_json::to_string(&crate::types::GetConfigResponse::from_config(&cfg).expect("public config")).expect("serialize public config");
+            assert!(!response.contains("sk-new-main"));
+            assert!(!response.contains("sk-new-cheap"));
+        }
+
+        let key = [42; encryption::KEY_LEN];
+        encryption::set_key(key);
+        update(&updates).expect("save encrypted update");
+        let cfg = load_from_file().expect("encrypted config");
+        assert!(cfg.api_key_plain.is_none());
+        assert!(cfg.cheap_api_key_plain.is_none());
+        assert_eq!(encryption::decrypt_with_key(&key, cfg.api_key_encrypted.as_deref().expect("main ciphertext")).expect("decrypt main"), "sk-new-main");
+        assert_eq!(encryption::decrypt_with_key(&key, cfg.cheap_api_key_encrypted.as_deref().expect("cheap ciphertext")).expect("decrypt cheap"), "sk-new-cheap");
+        encryption::clear_key();
+        for value in [Value::Null, Value::String(String::new())] {
+            update(&HashMap::from([("api_key".into(), value.clone()), ("cheap_api_key".into(), value)])).expect("clear keys");
+            let cfg = get_config();
+            assert!(cfg.api_key_plain.is_none() && cfg.api_key_encrypted.is_none());
+            assert!(cfg.cheap_api_key_plain.is_none() && cfg.cheap_api_key_encrypted.is_none());
+        }
+    }
 
     #[test]
     fn cheap_key_locked_saves_plaintext_and_clears_ciphertext() {

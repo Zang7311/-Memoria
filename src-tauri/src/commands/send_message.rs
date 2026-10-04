@@ -12,22 +12,25 @@ use tauri::AppHandle;
 /// 发送消息命令：启动流式对话，不阻塞等待完整生成
 /// session_id：当前会话 id（可选）。提供时用该会话的历史消息作为对话上下文主体，
 /// 并叠加全局重要记忆兜底——多会话之间不再串味。
+/// request_id：前端生成的回复消息 id，用于关联本次路由事件；旧调用方可省略。
 #[tauri::command]
 pub async fn send_message(
     app: AppHandle,
     content: String,
     depth: u8,
     session_id: Option<String>,
+    request_id: Option<String>,
 ) -> Result<SendMessageResponse, AppError> {
     let message_id = crate::utils::gen_id();
     let stream_id = crate::utils::gen_id();
     let input = content.clone();
+    let request_id = request_id.unwrap_or_else(crate::utils::gen_id);
 
     log::info!("[send_message] 收到消息 id={message_id} depth={depth} session={session_id:?}");
 
     // 立即返回，后台异步生成
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = generate_and_emit(&app, &input, depth, session_id.as_deref()).await {
+        if let Err(e) = generate_and_emit(&app, &input, depth, session_id.as_deref(), &request_id).await {
             log::error!("对话生成失败：{e}");
             // 尽力推送错误事件
             let _ = stream::sender::send_error(&app, &e.to_string());
@@ -46,6 +49,7 @@ async fn generate_and_emit(
     input: &str,
     depth: u8,
     session_id: Option<&str>,
+    request_id: &str,
 ) -> Result<(), AppError> {
     // 读取配置中心（AI-7 实现）：真实配置从 ~/.铃记忆体/config.json 加载，
     // 不再使用硬编码默认值（修复 API 无法接入的问题）
@@ -58,16 +62,12 @@ async fn generate_and_emit(
             .as_deref()
             .map(str::trim)
             .filter(|model| !model.is_empty());
-        // 主人规则（2026-10-04）：AI 判断只在「配置了 ≥2 个同类型模型」时才允许启用，
+        // 主人规则（2026-10-04）：仅 API 模式配置两个不同的同类型模型才允许 AI 判断，
         // 且是否开启始终由用户自己选（默认关闭）。
-        let ai_enabled = cfg.ai_router
-            && crate::engine::model_router::ai_router_allowed(
-                cfg.cheap_model.as_deref(),
-                &cfg.api_model,
-            );
+        let ai_enabled = ai_classification_enabled(&cfg);
         if cfg.ai_router && !ai_enabled {
             log::info!(
-                "[router] AI 判断未启用：需要两个同类型模型（当前未配便宜模型，或便宜/主力模型类型不同）"
+                "[router] AI 判断未启用：仅 API 模式且配置两个不同的同类型模型时允许"
             );
         }
         let verdict = if ai_enabled {
@@ -105,6 +105,8 @@ async fn generate_and_emit(
 
         // 供前端显示：这次是怎么选的模型（AI 判断 / 本地回退 / 未启用）
         let route_info = crate::types::ChatRouteInfo {
+            session_id: session_id.map(str::to_string),
+            request_id: request_id.to_string(),
             source: if ai_enabled {
                 if verdict.is_some() { "ai" } else { "local" }
             } else {
@@ -133,7 +135,7 @@ async fn generate_and_emit(
         }
         (picked, route_info)
     };
-    // 把「这次是怎么选的模型」推给前端显示
+    // 产品有意设计：关闭 AI 判断也推送路由，显示「本地规则（未开 AI 判断）」。
     let _ = crate::stream::sender::send_route(app, &route_info);
     let setting = Setting {
         theme: cfg.theme.clone(),
@@ -353,9 +355,35 @@ fn decrypt_cheap_api_key(cfg: &crate::types::AppConfig) -> Result<Option<String>
     Ok(None)
 }
 
+fn ai_classification_enabled(cfg: &crate::types::AppConfig) -> bool {
+    cfg.model_mode == "api"
+        && cfg.ai_router
+        && crate::engine::model_router::ai_router_allowed(
+            cfg.cheap_model.as_deref(),
+            &cfg.api_model,
+        )
+}
+
 #[cfg(test)]
 mod cheap_key_tests {
     use super::*;
+
+    #[test]
+    fn only_api_mode_can_call_cloud_classifier() {
+        let mut cfg = crate::config::defaults::default_config();
+        cfg.ai_router = true;
+        cfg.api_model = "deepseek-v4-pro".into();
+        cfg.cheap_model = Some("deepseek-flash".into());
+        for mode in ["script", "local", "api"] {
+            cfg.model_mode = mode.into();
+            assert_eq!(ai_classification_enabled(&cfg), mode == "api");
+        }
+        cfg.ai_router = false;
+        assert!(!ai_classification_enabled(&cfg));
+        cfg.ai_router = true;
+        cfg.cheap_model = None;
+        assert!(!ai_classification_enabled(&cfg));
+    }
 
     #[test]
     fn missing_cheap_key_returns_none_for_fallback() {

@@ -25,6 +25,41 @@ export function useStreamRender() {
   const quickCmd = useQuickCommandStore()
   const milestone = useMilestoneStore()
   const unlisteners = ref<UnlistenFn[]>([])
+  // 复用同一注册 Promise；任何发送命令必须等全部监听器就绪。
+  let listenersReady: Promise<void> | null = null
+  let disposed = false
+
+  function ensureListenersReady(): Promise<void> {
+    if (USE_MOCK) return Promise.resolve()
+    if (!listenersReady) {
+      listenersReady = Promise.allSettled([
+        onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError),
+        onChatUsage(handleUsage), onChatRoute(handleRoute),
+      ]).then((results) => {
+        const fns = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+        if (results.some((result) => result.status === 'rejected')) {
+          fns.forEach((fn) => fn())
+          throw new Error('流式监听器注册失败')
+        }
+        if (disposed && activeId === null) {
+          fns.forEach((fn) => fn())
+        } else {
+          unlisteners.value = fns
+        }
+      })
+    }
+    return listenersReady
+  }
+
+  async function waitForListeners(): Promise<boolean> {
+    try {
+      await ensureListenersReady()
+      return true
+    } catch {
+      handleError('流式监听器注册失败')
+      return false
+    }
+  }
   // 当前正在流式的消息 id
   let activeId: string | null = null
   // 当前 Agent 任务的 request_id（用于取消）
@@ -130,6 +165,7 @@ export function useStreamRender() {
     chat.addMessage(assistantMsg)
     activeId = assistantId
     chat.beginStream(assistantId)
+    const sessionId = chat.activeSessionId
 
     // —— AI 工具箱：开启且命中工具意图时，直接执行工具箱工具并返回结果（不走 AI 模型）——
     const intent = setting.aiToolbox ? detectToolboxIntent(content) : null
@@ -189,8 +225,9 @@ export function useStreamRender() {
       return
     }
 
+    if (!await waitForListeners()) return
     try {
-      await sendMessage(content, depth, chat.activeSessionId)
+      await sendMessage(content, depth, sessionId, assistantId)
     } catch (e) {
       // 后端未实现或 IPC 异常：退化为 mock，保证 UI 可演示
       console.warn('[send_message] 调用失败，回退 mock：', e)
@@ -251,6 +288,7 @@ export function useStreamRender() {
     activeRequestId = requestId
     chat.beginStream(assistantId)
 
+    if (!await waitForListeners()) return
     try {
       const result = await agentRun(task, requestId)
       // interrupted=true 时后端已经推送了「已停下来了」的文本并发出 chat_end，
@@ -275,14 +313,11 @@ export function useStreamRender() {
   }
 
   onMounted(() => {
-    if (!USE_MOCK) {
-      Promise.all([onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError), onChatUsage(handleUsage), onChatRoute(handleRoute)]).then(
-        (fns) => (unlisteners.value = fns)
-      )
-    }
+    ensureListenersReady().catch(() => {})
   })
 
   onUnmounted(() => {
+    disposed = true
     // 若正在流式输出，保留监听器，避免 chat_end 无人处理导致 isLoading 卡死
     if (activeId !== null) return
     unlisteners.value.forEach((fn) => fn())

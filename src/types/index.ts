@@ -338,6 +338,8 @@ export interface ChatUsage {
 
 /** 本次回复的选模型情况（显示调用状态用） */
 export interface ChatRouteInfo {
+  session_id: string | null
+  request_id: string
   /** ai = AI 判断决定；local = AI 没给结果回退本地；off = 未开启 AI 判断 */
   source: 'ai' | 'local' | 'off'
   /** true = 闲聊，false = 要干活 */

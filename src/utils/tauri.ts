@@ -6,10 +6,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 /**
  * 发送一条用户消息（后台 AI-3 负责生成回复）
- * 对应 Rust 侧 send_message 命令，参数 content + depth + sessionId（可选）
+ * 对应 Rust 侧 send_message 命令；requestId 关联本次回复的路由事件
  */
-export async function sendMessage(content: string, depth: number, sessionId?: string | null): Promise<void> {
-  return await invoke('send_message', { content, depth, sessionId })
+export async function sendMessage(content: string, depth: number, sessionId?: string | null, requestId?: string): Promise<void> {
+  return await invoke('send_message', { content, depth, sessionId, requestId })
 }
 
 /**
