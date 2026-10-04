@@ -7,6 +7,18 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: string
+  attachments?: AttachmentMeta[]
+}
+
+export interface AttachmentMeta {
+  kind: 'image' | 'text'
+  name: string
+}
+
+export interface Attachment extends AttachmentMeta {
+  mime: string
+  data: string
+  size: number
 }
 
 /** 一条记忆 */

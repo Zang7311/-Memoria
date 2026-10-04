@@ -6,12 +6,36 @@ import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '../stores/chatStore'
 import { useStreamRender } from '../composables/useStreamRender'
 import { useSettingStore } from '../stores/settingStore'
+import { ATTACHMENT_ACCEPT, readAttachment } from '../utils/attachments'
+import type { Attachment } from '../types'
 
 const chat = useChatStore()
 const setting = useSettingStore()
 const { send, sendAgent, cancelAgent } = useStreamRender()
 
 const taRef = ref<HTMLTextAreaElement | null>(null)
+const fileRef = ref<HTMLInputElement | null>(null)
+const attachments = ref<Attachment[]>([])
+const attachmentError = ref('')
+const readingFiles = ref(false)
+
+async function selectFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  readingFiles.value = true
+  attachmentError.value = ''
+  try {
+    for (const file of files) {
+      try { attachments.value.push(await readAttachment(file)) }
+      catch (error) {
+        attachmentError.value = error instanceof Error ? error.message : '附件读取失败，请重新选择'
+      }
+    }
+  } finally {
+    input.value = ''
+    readingFiles.value = false
+  }
+}
 // Agent 模式开关
 // 持久化到 localStorage：用户开启过一次后，下次启动默认就是开启状态
 const AGENT_MODE_KEY = 'ling_agent_mode_enabled'
@@ -38,18 +62,37 @@ function onKeydown(e: KeyboardEvent) {
 // 发送逻辑：Agent 模式走 sendAgent，普通模式走 send
 async function handleSend() {
   const content = chat.inputText.trim()
-  if (!content || chat.isLoading) return
-  if (agentMode.value) {
+  if ((!content && !attachments.value.length) || chat.isLoading || readingFiles.value) return
+  if (agentMode.value && !attachments.value.length) {
     await sendAgent(content)
   } else {
-    await send(content, setting.depth)
+    const sent = await send(content, setting.depth, attachments.value.slice())
+    if (sent === false && attachments.value.length) {
+      attachmentError.value = '附件发送失败，请检查文件和模型配置后重试'
+      return
+    }
   }
   chat.inputText = ''
+  attachments.value = []
+  attachmentError.value = ''
 }
 </script>
 
 <template>
+  <div v-if="attachments.length || attachmentError || readingFiles" class="attachment-panel">
+    <div class="attachment-tags">
+      <span v-for="(attachment, index) in attachments" :key="index" class="attachment-tag">
+        {{ attachment.name }}
+        <button type="button" :disabled="chat.isLoading || readingFiles" :aria-label="'移除附件 ' + attachment.name" @click="attachments.splice(index, 1)">移除</button>
+      </span>
+    </div>
+    <p v-if="readingFiles" role="status">正在读取附件</p>
+    <p v-if="attachmentError" role="alert">{{ attachmentError }}</p>
+    <p v-if="agentMode && attachments.length">带附件的消息使用普通对话发送</p>
+  </div>
   <div class="chat-input">
+    <input ref="fileRef" type="file" hidden multiple :accept="ATTACHMENT_ACCEPT" @change="selectFiles" />
+    <button class="attachment-btn" type="button" :disabled="chat.isLoading || readingFiles" @click="fileRef?.click()">附件</button>
     <label class="agent-toggle" :class="{ active: agentMode }" title="开启后铃会自主调用工具完成任务">
       <input type="checkbox" v-model="agentMode" />
       Agent 模式
@@ -60,7 +103,7 @@ async function handleSend() {
       class="input-area"
       name="chat"
       :placeholder="agentMode ? '说出你的任务，铃会自己想办法完成…' : '说点什么…'"
-      :disabled="chat.isLoading"
+      :disabled="chat.isLoading || readingFiles"
       rows="1"
       @keydown="onKeydown"
     ></textarea>
@@ -75,16 +118,49 @@ async function handleSend() {
     <button
       v-else
       class="send-btn"
-      :disabled="chat.isLoading || !chat.inputText.trim()"
+      :disabled="chat.isLoading || readingFiles || (!chat.inputText.trim() && !attachments.length)"
       title="发送"
       @click="handleSend"
     >
-      ✈️
+      发送
     </button>
   </div>
 </template>
 
 <style scoped>
+.attachment-panel {
+  padding: 8px 16px 0;
+  color: var(--text-sub, #888);
+  font-size: var(--fs-12, 12px);
+}
+.attachment-panel p { margin: 4px 0; }
+.attachment-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.attachment-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+}
+.attachment-tag button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.attachment-btn {
+  min-height: 40px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+  background: var(--input-bg, #fff);
+  color: var(--text-main, #222);
+  cursor: pointer;
+}
+.attachment-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .chat-input {
   display: flex;
   align-items: flex-end;
@@ -141,7 +217,7 @@ async function handleSend() {
   border-radius: 12px;
   background: var(--accent, #ff8fa3);
   color: var(--text-user);
-  font-size: var(--fs-20);
+  font-size: var(--fs-13, 13px);
   cursor: pointer;
   display: flex;
   align-items: center;

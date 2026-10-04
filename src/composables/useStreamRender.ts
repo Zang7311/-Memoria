@@ -12,7 +12,7 @@ import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
 import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute } from '../utils/tauri'
-import type { ChatRouteInfo, ChatUsage, QuickCommand } from '../types'
+import type { Attachment, ChatRouteInfo, ChatUsage, QuickCommand } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
@@ -28,8 +28,10 @@ export function useStreamRender() {
   // 复用同一注册 Promise；任何发送命令必须等全部监听器就绪。
   let listenersReady: Promise<void> | null = null
   let disposed = false
+  let onlyRouteFailed = false
+  let routeMissing = false
 
-  function ensureListenersReady(): Promise<void> {
+  function ensureListenersReady(allowMissingRoute = false): Promise<void> {
     if (USE_MOCK) return Promise.resolve()
     if (!listenersReady) {
       listenersReady = Promise.allSettled([
@@ -37,7 +39,9 @@ export function useStreamRender() {
         onChatUsage(handleUsage), onChatRoute(handleRoute),
       ]).then((results) => {
         const fns = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
-        if (results.some((result) => result.status === 'rejected')) {
+        routeMissing = results[4]?.status === 'rejected'
+        onlyRouteFailed = routeMissing && results.slice(0, 4).every((result) => result.status === 'fulfilled')
+        if (results.some((result, index) => result.status === 'rejected' && (!allowMissingRoute || index !== 4))) {
           fns.forEach((fn) => fn())
           throw new Error('流式监听器注册失败')
         }
@@ -51,11 +55,23 @@ export function useStreamRender() {
     return listenersReady
   }
 
-  async function waitForListeners(): Promise<boolean> {
+  async function waitForListeners(allowMissingRoute = false): Promise<boolean> {
+    if (!allowMissingRoute && routeMissing && unlisteners.value.length) {
+      unlisteners.value.forEach((fn) => fn())
+      unlisteners.value = []
+      listenersReady = null
+    }
     try {
       await ensureListenersReady()
       return true
     } catch {
+      if (allowMissingRoute && onlyRouteFailed) {
+        listenersReady = null
+        try {
+          await ensureListenersReady(true)
+          return true
+        } catch {}
+      }
       handleError('流式监听器注册失败')
       return false
     }
@@ -138,8 +154,8 @@ export function useStreamRender() {
   }
 
   // 发送一条消息：追加用户消息 -> 创建空的铃回复 -> 触发后端/ mock 流式
-  async function send(content: string, depth = 2) {
-    if (chat.isLoading) return
+  async function send(content: string, depth = 2, attachments: Attachment[] = []) {
+    if (chat.isLoading) return false
     // P3：每日日记——记录聊天（当日累积句数+话题）；第一次聊天顺带记里程碑（幂等）
     milestone.recordChat(content).catch(() => {})
     milestone.record('first_chat', '和铃说的第一句话').catch(() => {})
@@ -152,6 +168,7 @@ export function useStreamRender() {
       role: 'user' as const,
       content,
       timestamp: new Date().toISOString(),
+      ...(attachments.length ? { attachments: attachments.map(({ kind, name }) => ({ kind, name })) } : {}),
     }
     const assistantId = makeId()
     const assistantMsg = {
@@ -168,7 +185,7 @@ export function useStreamRender() {
     const sessionId = chat.activeSessionId
 
     // —— AI 工具箱：开启且命中工具意图时，直接执行工具箱工具并返回结果（不走 AI 模型）——
-    const intent = setting.aiToolbox ? detectToolboxIntent(content) : null
+    const intent = !attachments.length && setting.aiToolbox ? detectToolboxIntent(content) : null
     if (intent) {
       // AI 危险操作确认：不可逆/系统级操作需用户确认后才能执行
       if (DANGEROUS_TOOLS.has(intent.id)) {
@@ -193,7 +210,7 @@ export function useStreamRender() {
     }
 
     // —— AI-9 快捷指令触发：消息包含已存指令 name 时，按顺序执行 steps 并最终让铃说 say ——
-    const matchedQc = await matchQuickCommand(content)
+    const matchedQc = attachments.length ? null : await matchQuickCommand(content)
     if (matchedQc) {
       const dangerous = matchedQc.steps.filter((s) => DANGEROUS_QC_TOOLS.has(s.tool)).map((s) => s.tool)
       if (dangerous.length > 0) {
@@ -225,10 +242,15 @@ export function useStreamRender() {
       return
     }
 
-    if (!await waitForListeners()) return
+    if (!await waitForListeners(attachments.length > 0)) return false
     try {
-      await sendMessage(content, depth, sessionId, assistantId)
+      await sendMessage(content, depth, sessionId, assistantId, attachments)
+      return true
     } catch (e) {
+      if (attachments.length) {
+        handleError('附件发送失败，请检查文件和模型配置后重试')
+        return false
+      }
       // 后端未实现或 IPC 异常：退化为 mock，保证 UI 可演示
       console.warn('[send_message] 调用失败，回退 mock：', e)
       await runMock(content)

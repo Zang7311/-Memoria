@@ -6,7 +6,7 @@ use crate::engine;
 use crate::error::AppError;
 use crate::memory;
 use crate::stream;
-use crate::types::{SendMessageResponse, Setting};
+use crate::types::{Attachment, SendMessageResponse, Setting};
 use tauri::AppHandle;
 
 /// 发送消息命令：启动流式对话，不阻塞等待完整生成
@@ -20,7 +20,10 @@ pub async fn send_message(
     depth: u8,
     session_id: Option<String>,
     request_id: Option<String>,
+    attachments: Option<Vec<Attachment>>,
 ) -> Result<SendMessageResponse, AppError> {
+    let attachments = attachments.unwrap_or_default();
+    crate::attachments::validate(&attachments)?;
     let message_id = crate::utils::gen_id();
     let stream_id = crate::utils::gen_id();
     let input = content.clone();
@@ -30,7 +33,7 @@ pub async fn send_message(
 
     // 立即返回，后台异步生成
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = generate_and_emit(&app, &input, depth, session_id.as_deref(), &request_id).await {
+        if let Err(e) = generate_and_emit(&app, &input, depth, session_id.as_deref(), &request_id, &attachments).await {
             log::error!("对话生成失败：{e}");
             // 尽力推送错误事件
             let _ = stream::sender::send_error(&app, &e.to_string());
@@ -50,33 +53,42 @@ async fn generate_and_emit(
     depth: u8,
     session_id: Option<&str>,
     request_id: &str,
+    attachments: &[Attachment],
 ) -> Result<(), AppError> {
     // 读取配置中心（AI-7 实现）：真实配置从 ~/.铃记忆体/config.json 加载，
     // 不再使用硬编码默认值（修复 API 无法接入的问题）
     let cfg = crate::config::store::get_runtime_config();
+    let classification_input = crate::attachments::classification_input(input, attachments);
     let api_key = if cfg.models.is_empty() { decrypt_api_key(&cfg)? } else { None };
-    let cheap_api_key = if cfg.models.is_empty() { decrypt_cheap_api_key(&cfg)? } else { None };
+    let cheap_api_key = if cfg.models.is_empty() {
+        if attachments.is_empty() { decrypt_cheap_api_key(&cfg)? }
+        else { decrypt_cheap_api_key(&cfg).ok().flatten() }
+    } else { None };
     let mut selected_slot = None;
     let (selected_api_model, route_info) = if !cfg.models.is_empty() {
         let cheap = crate::engine::model_router::next_cheap_slot(&cfg);
         let ai_enabled = cfg.model_mode == "api" && cfg.ai_router
             && crate::engine::model_router::slot_ai_router_allowed(&cfg, cheap);
         let verdict = if ai_enabled {
-            let (base_url, key) = crate::engine::api::slot_api_credentials(&cfg, cheap)?;
-            crate::engine::model_router::classify_with_ai(
-                &reqwest::Client::new(), &base_url, key.as_deref().unwrap_or_default(),
-                cheap.map(|slot| slot.name.trim()).unwrap_or_default(), input,
-            ).await
+            match crate::engine::api::slot_api_credentials(&cfg, cheap) {
+                Ok((base_url, key)) => crate::engine::model_router::classify_with_ai(
+                    &reqwest::Client::new(), &base_url, key.as_deref().unwrap_or_default(),
+                    cheap.map(|slot| slot.name.trim()).unwrap_or_default(), &classification_input,
+                ).await,
+                Err(error) if attachments.is_empty() => return Err(error),
+                Err(_) => None,
+            }
         } else { None };
-        selected_slot = crate::engine::model_router::pick_slot_with_verdict(
-            &cfg, input, false, false, cheap, ai_enabled, verdict,
+        selected_slot = crate::engine::model_router::pick_slot_with_attachments(
+            &cfg, input, attachments, cheap, ai_enabled, verdict,
         );
+        let route_verdict = crate::engine::model_router::attachment_verdict(input, attachments, verdict);
         let picked = selected_slot.map(|slot| slot.name.trim()).unwrap_or(&cfg.api_model).to_string();
         let route_info = crate::types::ChatRouteInfo {
             session_id: session_id.map(str::to_string), request_id: request_id.to_string(),
             source: if !ai_enabled { "off" } else if verdict.is_some() { "ai" } else { "local" }.into(),
-            easy: verdict.map(|verdict| verdict.easy).unwrap_or_else(|| crate::engine::model_router::is_chat_only(input)),
-            needs_vision: verdict.map(|verdict| verdict.needs_vision).unwrap_or(false), model: picked.clone(),
+            easy: route_verdict.map(|verdict| verdict.easy).unwrap_or_else(|| crate::engine::model_router::is_chat_only(input)),
+            needs_vision: route_verdict.map(|verdict| verdict.needs_vision).unwrap_or(false), model: picked.clone(),
         };
         (picked, route_info)
     } else {
@@ -105,7 +117,7 @@ async fn generate_and_emit(
                     .unwrap_or_default(),
                 cheap_api_key.as_deref().or(api_key.as_deref()).unwrap_or_default(),
                 cheap.unwrap_or_default(),
-                input,
+                &classification_input,
             )
             .await;
             if result.is_none() {
@@ -115,16 +127,8 @@ async fn generate_and_emit(
         } else {
             None
         };
-        let picked = crate::engine::model_router::pick_model_with_verdict(
-            input,
-            false, // 本命令不接收图片，天然无视觉风险
-            false, // Agent 模式走 agent_run，是另一条独立入口
-            cfg.cheap_model.as_deref(),
-            &cfg.api_model,
-            cfg.vision_model.as_deref(),
-            cfg.ai_router,
-            verdict,
-        );
+        let picked = crate::engine::model_router::pick_model_with_attachments(&cfg, input, attachments, verdict);
+        let route_verdict = crate::engine::model_router::attachment_verdict(input, attachments, verdict);
 
         // 供前端显示：这次是怎么选的模型（AI 判断 / 本地回退 / 未启用）
         let route_info = crate::types::ChatRouteInfo {
@@ -136,10 +140,10 @@ async fn generate_and_emit(
                 "off"
             }
             .to_string(),
-            easy: verdict
+            easy: route_verdict
                 .map(|v| v.easy)
                 .unwrap_or_else(|| crate::engine::model_router::is_chat_only(input)),
-            needs_vision: verdict.map(|v| v.needs_vision).unwrap_or(false),
+            needs_vision: route_verdict.map(|v| v.needs_vision).unwrap_or(false),
             model: picked.clone(),
         };
 
@@ -202,7 +206,7 @@ async fn generate_and_emit(
                         ctx.push(crate::types::Memory {
                             id: m.id.clone(),
                             role: m.role.clone(),
-                            content: m.content.clone(),
+                            content: m.replay_content(),
                             timestamp: m.timestamp.clone(),
                             tags: None,
                             summary: None,
@@ -265,9 +269,9 @@ async fn generate_and_emit(
     // 特殊事件集（隐藏彩蛋）：① 每日彩蛋（节日/陪伴天数里程碑）② 关键词彩蛋（10 个彩蛋位）
     // 三种模式（API/离线/本地）统一触发，命中则直接推送彩蛋回复，不走引擎
     // ① 每日彩蛋（当天首次消息触发）
-    let egg = crate::events::check_daily_special()
+    let egg = if attachments.is_empty() { crate::events::check_daily_special()
         // ② 关键词彩蛋（概率触发，没中则走正常引擎）
-        .or_else(|| crate::events::check_special_events(input, None));
+        .or_else(|| crate::events::check_special_events(input, None)) } else { None };
     if let Some(egg_msg) = egg {
         // 彩蛋回复流式推送（复用 script 的 3~5 字片段节奏）
         let chars: Vec<char> = egg_msg.chars().collect();
@@ -289,12 +293,20 @@ async fn generate_and_emit(
         "api" => {
             let self_name = setting.self_name.clone().unwrap_or_else(|| "铃".to_string());
             let user_name = setting.user_name.clone().unwrap_or_else(|| "主人".to_string());
-            engine::api::run_api_with_setting(app, input, &memories, &setting, cfg.cheap_model.as_deref(), depth, &self_name, &user_name).await?
+            engine::api::run_api_with_setting_and_attachments(app, input, &memories, &setting, cfg.cheap_model.as_deref(), depth, &self_name, &user_name, attachments).await?
         }
         "local" => {
-            engine::local::run_local(app, input, &memories, depth).await?
+            if crate::attachments::has_image(attachments) {
+                return Err(AppError::ModelError("图片附件需要使用云端视觉模型".into()));
+            }
+            engine::local::run_local(app, &crate::attachments::merge_text(input, attachments), &memories, depth).await?
         }
-        _ => engine::script::run_script(app, input, &setting, depth, &memories).await?,
+        _ => {
+            if crate::attachments::has_image(attachments) {
+                return Err(AppError::ModelError("图片附件需要使用云端视觉模型".into()));
+            }
+            engine::script::run_script_with_attachments(app, input, &setting, depth, &memories, attachments).await?
+        },
     };
 
     // 流结束后，将完整回复写入记忆

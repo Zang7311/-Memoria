@@ -102,6 +102,20 @@ pub async fn run_api_with_setting(
     ).await.map_err(|error| redact_api_error(error, key))
 }
 
+pub async fn run_api_with_setting_and_attachments(
+    app: &AppHandle, input: &str, context: &[Memory], setting: &Setting,
+    cheap_model: Option<&str>, depth: u8, self_name: &str, user_name: &str,
+    attachments: &[crate::types::Attachment],
+) -> Result<String, AppError> {
+    if attachments.is_empty() {
+        return run_api_with_setting(app, input, context, setting, cheap_model, depth, self_name, user_name).await;
+    }
+    let (base_url, key) = select_api_credentials(setting, cheap_model);
+    run_api_with_attachments(app, input, context, base_url, key, &setting.api_model,
+        depth, &setting.persona, self_name, user_name, attachments)
+        .await.map_err(|error| redact_api_error(error, key))
+}
+
 fn redact_api_error(error: AppError, key: &str) -> AppError {
     match error {
         AppError::NetworkError(message) if !key.is_empty() => {
@@ -123,6 +137,15 @@ pub async fn run_api(
     persona: &str,
     self_name: &str,
     user_name: &str,
+) -> Result<String, AppError> {
+    run_api_with_attachments(app, input, context, api_base_url, api_key, api_model,
+        depth, persona, self_name, user_name, &[]).await
+}
+
+async fn run_api_with_attachments(
+    app: &AppHandle, input: &str, context: &[Memory], api_base_url: &str,
+    api_key: &str, api_model: &str, depth: u8, persona: &str,
+    self_name: &str, user_name: &str, attachments: &[crate::types::Attachment],
 ) -> Result<String, AppError> {
     if api_base_url.trim().is_empty() {
         return Err(AppError::ConfigError("未配置 API 地址".into()));
@@ -147,7 +170,7 @@ pub async fn run_api(
     messages.extend(context.iter().map(|m| {
         serde_json::json!({ "role": m.role, "content": m.content })
     }));
-    messages.push(serde_json::json!({ "role": "user", "content": input }));
+    messages.push(serde_json::json!({ "role": "user", "content": crate::attachments::user_content(input, attachments) }));
 
     let body = serde_json::json!({
         "model": api_model,
@@ -172,7 +195,8 @@ pub async fn run_api(
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
+        let text = if attachments.is_empty() { resp.text().await.unwrap_or_default() }
+            else { "附件请求失败，服务端错误详情已隐藏".to_string() };
         return Err(AppError::NetworkError(format!(
             "API 返回 {status}：{text}"
         )));

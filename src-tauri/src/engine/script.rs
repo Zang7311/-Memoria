@@ -250,13 +250,30 @@ pub async fn run_script(
     depth: u8,
     memories: &[crate::types::Memory],
 ) -> Result<String, AppError> {
+    run_script_inner(app, input, setting, depth, memories, false).await
+}
+
+pub async fn run_script_with_attachments(
+    app: &AppHandle, input: &str, setting: &crate::types::Setting, depth: u8,
+    memories: &[crate::types::Memory], attachments: &[crate::types::Attachment],
+) -> Result<String, AppError> {
+    if attachments.is_empty() { return run_script(app, input, setting, depth, memories).await; }
+    run_script_inner(app, &crate::attachments::merge_text(input, attachments), setting, depth, memories, true).await
+}
+
+async fn run_script_inner(
+    app: &AppHandle, input: &str, setting: &crate::types::Setting, depth: u8,
+    memories: &[crate::types::Memory], sensitive_input: bool,
+) -> Result<String, AppError> {
     let category = classify_scored(input, depth, Some(memories));
     let raw = pick_reply(category);
     // 名称占位替换：自定义名称功能（默认「铃」/「主人」，未配置时保持原文）
     let reply = apply_names(&raw, setting);
-    log::info!(
-        "[script] 输入「{input}」→ 分类「{category}」（depth={depth}）"
-    );
+    if sensitive_input {
+        log::info!("[script] 附件消息分类「{category}」（depth={depth}）");
+    } else {
+        log::info!("[script] 输入「{input}」→ 分类「{category}」（depth={depth}）");
+    }
 
     // 拆分为 3~5 字片段，50ms 间隔推送
     let chars: Vec<char> = reply.chars().collect();

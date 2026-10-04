@@ -1,5 +1,8 @@
 // 《铃·记忆体》Tauri 入口：注册所有命令与模块
 mod commands;
+mod attachments;
+#[cfg(test)]
+mod attachment_tests;
 #[cfg(test)]
 mod model_slot_tests;
 mod config;

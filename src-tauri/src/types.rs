@@ -9,6 +9,36 @@ pub struct Message {
     pub role: String, // "user" 或 "assistant"
     pub content: String,
     pub timestamp: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<AttachmentMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attachment {
+    pub kind: String,
+    pub name: String,
+    #[serde(default)]
+    pub mime: String,
+    pub data: String,
+    #[serde(default)]
+    pub size: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentMeta {
+    pub kind: String,
+    pub name: String,
+}
+
+impl Message {
+    pub fn replay_content(&self) -> String {
+        let mut content = self.content.clone();
+        for attachment in &self.attachments {
+            let label = if attachment.kind == "image" { "图片" } else { "附件" };
+            content.push_str(&format!("\n[{label}: {}]", attachment.name));
+        }
+        content
+    }
 }
 
 /// 一条记忆
@@ -103,6 +133,8 @@ pub struct SendMessageRequest {
     pub content: String,
     #[serde(default = "default_depth")]
     pub depth: u8,
+    #[serde(default)]
+    pub attachments: Option<Vec<Attachment>>,
 }
 
 fn default_depth() -> u8 {

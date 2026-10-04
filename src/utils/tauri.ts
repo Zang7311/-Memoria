@@ -3,13 +3,14 @@
 // 后端命令与事件由 AI-3 实现；此处仅做前端封装，不写 Rust。
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type { Attachment } from '../types'
 
 /**
  * 发送一条用户消息（后台 AI-3 负责生成回复）
  * 对应 Rust 侧 send_message 命令；requestId 关联本次回复的路由事件
  */
-export async function sendMessage(content: string, depth: number, sessionId?: string | null, requestId?: string): Promise<void> {
-  return await invoke('send_message', { content, depth, sessionId, requestId })
+export async function sendMessage(content: string, depth: number, sessionId?: string | null, requestId?: string, attachments?: Attachment[]): Promise<void> {
+  return await invoke('send_message', { content, depth, sessionId, requestId, ...(attachments?.length ? { attachments } : {}) })
 }
 
 /**

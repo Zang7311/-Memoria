@@ -79,6 +79,50 @@ pub fn pick_slot_with_verdict<'config>(
     if is_chat_only(input) { cheap.or_else(|| main_slot(cfg)) } else { main_slot(cfg) }
 }
 
+pub fn attachment_task_is_complex(input: &str, attachments: &[crate::types::Attachment]) -> bool {
+    let texts: Vec<_> = attachments.iter().filter(|attachment| attachment.kind == "text").collect();
+    let task_hints = ["分析", "检查", "修复", "调试", "审查", "对比", "比较", "解释", "实现", "编写", "代码"];
+    let has_task = |text: &str| TASK_HINTS.iter().chain(task_hints.iter()).any(|hint| text.contains(hint));
+    !texts.is_empty() && (!is_chat_only(input)
+        || has_task(input)
+        || texts.iter().map(|attachment| attachment.data.chars().count()).sum::<usize>() > 500
+        || texts.iter().any(|attachment| has_task(&attachment.data)))
+}
+
+pub fn attachment_verdict(
+    input: &str, attachments: &[crate::types::Attachment], verdict: Option<Verdict>,
+) -> Option<Verdict> {
+    if attachments.is_empty() { return verdict; }
+    let complex = attachment_task_is_complex(input, attachments);
+    Some(Verdict {
+        easy: !complex && verdict.map(|value| value.easy).unwrap_or_else(|| is_chat_only(input)),
+        needs_vision: crate::attachments::has_image(attachments)
+            || verdict.map(|value| value.needs_vision).unwrap_or(false),
+    })
+}
+
+pub fn pick_slot_with_attachments<'config>(
+    cfg: &'config AppConfig, input: &str, attachments: &[crate::types::Attachment],
+    cheap: Option<&'config ModelSlot>, ai_enabled: bool, verdict: Option<Verdict>,
+) -> Option<&'config ModelSlot> {
+    let has_image = crate::attachments::has_image(attachments);
+    if !has_image && attachment_task_is_complex(input, attachments) { return main_slot(cfg); }
+    pick_slot_with_verdict(cfg, input, has_image, false, cheap, ai_enabled, attachment_verdict(input, attachments, verdict))
+}
+
+pub fn pick_model_with_attachments(
+    cfg: &AppConfig, input: &str, attachments: &[crate::types::Attachment], verdict: Option<Verdict>,
+) -> String {
+    let has_image = crate::attachments::has_image(attachments);
+    if has_image {
+        return cfg.vision_model.as_deref().map(str::trim).filter(|model| !model.is_empty())
+            .unwrap_or(&cfg.api_model).to_string();
+    }
+    if attachment_task_is_complex(input, attachments) { return cfg.api_model.clone(); }
+    pick_model_with_verdict(input, has_image, false, cfg.cheap_model.as_deref(), &cfg.api_model,
+        cfg.vision_model.as_deref(), cfg.ai_router, attachment_verdict(input, attachments, verdict))
+}
+
 /// AI 路由的判定结果：难度和是否需要视觉模型。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Verdict {

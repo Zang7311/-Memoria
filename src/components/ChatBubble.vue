@@ -69,6 +69,9 @@ const displayContent = computed(() => {
 
     <div class="bubble" :class="isUser ? 'bubble-user' : 'bubble-suzu'">
       <span class="content">{{ displayContent }}</span>
+      <div v-for="(attachment, index) in message.attachments" :key="index" class="content">
+        [{{ attachment.kind === 'image' ? '图片' : '附件' }}: {{ attachment.name }}]
+      </div>
       <!-- 流式光标：闪烁 -->
       <span v-if="isStreaming" class="cursor">▍</span>
       <!-- 中断提示 -->
