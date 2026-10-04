@@ -18,6 +18,7 @@ pub fn send_end(app: &AppHandle) -> Result<(), AppError> {
 
 /// 推送流式错误（前端显示对应提示）
 pub fn send_error(app: &AppHandle, error: &str) -> Result<(), AppError> {
+    let error = crate::config::store::get_runtime_config().redact_api_secrets(error);
     app.emit("chat_error", error)?;
     Ok(())
 }

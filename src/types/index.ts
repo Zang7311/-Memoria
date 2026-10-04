@@ -224,7 +224,17 @@ export interface MonitorTriggerEvent {
 // ==================== AI-7 配置与诊断（与 Rust 端契约对齐，snake_case） ====================
 
 /** 全局配置（对应 Rust AppConfig）。monitor_rules/toolbox_items 归 AI-6 管理，AI-7 不持久化 */
+export interface ModelSlot {
+  id: string
+  name: string
+  base_url?: string | null
+  roles: string[]
+  enabled: boolean
+  has_api_key?: boolean
+}
+
 export interface AppConfig {
+  models?: ModelSlot[]
   config_version: number
   theme: 'light' | 'dark' | string
   context_length: number

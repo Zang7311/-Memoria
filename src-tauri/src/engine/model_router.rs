@@ -20,6 +20,64 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::Value;
+use crate::types::{AppConfig, ModelSlot};
+
+static CHEAP_SLOT_COUNTERS: OnceLock<Mutex<HashMap<Vec<String>, usize>>> = OnceLock::new();
+
+pub fn main_slot(cfg: &AppConfig) -> Option<&ModelSlot> {
+    role_slots(cfg, "main").next()
+}
+
+pub fn vision_slot(cfg: &AppConfig) -> Option<&ModelSlot> {
+    role_slots(cfg, "vision").next().or_else(|| main_slot(cfg))
+}
+
+fn role_slots<'config>(cfg: &'config AppConfig, role: &'config str) -> impl Iterator<Item = &'config ModelSlot> {
+    cfg.models.iter().filter(move |slot| slot.enabled
+        && slot.roles.iter().any(|tag| tag == role))
+}
+
+pub fn next_cheap_slot(cfg: &AppConfig) -> Option<&ModelSlot> {
+    let slots: Vec<_> = role_slots(cfg, "cheap").collect();
+    if slots.is_empty() { return None; }
+    let pool = slots.iter().map(|slot| slot.id.clone()).collect();
+    let mut counters = CHEAP_SLOT_COUNTERS.get_or_init(|| Mutex::new(HashMap::new()))
+        .lock().unwrap_or_else(|error| error.into_inner());
+    if counters.len() >= ROUTER_CACHE_LIMIT && !counters.contains_key(&pool) { counters.clear(); }
+    let counter = counters.entry(pool).or_insert(0);
+    let slot = slots[*counter % slots.len()];
+    *counter = (*counter + 1) % slots.len();
+    Some(slot)
+}
+
+pub fn slot_ai_router_allowed(cfg: &AppConfig, cheap: Option<&ModelSlot>) -> bool {
+    let Some(cheap) = cheap else { return false; };
+    if !cheap.enabled || !cheap.roles.iter().any(|role| role == "cheap") { return false; }
+    let main = main_slot(cfg);
+    main.map(|main| main.id != cheap.id).unwrap_or(true)
+        && ai_router_allowed(Some(&cheap.name), main.map(|slot| slot.name.as_str()).unwrap_or(&cfg.api_model))
+}
+
+pub fn config_ai_router_allowed(cfg: &AppConfig) -> bool {
+    if cfg.models.is_empty() { return ai_router_allowed(cfg.cheap_model.as_deref(), &cfg.api_model); }
+    role_slots(cfg, "cheap").any(|slot| slot_ai_router_allowed(cfg, Some(slot)))
+}
+
+pub fn pick_slot_with_verdict<'config>(
+    cfg: &'config AppConfig, input: &str, has_image: bool, agent_mode: bool,
+    cheap: Option<&'config ModelSlot>, ai_enabled: bool, verdict: Option<Verdict>,
+) -> Option<&'config ModelSlot> {
+    if agent_mode { return main_slot(cfg); }
+    if has_image { return vision_slot(cfg); }
+    if ai_enabled && slot_ai_router_allowed(cfg, cheap) {
+        if let Some(verdict) = verdict {
+            if verdict.needs_vision { return vision_slot(cfg); }
+            if verdict.easy { return cheap.or_else(|| main_slot(cfg)); }
+            return main_slot(cfg);
+        }
+    }
+    if is_chat_only(input) { cheap.or_else(|| main_slot(cfg)) } else { main_slot(cfg) }
+}
 
 /// AI 路由的判定结果：难度和是否需要视觉模型。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

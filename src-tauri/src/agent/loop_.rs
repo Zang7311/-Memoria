@@ -248,7 +248,14 @@ fn summarize_tool_result(text: &str) -> String {
 
 /// 从配置读取 API 相关参数
 fn api_config() -> Result<(String, String, String), AppError> {
-    let cfg = config::store::get_config();
+    let cfg = config::store::get_runtime_config();
+    if !cfg.models.is_empty() {
+        let slot = crate::engine::model_router::main_slot(&cfg);
+        let (base, key) = crate::engine::api::slot_api_credentials(&cfg, slot)?;
+        let key = key.ok_or_else(|| AppError::ConfigError("未配置 API Key".into()))?;
+        let model = slot.map(|slot| slot.name.trim()).unwrap_or(&cfg.api_model).to_string();
+        return Ok((base, key, model));
+    }
     let base = cfg.api_base_url.clone().ok_or_else(|| {
         AppError::ConfigError("未配置 API 地址（Agent 模式需要云端 API）".into())
     })?;
@@ -716,7 +723,7 @@ async fn call_llm(
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
+        let text = resp.text().await.unwrap_or_default().replace(key, "[已隐藏]");
         return Err(AppError::NetworkError(format!("API 返回 {status}：{text}")));
     }
 
@@ -753,7 +760,7 @@ async fn call_llm_text(
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
+        let text = resp.text().await.unwrap_or_default().replace(key, "[已隐藏]");
         return Err(AppError::NetworkError(format!("API 返回 {status}：{text}")));
     }
 

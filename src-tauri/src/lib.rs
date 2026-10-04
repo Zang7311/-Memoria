@@ -1,5 +1,7 @@
 // 《铃·记忆体》Tauri 入口：注册所有命令与模块
 mod commands;
+#[cfg(test)]
+mod model_slot_tests;
 mod config;
 mod deps;
 mod context;
@@ -232,6 +234,7 @@ pub fn run() {
             // —— AI-7 配置与诊断命令 ——
             commands::config_get::get_config,
             commands::config_update::update_config,
+            commands::model_slot::save_model_slot_key,
             commands::config_export::export_config,
             commands::config_import::import_config,
             commands::config_reset::reset_config,

@@ -3,13 +3,14 @@
 // 数据源统一走 IPC get_config / update_config，不直接操作文件。
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { AppConfig, MasterPasswordStatus, UiThemePreset } from '../types'
+import type { AppConfig, MasterPasswordStatus, ModelSlot, UiThemePreset } from '../types'
 import {
   exportConfig,
   getConfig,
   importConfig,
   masterPasswordStatus,
   resetConfig,
+  saveModelSlotKey,
   setMasterPassword,
   unlock,
   updateConfig,
@@ -18,6 +19,7 @@ import {
 export const useSettingStore = defineStore('setting', () => {
   // —— 配置状态（与 AppConfig 对应，snake_case）——
   const loaded = ref(false)
+  const models = ref<ModelSlot[]>([])
   const firstLaunch = ref(true)
   const theme = ref<'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass'>('dark')
   // —— 外观自定义（用户可自行调整，持久化到 config.json）——
@@ -89,6 +91,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   // —— 从后端同步完整配置到本地 ——
   function applyConfig(c: AppConfig) {
+    models.value = (c.models ?? []).map((slot) => ({ ...slot, roles: [...slot.roles] }))
     firstLaunch.value = c.first_launch
     theme.value = (c.theme as 'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass') || 'dark'
     accentColor.value = c.accent_color ?? null
@@ -120,7 +123,7 @@ export const useSettingStore = defineStore('setting', () => {
     hasCheapApiKey.value = !!c.has_cheap_api_key
     _hasApiKey.value = !!c.has_api_key
     _apiKeyPlain.value = !!c.has_plain_key
-    apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
+    apiModel.value = models.value.find((slot) => slot.enabled && slot.roles.includes('main'))?.name ?? c.api_model ?? 'gpt-3.5-turbo'
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
     depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
     languageMixRate.value = (typeof c.language_mix_rate === 'number') ? Math.min(Math.max(c.language_mix_rate, 0), 30) : 8
@@ -241,6 +244,11 @@ export const useSettingStore = defineStore('setting', () => {
     await update({ cheap_api_key: plain })
   }
 
+  async function saveSlotKey(slotId: string, plain: string) {
+    await saveModelSlotKey(slotId, plain)
+    await loadConfig()
+  }
+
   /** 重置所有配置为默认（保留主密码与已加密 Key） */
   async function resetAll() {
     const res = await resetConfig()
@@ -283,7 +291,7 @@ export const useSettingStore = defineStore('setting', () => {
   }
 
   return {
-    loaded, firstLaunch,
+    loaded, firstLaunch, models, saveSlotKey,
     theme, contextLength, longTermMemoryLimit, cheapModel, visionModel, aiRouter, selfCheckEnabled, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,

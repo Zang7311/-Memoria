@@ -6,6 +6,7 @@ use crate::config;
 /// 返回完整的默认配置
 pub fn default_config() -> AppConfig {
     AppConfig {
+        models: Vec::new(),
         config_version: 1,
         theme: "dark".to_string(),
         context_length: 10,

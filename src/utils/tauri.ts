@@ -59,8 +59,8 @@ export function greet(name: string): Promise<string> {
  * @param base_url API 地址（带/不带 /v1 均可）
  * @param api_key 明文 API Key（测试当前输入框内容，不涉及已保存密文）
  */
-export function testApiConnection(base_url: string, api_key: string): Promise<TestConnectionResponse> {
-  return invoke('test_api_connection', { baseUrl: base_url, apiKey: api_key })
+export function testApiConnection(base_url: string, api_key: string, slotId?: string): Promise<TestConnectionResponse> {
+  return invoke('test_api_connection', { baseUrl: base_url, apiKey: api_key, slotId })
 }
 
 /**
@@ -505,6 +505,10 @@ import type {
 /** 获取完整配置 */
 export function getConfig(): Promise<GetConfigResponse> {
   return invoke('get_config')
+}
+
+export function saveModelSlotKey(slotId: string, plain: string): Promise<void> {
+  return invoke('save_model_slot_key', { slotId, plain })
 }
 
 /** 增量更新配置（null 清除字段）；返回更新后完整配置 */

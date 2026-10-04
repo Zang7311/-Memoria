@@ -9,6 +9,26 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use tauri::AppHandle;
 
+pub fn slot_api_credentials(
+    cfg: &crate::types::AppConfig,
+    slot: Option<&crate::types::ModelSlot>,
+) -> Result<(String, Option<String>), AppError> {
+    let base_url = slot.and_then(|slot| slot.base_url.as_deref())
+        .map(str::trim).filter(|url| !url.is_empty())
+        .or(cfg.api_base_url.as_deref()).unwrap_or_default().to_string();
+    let slot_key = slot.map(|slot| (&slot.api_key_plain, &slot.api_key_encrypted));
+    let (plain, encrypted) = slot_key.filter(|(plain, encrypted)|
+        plain.as_deref().into_iter().chain(encrypted.as_deref()).any(|key| !key.is_empty())
+    ).unwrap_or((&cfg.api_key_plain, &cfg.api_key_encrypted));
+    let key = if let Some(encrypted) = encrypted.as_deref().filter(|key| !key.is_empty()) {
+        let key = crate::config::encryption::get_key()?;
+        Some(crate::config::encryption::decrypt_with_key(&key, encrypted)? )
+    } else {
+        plain.as_deref().filter(|key| !key.is_empty()).map(str::to_string)
+    };
+    Ok((base_url, key))
+}
+
 /// OpenAI 流式响应的一行（choices[0].delta.content，末尾可能带 usage）
 #[derive(Debug, Deserialize)]
 struct StreamChunk {

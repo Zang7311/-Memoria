@@ -19,7 +19,14 @@ const MAX_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// 从全局配置读取视觉调用所需的三要素
 fn vision_config() -> Result<(String, String, String), AppError> {
-    let cfg = config::store::get_config();
+    let cfg = config::store::get_runtime_config();
+    if !cfg.models.is_empty() {
+        let slot = crate::engine::model_router::vision_slot(&cfg);
+        let (base, key) = crate::engine::api::slot_api_credentials(&cfg, slot)?;
+        let key = key.ok_or_else(|| AppError::ConfigError("未配置 API Key".into()))?;
+        let model = slot.map(|slot| slot.name.trim()).unwrap_or(&cfg.api_model).to_string();
+        return Ok((base, key, model));
+    }
 
     let base = cfg
         .api_base_url
@@ -127,7 +134,7 @@ pub async fn look(image_path: &str, question: Option<&str>) -> Result<String, Ap
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
+        let text = resp.text().await.unwrap_or_default().replace(&key, "[已隐藏]");
         return Err(AppError::NetworkError(format!(
             "视觉模型返回 {status}：{text}\n（提示：当前用的模型是「{model}」，它可能不支持看图；可以在设置里填一个多模态模型，例如 glm-4v）"
         )));
