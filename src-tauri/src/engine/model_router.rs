@@ -241,6 +241,46 @@ pub fn pick_model(
     capable.to_string()
 }
 
+/// 模型能力类型：只区分「纯文本」与「疑似支持视觉」两大类。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelKind {
+    Text,
+    Vision,
+}
+
+/// 从模型名推测能力类型（启发式）。
+///
+/// 只按名字里的常见视觉标识判断；名字没线索时一律当纯文本处理
+/// —— 宁可少开路由，也不要把「看图」的活交给纯文本模型。
+pub fn model_kind(name: &str) -> ModelKind {
+    const VISION_HINTS: &[&str] = &[
+        "vision", "vl", "4v", "image", "omni", "看图", "视觉",
+    ];
+    let lower = name.trim().to_lowercase();
+    if VISION_HINTS.iter().any(|hint| lower.contains(hint)) {
+        ModelKind::Vision
+    } else {
+        ModelKind::Text
+    }
+}
+
+/// 是否允许开启 AI 难度判断。
+///
+/// 主人规则（2026-10-04）：**只有配置了两个及以上「同类型」模型**
+/// （例如都是纯文本模型）时才允许开启，且开不开始终由用户自己选。
+/// 这里把「两个及以上」落成：便宜模型与主力模型都存在，且类型一致；
+/// 类型不同（一个纯文本、一个支持视觉）时不做路由，避免混用不同能力的模型。
+pub fn ai_router_allowed(cheap: Option<&str>, capable: &str) -> bool {
+    let Some(cheap) = cheap.map(str::trim).filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    let capable = capable.trim();
+    if capable.is_empty() {
+        return false;
+    }
+    model_kind(cheap) == model_kind(capable)
+}
+
 /// 在保留现有三条强制规则的基础上应用 AI 路由结果。
 pub fn pick_model_with_verdict(
     input: &str,
@@ -258,7 +298,8 @@ pub fn pick_model_with_verdict(
     if has_image || agent_mode {
         return capable.to_string();
     }
-    if !ai_router {
+    // 主人规则：只有「两个同类型模型」才允许 AI 判断生效；类型不同时退回本地判断。
+    if !ai_router || !ai_router_allowed(Some(cheap), capable) {
         return pick_model(input, false, false, Some(cheap), capable);
     }
 
@@ -281,6 +322,44 @@ mod tests {
 
     const CAP: &str = "glm-5.2";
     const CHEAP: &str = "deepseek-v4-flash";
+
+    #[test]
+    fn 模型类型按名字区分() {
+        assert_eq!(model_kind("deepseek-v4-flash"), ModelKind::Text);
+        assert_eq!(model_kind("glm-5.2"), ModelKind::Text);
+        assert_eq!(model_kind("glm-4v"), ModelKind::Vision);
+        assert_eq!(model_kind("qwen-vl-max"), ModelKind::Vision);
+    }
+
+    #[test]
+    fn 同类型两个模型时才允许开启ai路由() {
+        assert!(ai_router_allowed(Some("deepseek-v4-flash"), "glm-5.2"));
+        assert!(ai_router_allowed(Some("glm-4v"), "qwen-vl-max"));
+        // 类型不同 / 缺一个 → 一律不允许
+        assert!(!ai_router_allowed(Some("glm-4v"), "glm-5.2"));
+        assert!(!ai_router_allowed(Some("deepseek-v4-flash"), "glm-4v"));
+        assert!(!ai_router_allowed(None, "glm-5.2"));
+        assert!(!ai_router_allowed(Some("   "), "glm-5.2"));
+        assert!(!ai_router_allowed(Some("glm-5.3"), ""));
+    }
+
+    #[test]
+    fn 类型不同时ai路由不生效_回退本地判断() {
+        // 便宜模型是视觉模型、主力是纯文本 → 即使开关打开也不做 AI 路由
+        assert_eq!(
+            pick_model_with_verdict(
+                "在吗",
+                false,
+                false,
+                Some("glm-4v"),
+                CAP,
+                None,
+                true,
+                Some(Verdict { easy: true, needs_vision: false }),
+            ),
+            pick_model("在吗", false, false, Some("glm-4v"), CAP)
+        );
+    }
 
     #[test]
     fn parse_verdict_解析难度和视觉标记() {
