@@ -95,6 +95,8 @@ const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
 /** 便宜模型：留空 = 关闭难度路由，所有消息都走 apiModel */
 const cheapModel = ref('')
+/** 视觉模型：需要看图时使用，留空则仍用主力模型 */
+const visionModel = ref('')
 const cheapApiBaseUrl = ref('')
 const cheapApiKeyInput = ref('')
 /** AI 难度/视觉判断：未填写便宜模型时不生效 */
@@ -292,6 +294,7 @@ function syncFromStore() {
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
   apiModel.value = setting.apiModel
   cheapModel.value = setting.cheapModel ?? ''
+  visionModel.value = setting.visionModel ?? ''
   cheapApiBaseUrl.value = setting.cheapApiBaseUrl ?? ''
   aiRouter.value = setting.aiRouter
   depth.value = setting.depth
@@ -395,6 +398,7 @@ async function saveModel() {
       api_base_url: apiBaseUrl.value.trim() || null,
       api_model: apiModel.value.trim() || 'gpt-3.5-turbo',
       cheap_model: cheapModel.value.trim() || null,
+      vision_model: visionModel.value.trim() || null,
       cheap_api_base_url: cheapApiBaseUrl.value.trim() || null,
       ...(cheapApiKeyInput.value.trim() ? { cheap_api_key: cheapApiKeyInput.value } : {}),
       ai_router: aiRouter.value,
@@ -867,6 +871,16 @@ async function toggleAiToolbox() {
               </datalist>
             </div>
             <div class="field">
+              <label>{{ setting.unlocked ? '主力模型 API 密钥（加密存储，主密码保护）' : '主力模型 API 密钥（当前明文存储）' }}</label>
+              <div class="row">
+                <input v-model="apiKeyInput" type="password" class="input long" placeholder="sk-..." />
+                <button class="btn primary" @click="saveApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
+              </div>
+              <p class="hint">
+                主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁' : '已设置 · 未解锁') : '未设置（密钥明文存储，建议在下方设置主密码加密）' }}
+              </p>
+            </div>
+            <div class="field">
               <label>便宜模型（可选 · 用来省 token）</label>
               <input v-model="cheapModel" class="input long" list="model-presets" placeholder="留空 = 不启用；例如 deepseek-v4-flash" />
               <div class="field">
@@ -884,6 +898,13 @@ async function toggleAiToolbox() {
               <p class="hint">
                 填了之后：闲聊、短消息自动走这个便宜的模型；要动手干活的任务仍走上面的主力模型。留空则全部走主力模型（默认，最稳）。
               </p>
+            </div>
+            <div class="field">
+              <label>视觉模型（可选 · 需要看图时使用）</label>
+              <input v-model="visionModel" class="input long" list="model-presets" placeholder="留空 = 需要看图时仍用主力模型；例如 deepseek-flash" />
+              <p class="hint">消息里带图片、或 AI 判断认为需要看图时使用；沿用上面的 API 地址与密钥。</p>
+            </div>
+            <div class="field">
               <label class="switch-wrap" style="margin-top:8px">
                 <input v-model="aiRouter" type="checkbox" class="switch" />
                 <span class="label">用 AI 判断难度</span>
@@ -910,9 +931,7 @@ async function toggleAiToolbox() {
               <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
             </div>
             <button class="btn primary" @click="saveModel">保存模型设置</button>
-            <p class="hint key-guide">
-              <span class="key-guide-arrow">⬇</span> API 密钥在下方「API 密钥」卡片填写，填完回到这里点保存
-            </p>
+
           </template>
         </section>
 
@@ -984,17 +1003,10 @@ async function toggleAiToolbox() {
         </section>
 
         <section class="card">
-          <div class="card-title">API 密钥</div>
+          <div class="card-title">主密码与加密</div>
           <p class="hint">
             主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️（密钥将明文存储，建议设置主密码加密）' }}
           </p>
-          <div class="field">
-            <label>{{ setting.unlocked ? '新密钥（加密存储，主密码保护）' : '新密钥（当前明文存储，不设主密码也可用）' }}</label>
-            <div class="row">
-              <input v-model="apiKeyInput" type="password" class="input long" placeholder="sk-..." />
-              <button class="btn primary" @click="saveApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
-            </div>
-          </div>
 
           <div class="field" style="margin-top: 12px">
             <label>主密码</label>

@@ -44,6 +44,8 @@ export const useSettingStore = defineStore('setting', () => {
   const longTermMemoryLimit = ref(5)
   /** 难度路由用的便宜模型名（空 = 关闭路由，所有消息走 apiModel） */
   const cheapModel = ref<string | null>(null)
+  /** 视觉模型名（留空 = 需要看图时仍用主力模型） */
+  const visionModel = ref<string | null>(null)
   /** 是否用 AI 判断难度和视觉需求（未填写 cheapModel 时不生效） */
   const aiRouter = ref(false)
   /** Agent 任务完成后自检（只对调用过工具的任务生效，默认开） */
@@ -110,6 +112,7 @@ export const useSettingStore = defineStore('setting', () => {
     // 0 是合法值（表示不注入长期记忆），所以判据用 >= 0 而不是 > 0
     longTermMemoryLimit.value = (typeof c.long_term_memory_limit === 'number' && c.long_term_memory_limit >= 0) ? Math.min(c.long_term_memory_limit, 20) : 5
     cheapModel.value = c.cheap_model ?? null
+    visionModel.value = c.vision_model ?? null
     aiRouter.value = c.ai_router ?? false
     selfCheckEnabled.value = c.self_check_enabled ?? true
     apiBaseUrl.value = c.api_base_url ?? null
@@ -281,7 +284,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, longTermMemoryLimit, cheapModel, aiRouter, selfCheckEnabled, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
+    theme, contextLength, longTermMemoryLimit, cheapModel, visionModel, aiRouter, selfCheckEnabled, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,
