@@ -51,7 +51,7 @@ async fn generate_and_emit(
     // 不再使用硬编码默认值（修复 API 无法接入的问题）
     let cfg = crate::config::store::get_config();
     let api_key = decrypt_api_key(&cfg)?;
-    let selected_api_model = {
+    let (selected_api_model, route_info) = {
         let cheap = cfg
             .cheap_model
             .as_deref()
@@ -97,6 +97,21 @@ async fn generate_and_emit(
             verdict,
         );
 
+        // 供前端显示：这次是怎么选的模型（AI 判断 / 本地回退 / 未启用）
+        let route_info = crate::types::ChatRouteInfo {
+            source: if ai_enabled {
+                if verdict.is_some() { "ai" } else { "local" }
+            } else {
+                "off"
+            }
+            .to_string(),
+            easy: verdict
+                .map(|v| v.easy)
+                .unwrap_or_else(|| crate::engine::model_router::is_chat_only(input)),
+            needs_vision: verdict.map(|v| v.needs_vision).unwrap_or(false),
+            model: picked.clone(),
+        };
+
         if ai_enabled {
             match verdict {
                 Some(v) => log::info!(
@@ -110,8 +125,10 @@ async fn generate_and_emit(
             // AI 路由关闭时保留原有日志行为。
             log::info!("[router] 闲聊走便宜模型 {picked}（主力 {}）", cfg.api_model);
         }
-        picked
+        (picked, route_info)
     };
+    // 把「这次是怎么选的模型」推给前端显示
+    let _ = crate::stream::sender::send_route(app, &route_info);
     let setting = Setting {
         theme: cfg.theme.clone(),
         context_length: cfg.context_length,

@@ -3,7 +3,7 @@
 // 每个会话有独立的 messages 列表，切换/结束时自动保存到后端。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ChatUsage, Message, SessionMeta } from '../types'
+import type { ChatRouteInfo, ChatUsage, Message, SessionMeta } from '../types'
 import {
   createSession as createSessionCmd,
   deleteSession as deleteSessionCmd,
@@ -28,6 +28,8 @@ export const useChatStore = defineStore('chat', () => {
   const interruptedIds = ref<Record<string, boolean>>({})
   // 最近一次 API 回复的 token 用量
   const lastUsage = ref<ChatUsage | null>(null)
+  // 最近一次回复的选模型情况（AI 判断 / 本地回退 / 未启用）
+  const lastRoute = ref<ChatRouteInfo | null>(null)
   // saveCurrentSession 并发锁（防止并发写入同一会话）
   let _saveLock: Promise<void> | null = null
 
@@ -154,6 +156,11 @@ export const useChatStore = defineStore('chat', () => {
     lastUsage.value = u
   }
 
+  // 记录最近一次回复的选模型情况
+  function setRoute(r: ChatRouteInfo | null) {
+    lastRoute.value = r
+  }
+
   return {
     sessions,
     activeSessionId,
@@ -163,6 +170,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingId,
     interruptedIds,
     lastUsage,
+    lastRoute,
     init,
     createSession,
     switchSession,
@@ -175,5 +183,6 @@ export const useChatStore = defineStore('chat', () => {
     finishStream,
     errorStream,
     setUsage,
+    setRoute,
   }
 })

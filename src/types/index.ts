@@ -334,6 +334,18 @@ export interface ChatUsage {
   total_tokens: number
 }
 
+/** 本次回复的选模型情况（显示调用状态用） */
+export interface ChatRouteInfo {
+  /** ai = AI 判断决定；local = AI 没给结果回退本地；off = 未开启 AI 判断 */
+  source: 'ai' | 'local' | 'off'
+  /** true = 闲聊，false = 要干活 */
+  easy: boolean
+  /** 是否需要看图片/屏幕 */
+  needs_vision: boolean
+  /** 实际使用的模型名 */
+  model: string
+}
+
 /** Ollama 本地 AI 检测结果 */
 export interface DetectOllamaResponse {
   installed: boolean

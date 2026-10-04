@@ -41,8 +41,15 @@ export function onChatUsage(callback: (usage: ChatUsage) => void): Promise<Unlis
   return listen<ChatUsage>('chat_usage', (event) => callback(event.payload))
 }
 
+/**
+ * 监听本次回复的选模型情况（AI 判断 / 本地回退 / 未启用）
+ */
+export function onChatRoute(callback: (info: ChatRouteInfo) => void): Promise<UnlistenFn> {
+  return listen<ChatRouteInfo>('chat_route', (event) => callback(event.payload))
+}
+
 // 兼容旧环境的 greet（保留，供测试通道使用）
-import type { ChatUsage, DetectOllamaResponse, GpuVram, Message, Session, SessionMeta, TestConnectionResponse } from '../types'
+import type { ChatRouteInfo, ChatUsage, DetectOllamaResponse, GpuVram, Message, Session, SessionMeta, TestConnectionResponse } from '../types'
 export function greet(name: string): Promise<string> {
   return invoke<string>('greet', { name })
 }

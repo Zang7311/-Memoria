@@ -132,6 +132,19 @@ pub struct Usage {
     pub total_tokens: u32,
 }
 
+/// 本次回复的选模型情况（推给前端显示「这次是怎么选的」）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatRouteInfo {
+    /// "ai" = 由 AI 判断决定；"local" = AI 判断失败/超时，回退本地关键词；"off" = 未开启 AI 判断
+    pub source: String,
+    /// 判定为闲聊（true）还是要动手的任务（false）
+    pub easy: bool,
+    /// 判定需要看图片/屏幕
+    pub needs_vision: bool,
+    /// 这次实际使用的模型名
+    pub model: String,
+}
+
 // ==================== AI-4 记忆系统（与 AI-3 契约对齐，index.json 存 Memory[]） ====================
 
 /// 获取记忆列表的请求（limit 分页、keyword 搜索、set_name 指定记忆集）
