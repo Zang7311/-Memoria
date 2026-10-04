@@ -57,7 +57,18 @@ async fn generate_and_emit(
             .as_deref()
             .map(str::trim)
             .filter(|model| !model.is_empty());
-        let ai_enabled = cfg.ai_router && cheap.is_some();
+        // 主人规则（2026-10-04）：AI 判断只在「配置了 ≥2 个同类型模型」时才允许启用，
+        // 且是否开启始终由用户自己选（默认关闭）。
+        let ai_enabled = cfg.ai_router
+            && crate::engine::model_router::ai_router_allowed(
+                cfg.cheap_model.as_deref(),
+                &cfg.api_model,
+            );
+        if cfg.ai_router && !ai_enabled {
+            log::info!(
+                "[router] AI 判断未启用：需要两个同类型模型（当前未配便宜模型，或便宜/主力模型类型不同）"
+            );
+        }
         let verdict = if ai_enabled {
             let client = reqwest::Client::new();
             let result = crate::engine::model_router::classify_with_ai(
