@@ -49,6 +49,8 @@ export const useSettingStore = defineStore('setting', () => {
   /** Agent 任务完成后自检（只对调用过工具的任务生效，默认开） */
   const selfCheckEnabled = ref(true)
   const apiBaseUrl = ref<string | null>(null)
+  const cheapApiBaseUrl = ref<string | null>(null)
+  const hasCheapApiKey = ref(false)
   /** 是否已配置 API Key（明文或密文任一存在）。后端只下发布尔，不下发 Key 内容 */
   const _hasApiKey = ref<boolean>(false)
   /** 明文 API Key 是否存在（只存布尔，不把明文落地到前端内存） */
@@ -111,6 +113,8 @@ export const useSettingStore = defineStore('setting', () => {
     aiRouter.value = c.ai_router ?? false
     selfCheckEnabled.value = c.self_check_enabled ?? true
     apiBaseUrl.value = c.api_base_url ?? null
+    cheapApiBaseUrl.value = c.cheap_api_base_url ?? null
+    hasCheapApiKey.value = !!c.has_cheap_api_key
     _hasApiKey.value = !!c.has_api_key
     _apiKeyPlain.value = !!c.has_plain_key
     apiModel.value = c.api_model ?? 'gpt-3.5-turbo'
@@ -230,6 +234,10 @@ export const useSettingStore = defineStore('setting', () => {
     await update({ api_key: plain })
   }
 
+  async function saveCheapApiKey(plain: string) {
+    await update({ cheap_api_key: plain })
+  }
+
   /** 重置所有配置为默认（保留主密码与已加密 Key） */
   async function resetAll() {
     const res = await resetConfig()
@@ -273,7 +281,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   return {
     loaded, firstLaunch,
-    theme, contextLength, longTermMemoryLimit, cheapModel, aiRouter, selfCheckEnabled, apiBaseUrl, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
+    theme, contextLength, longTermMemoryLimit, cheapModel, aiRouter, selfCheckEnabled, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,
@@ -283,7 +291,7 @@ export const useSettingStore = defineStore('setting', () => {
     languageMixRate, floatingBallMode, floatingBallEnabled, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
-    applyConfig, loadConfig, update, toggleTheme, setTheme, saveApiKey, resetAll,
+    applyConfig, loadConfig, update, toggleTheme, setTheme, saveApiKey, saveCheapApiKey, resetAll,
     exportToFile, importFromFile, setupMasterPassword, unlockVault, refreshMasterStatus,
   }
 })

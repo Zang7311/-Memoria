@@ -82,6 +82,8 @@ fn redact_config() -> String {
     let mut value: Value = serde_json::from_str(&raw).unwrap_or(Value::Object(Default::default()));
 
     if let Some(obj) = value.as_object_mut() {
+        obj.remove("cheap_api_key_plain");
+        obj.remove("cheap_api_key_encrypted");
         if let Some(Value::String(key)) = obj.get("api_key_encrypted") {
             let masked = if key.len() <= 8 {
                 "********".to_string()

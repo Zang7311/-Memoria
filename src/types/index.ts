@@ -237,6 +237,8 @@ export interface AppConfig {
   /** Agent 任务完成后自检（只对「调用过工具」的任务生效，纯聊天零开销） */
   self_check_enabled: boolean
   api_base_url?: string | null
+  cheap_api_base_url?: string | null
+  has_cheap_api_key?: boolean
   /**
    * 是否已配置 API Key（明文或密文任一存在）。
    * 后端 get_config 不再下发 api_key_plain / api_key_encrypted —— Key 明文与密文

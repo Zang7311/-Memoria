@@ -95,6 +95,8 @@ const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
 /** 便宜模型：留空 = 关闭难度路由，所有消息都走 apiModel */
 const cheapModel = ref('')
+const cheapApiBaseUrl = ref('')
+const cheapApiKeyInput = ref('')
 /** AI 难度/视觉判断：未填写便宜模型时不生效 */
 const aiRouter = ref(false)
 const apiKeyInput = ref('')
@@ -290,6 +292,7 @@ function syncFromStore() {
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
   apiModel.value = setting.apiModel
   cheapModel.value = setting.cheapModel ?? ''
+  cheapApiBaseUrl.value = setting.cheapApiBaseUrl ?? ''
   aiRouter.value = setting.aiRouter
   depth.value = setting.depth
   mixRate.value = setting.languageMixRate
@@ -392,9 +395,12 @@ async function saveModel() {
       api_base_url: apiBaseUrl.value.trim() || null,
       api_model: apiModel.value.trim() || 'gpt-3.5-turbo',
       cheap_model: cheapModel.value.trim() || null,
+      cheap_api_base_url: cheapApiBaseUrl.value.trim() || null,
+      ...(cheapApiKeyInput.value.trim() ? { cheap_api_key: cheapApiKeyInput.value } : {}),
       ai_router: aiRouter.value,
       depth: depth.value,
     })
+    cheapApiKeyInput.value = ''
     generalMsg.value = '✓ 模型设置已保存'
   } catch (e) {
     generalMsg.value = `✗ ${e}`
@@ -407,6 +413,16 @@ async function saveApiKey() {
     generalMsg.value = setting.unlocked ? '✓ API 密钥已加密保存' : '✓ API 密钥已保存（明文，建议设置主密码加密）'
   } catch (e) {
     generalMsg.value = `✗ ${e}`
+  }
+}
+async function saveCheapApiKey() {
+  if (!cheapApiKeyInput.value.trim()) return
+  try {
+    await setting.saveCheapApiKey(cheapApiKeyInput.value)
+    cheapApiKeyInput.value = ''
+    generalMsg.value = setting.unlocked ? '便宜模型 API 密钥已加密保存' : '便宜模型 API 密钥已保存（明文，建议设置主密码加密）'
+  } catch (e) {
+    generalMsg.value = `保存失败：${e}`
   }
 }
 async function testConnection() {
@@ -853,6 +869,18 @@ async function toggleAiToolbox() {
             <div class="field">
               <label>便宜模型（可选 · 用来省 token）</label>
               <input v-model="cheapModel" class="input long" list="model-presets" placeholder="留空 = 不启用；例如 deepseek-v4-flash" />
+              <div class="field">
+                <label>便宜模型 API 地址</label>
+                <input v-model="cheapApiBaseUrl" class="input long" placeholder="留空 = 用上面的地址" />
+              </div>
+              <div class="field">
+                <label>便宜模型 API 密钥</label>
+                <div class="row">
+                  <input v-model="cheapApiKeyInput" type="password" class="input long" placeholder="留空 = 用上面的密钥" />
+                  <button class="btn primary" @click="saveCheapApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
+                </div>
+                <p class="hint">留空则沿用上面的地址与密钥；已保存过密钥时这里不回显</p>
+              </div>
               <p class="hint">
                 填了之后：闲聊、短消息自动走这个便宜的模型；要动手干活的任务仍走上面的主力模型。留空则全部走主力模型（默认，最稳）。
               </p>
