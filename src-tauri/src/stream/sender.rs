@@ -27,3 +27,9 @@ pub fn send_usage(app: &AppHandle, usage: &crate::types::Usage) -> Result<(), Ap
     app.emit("chat_usage", usage)?;
     Ok(())
 }
+
+/// 推送本次回复的选模型情况（AI 判断 / 本地回退 / 未启用），供前端显示调用状态
+pub fn send_route(app: &AppHandle, info: &crate::types::ChatRouteInfo) -> Result<(), AppError> {
+    app.emit("chat_route", info)?;
+    Ok(())
+}

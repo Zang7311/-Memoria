@@ -22,6 +22,18 @@ const setting = useSettingStore()
 const desktop = useDesktopStore()
 const sync = useSyncStore()
 const chat = useChatStore()
+
+/** 把路由信息翻成人话，显示在底部状态栏（让用户知道这次是怎么选的模型） */
+function routeLabel(r: { source: string; easy: boolean; needs_vision: boolean; model: string }): string {
+  const src =
+    r.source === 'ai'
+      ? 'AI 判断'
+      : r.source === 'local'
+        ? '本地判断（AI 没给出结果）'
+        : '本地规则（未开 AI 判断）'
+  const kind = r.needs_vision ? '需要看图' : r.easy ? '闲聊' : '要干活'
+  return `${src} · ${kind} · ${r.model}`
+}
 const theme = computed(() => setting.theme || 'dark')
 // 铃的头像：若是图片路径则显示图片（asset 协议加载），否则显示 emoji/文字
 const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : null))
@@ -170,7 +182,10 @@ async function onPersonaChange(e: Event) {
         <ChatInput />
 
         <!-- 会话底部 token 统计（收尾批次2；始终显示，API 回复后填充真实用量） -->
-        <div class="usage-bar" title="本次回复的 token 用量">
+        <div class="usage-bar" title="本次回复的调用情况">
+          <span v-if="chat.lastRoute" class="route-info">
+            路由：{{ routeLabel(chat.lastRoute) }}
+          </span>
           <template v-if="chat.lastUsage">
             ⚡ 本次回复：输入 {{ chat.lastUsage.prompt_tokens }} · 输出 {{ chat.lastUsage.completion_tokens }} · 合计 {{ chat.lastUsage.total_tokens }} tokens
           </template>

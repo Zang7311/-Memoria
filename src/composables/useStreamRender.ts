@@ -11,8 +11,8 @@ import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage } from '../utils/tauri'
-import type { ChatUsage, QuickCommand } from '../types'
+import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute } from '../utils/tauri'
+import type { ChatRouteInfo, ChatUsage, QuickCommand } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
@@ -96,6 +96,10 @@ export function useStreamRender() {
   // —— 处理 token 用量（API 模式流式结束）——
   function handleUsage(u: ChatUsage) {
     chat.setUsage(u)
+  }
+
+  function handleRoute(r: ChatRouteInfo) {
+    chat.setRoute(r)
   }
 
   // 发送一条消息：追加用户消息 -> 创建空的铃回复 -> 触发后端/ mock 流式
@@ -272,7 +276,7 @@ export function useStreamRender() {
 
   onMounted(() => {
     if (!USE_MOCK) {
-      Promise.all([onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError), onChatUsage(handleUsage)]).then(
+      Promise.all([onChatChunk(handleChunk), onChatEnd(handleEnd), onChatError(handleError), onChatUsage(handleUsage), onChatRoute(handleRoute)]).then(
         (fns) => (unlisteners.value = fns)
       )
     }
