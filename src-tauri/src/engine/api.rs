@@ -4,7 +4,7 @@
 use crate::engine;
 use crate::error::AppError;
 use crate::stream::sender;
-use crate::types::{Memory, Usage};
+use crate::types::{Memory, Setting, Usage};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use tauri::AppHandle;
@@ -35,6 +35,60 @@ struct FullResponse {
     choices: Vec<Choice>,
     #[serde(default)]
     usage: Option<Usage>,
+}
+
+fn select_api_credentials<'setting>(
+    setting: &'setting Setting,
+    cheap_model: Option<&str>,
+) -> (&'setting str, &'setting str) {
+    let main_base_url = setting.api_base_url.as_deref().unwrap_or_default();
+    let main_key = setting.api_key.as_deref().unwrap_or_default();
+    let is_cheap = cheap_model
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(|model| model == setting.api_model.trim())
+        .unwrap_or(false);
+    if is_cheap {
+        (
+            setting.cheap_api_base_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
+                .unwrap_or(main_base_url),
+            setting.cheap_api_key
+                .as_deref()
+                .filter(|key| !key.is_empty())
+                .unwrap_or(main_key),
+        )
+    } else {
+        (main_base_url, main_key)
+    }
+}
+
+pub async fn run_api_with_setting(
+    app: &AppHandle,
+    input: &str,
+    context: &[Memory],
+    setting: &Setting,
+    cheap_model: Option<&str>,
+    depth: u8,
+    self_name: &str,
+    user_name: &str,
+) -> Result<String, AppError> {
+    let (base_url, key) = select_api_credentials(setting, cheap_model);
+    run_api(
+        app, input, context, base_url, key, &setting.api_model,
+        depth, &setting.persona, self_name, user_name,
+    ).await.map_err(|error| redact_api_error(error, key))
+}
+
+fn redact_api_error(error: AppError, key: &str) -> AppError {
+    match error {
+        AppError::NetworkError(message) if !key.is_empty() => {
+            AppError::NetworkError(message.replace(key, "[已隐藏]"))
+        }
+        other => other,
+    }
 }
 
 /// 运行 API 模式：从 Setting 读取 base_url / api_key，构造请求调后端
@@ -222,5 +276,101 @@ pub fn to_memory(id: &str, reply: &str) -> Memory {
         summary: None,
         category: None,
         use_count: 0,
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::*;
+
+    fn setting_for(model: &str) -> Setting {
+        Setting {
+            api_base_url: Some("https://main.example/v1".into()),
+            api_key: Some("main-secret".into()),
+            api_model: model.into(),
+            ..Setting::default()
+        }
+    }
+
+    #[test]
+    fn cheap_model_without_credentials_uses_main_credentials() {
+        let setting = setting_for("cheap-model");
+        assert_eq!(select_api_credentials(&setting, Some("cheap-model")),
+            ("https://main.example/v1", "main-secret"));
+    }
+
+    #[test]
+    fn cheap_model_with_credentials_uses_cheap_credentials() {
+        let mut setting = setting_for("cheap-model");
+        setting.cheap_api_base_url = Some("https://cheap.example/v1".into());
+        setting.cheap_api_key = Some("cheap-secret".into());
+        assert_eq!(select_api_credentials(&setting, Some("cheap-model")),
+            ("https://cheap.example/v1", "cheap-secret"));
+    }
+
+    #[test]
+    fn main_model_always_uses_main_credentials() {
+        for cheap_url in [None, Some("https://cheap.example/v1"), Some("")] {
+            for cheap_key in [None, Some("cheap-secret"), Some("")] {
+                let mut setting = setting_for("main-model");
+                setting.cheap_api_base_url = cheap_url.map(str::to_string);
+                setting.cheap_api_key = cheap_key.map(str::to_string);
+                assert_eq!(select_api_credentials(&setting, Some("cheap-model")),
+                    ("https://main.example/v1", "main-secret"));
+            }
+        }
+    }
+
+    #[test]
+    fn cheap_model_with_only_url_falls_back_to_main_key() {
+        let mut setting = setting_for("cheap-model");
+        setting.cheap_api_base_url = Some("https://cheap.example/v1".into());
+        assert_eq!(select_api_credentials(&setting, Some("cheap-model")),
+            ("https://cheap.example/v1", "main-secret"));
+    }
+
+    #[test]
+    fn cheap_model_with_only_key_falls_back_to_main_url() {
+        let mut setting = setting_for("cheap-model");
+        setting.cheap_api_key = Some("cheap-secret".into());
+        assert_eq!(select_api_credentials(&setting, Some("cheap-model")),
+            ("https://main.example/v1", "cheap-secret"));
+    }
+
+    #[test]
+    fn cheap_model_names_are_compared_after_trimming() {
+        let mut setting = setting_for("  cheap-model\t");
+        setting.cheap_api_base_url = Some(" https://cheap.example/v1 ".into());
+        setting.cheap_api_key = Some("cheap-secret".into());
+        assert_eq!(select_api_credentials(&setting, Some("\ncheap-model ")),
+            ("https://cheap.example/v1", "cheap-secret"));
+    }
+
+    #[test]
+    fn cheap_model_with_blank_credentials_uses_main_credentials() {
+        let mut setting = setting_for("cheap-model");
+        setting.cheap_api_base_url = Some("  \t".into());
+        setting.cheap_api_key = Some(String::new());
+        assert_eq!(select_api_credentials(&setting, Some("cheap-model")),
+            ("https://main.example/v1", "main-secret"));
+    }
+
+    #[test]
+    fn missing_or_different_cheap_model_never_changes_credentials() {
+        let mut setting = setting_for("cheap-model");
+        setting.cheap_api_base_url = Some("https://cheap.example/v1".into());
+        setting.cheap_api_key = Some("cheap-secret".into());
+        for cheap_model in [None, Some(""), Some("  "), Some("Cheap-model"), Some("other")] {
+            assert_eq!(select_api_credentials(&setting, cheap_model),
+                ("https://main.example/v1", "main-secret"));
+        }
+    }
+
+    #[test]
+    fn api_error_redacts_echoed_credentials() {
+        let error = AppError::NetworkError("invalid key: cheap-secret".into());
+        let message = redact_api_error(error, "cheap-secret").to_string();
+        assert!(!message.contains("cheap-secret"));
+        assert!(message.contains("[已隐藏]"));
     }
 }

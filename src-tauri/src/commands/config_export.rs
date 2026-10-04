@@ -22,6 +22,8 @@ pub fn export_config() -> Result<ExportConfigResponse, AppError> {
     if let Some(obj) = val.as_object_mut() {
         obj.insert("api_key_plain".to_string(), serde_json::Value::Null);
         obj.insert("api_key_encrypted".to_string(), serde_json::Value::Null);
+        obj.insert("cheap_api_key_plain".to_string(), serde_json::Value::Null);
+        obj.insert("cheap_api_key_encrypted".to_string(), serde_json::Value::Null);
         obj.insert("master_password_salt".to_string(), serde_json::Value::Null);
         obj.insert("master_password_check".to_string(), serde_json::Value::Null);
         obj.insert("toolbox_items".to_string(), serde_json::Value::Array(vec![]));

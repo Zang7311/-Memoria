@@ -58,6 +58,10 @@ pub struct Setting {
     pub api_base_url: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub cheap_api_base_url: Option<String>,
+    #[serde(default)]
+    pub cheap_api_key: Option<String>,
     /// API 模型名（默认 gpt-3.5-turbo，可配置 deepseek-chat 等）
     #[serde(default = "default_api_model")]
     pub api_model: String,
@@ -81,6 +85,8 @@ impl Default for Setting {
             context_length: 10,
             api_base_url: None,
             api_key: None,
+            cheap_api_base_url: None,
+            cheap_api_key: None,
             api_model: "gpt-3.5-turbo".to_string(),
             model_mode: "script".to_string(),
             depth: 2,
@@ -526,6 +532,12 @@ pub struct AppConfig {
     /// 填了之后：闲聊/短消息走它省钱，任务类消息仍走 api_model 保质量。
     #[serde(default)]
     pub cheap_model: Option<String>,
+    #[serde(default)]
+    pub cheap_api_base_url: Option<String>,
+    #[serde(default)]
+    pub cheap_api_key_plain: Option<String>,
+    #[serde(default)]
+    pub cheap_api_key_encrypted: Option<String>,
     /// 是否使用一次廉价 AI 调用判断难度和视觉需求；默认关闭。
     #[serde(default)]
     pub ai_router: bool,
@@ -710,7 +722,7 @@ fn default_persona() -> String {
 impl AppConfig {
     /// 生成脱敏配置（发往前端的唯一形态）
     ///
-    /// 去掉两个敏感字段，替换为布尔标记：
+    /// 去掉主力和便宜模型的敏感字段，替换为布尔标记：
     /// - `api_key_plain`（明文 Key）→ `has_plain_key`
     /// - `api_key_encrypted`（AES-256-GCM 密文，可离线爆破弱主密码）→ 与明文一起归并到 `has_api_key`
     ///
@@ -719,10 +731,19 @@ impl AppConfig {
     pub fn to_public(&self) -> Result<serde_json::Value, serde_json::Error> {
         let has_plain_key = self.api_key_plain.is_some();
         let has_api_key = has_plain_key || self.api_key_encrypted.is_some();
+        let has_cheap_api_key = self
+            .cheap_api_key_plain
+            .as_deref()
+            .into_iter()
+            .chain(self.cheap_api_key_encrypted.as_deref())
+            .any(|key| !key.is_empty());
         let mut v = serde_json::to_value(self)?;
         if let Some(obj) = v.as_object_mut() {
             obj.remove("api_key_plain");
             obj.remove("api_key_encrypted");
+            obj.remove("cheap_api_key_plain");
+            obj.remove("cheap_api_key_encrypted");
+            obj.insert("has_cheap_api_key".into(), serde_json::Value::Bool(has_cheap_api_key));
             obj.insert("has_api_key".into(), serde_json::Value::Bool(has_api_key));
             obj.insert("has_plain_key".into(), serde_json::Value::Bool(has_plain_key));
         }
@@ -1142,6 +1163,69 @@ pub struct ExecuteQuickCommandResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cheap_key_response_is_redacted_and_preserves_url() {
+        let mut cfg = crate::config::defaults::default_config();
+        cfg.cheap_api_base_url = Some("https://cheap.example/v1".into());
+        cfg.cheap_api_key_plain = Some("cheap-secret-plain".into());
+        cfg.cheap_api_key_encrypted = Some("cheap-secret-encrypted".into());
+        let response = GetConfigResponse::from_config(&cfg).expect("public config");
+        let text = serde_json::to_string(&response).expect("serialize response");
+        assert!(!text.contains("cheap-secret-plain"));
+        assert!(!text.contains("cheap-secret-encrypted"));
+        assert!(!text.contains("cheap_api_key_plain"));
+        assert!(!text.contains("cheap_api_key_encrypted"));
+        assert_eq!(response.config["has_cheap_api_key"], true);
+        assert_eq!(response.config["cheap_api_base_url"], "https://cheap.example/v1");
+    }
+
+    #[test]
+    fn cheap_key_presence_requires_nonempty_plaintext_or_ciphertext() {
+        for plain in [None, Some(""), Some("cheap-secret")] {
+            for encrypted in [None, Some(""), Some("encrypted-secret")] {
+                let mut cfg = crate::config::defaults::default_config();
+                cfg.cheap_api_key_plain = plain.map(str::to_string);
+                cfg.cheap_api_key_encrypted = encrypted.map(str::to_string);
+                let expected = plain.map(|key| !key.is_empty()).unwrap_or(false)
+                    || encrypted.map(|key| !key.is_empty()).unwrap_or(false);
+                assert_eq!(cfg.to_public().expect("public config")["has_cheap_api_key"], expected);
+            }
+        }
+    }
+
+    #[test]
+    fn old_config_and_setting_deserialize_without_cheap_credentials() {
+        let mut config = serde_json::to_value(crate::config::defaults::default_config()).expect("config");
+        let object = config.as_object_mut().expect("config object");
+        object.remove("cheap_api_base_url");
+        object.remove("cheap_api_key_plain");
+        object.remove("cheap_api_key_encrypted");
+        let cfg: AppConfig = serde_json::from_value(config).expect("old config");
+        assert!(cfg.cheap_api_base_url.is_none());
+        assert!(cfg.cheap_api_key_plain.is_none());
+        assert!(cfg.cheap_api_key_encrypted.is_none());
+
+        let mut setting = serde_json::to_value(Setting::default()).expect("setting");
+        let object = setting.as_object_mut().expect("setting object");
+        object.remove("cheap_api_base_url");
+        object.remove("cheap_api_key");
+        let setting: Setting = serde_json::from_value(setting).expect("old setting");
+        assert!(setting.cheap_api_base_url.is_none());
+        assert!(setting.cheap_api_key.is_none());
+    }
+
+    #[test]
+    fn cheap_credentials_roundtrip_through_stored_config() {
+        let mut cfg = crate::config::defaults::default_config();
+        cfg.cheap_api_base_url = Some("https://cheap.example/v1".into());
+        cfg.cheap_api_key_plain = Some("cheap-secret".into());
+        let serialized = serde_json::to_string(&cfg).expect("stored config");
+        let restored: AppConfig = serde_json::from_str(&serialized).expect("restored config");
+        assert_eq!(restored.cheap_api_base_url, cfg.cheap_api_base_url);
+        assert_eq!(restored.cheap_api_key_plain, cfg.cheap_api_key_plain);
+        assert!(restored.cheap_api_key_encrypted.is_none());
+    }
 
     /// 构造一份带 Key 的配置用于脱敏断言
     fn cfg_with_keys(plain: Option<&str>, enc: Option<&str>) -> AppConfig {

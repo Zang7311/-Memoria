@@ -97,10 +97,31 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
         return update(&updates); // 递归处理其余字段
     }
 
+    if let Some(value) = updates.get("cheap_api_key") {
+        let key = if encryption::is_unlocked() {
+            Some(encryption::get_key()?)
+        } else {
+            None
+        };
+        update_cheap_api_key(&mut cfg, value, key.as_ref())?;
+    }
+
     let mut obj = serde_json::to_value(&cfg)
         .map_err(|e| AppError::ConfigSaveError(format!("配置序列化失败：{e}")))?;
     if let Value::Object(map) = &mut obj {
         for (k, v) in updates {
+            if k == "cheap_api_key" {
+                continue;
+            }
+            if k == "cheap_api_key_encrypted" {
+                encryption::get_key()?;
+                if v.is_null() {
+                    map.remove(k);
+                } else {
+                    map.insert(k.clone(), v.clone());
+                }
+                continue;
+            }
             // api_key_encrypted 直接写入需先解锁（防止用他人密钥覆盖）
             if k == "api_key_encrypted" {
                 encryption::get_key()?;
@@ -139,6 +160,32 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
         .map_err(|e| AppError::ConfigSaveError(format!("配置更新解析失败：{e}")))?;
     set_config(new_cfg.clone())?;
     Ok(new_cfg)
+}
+
+fn update_cheap_api_key(
+    cfg: &mut AppConfig,
+    value: &Value,
+    unlocked_key: Option<&[u8; encryption::KEY_LEN]>,
+) -> Result<(), AppError> {
+    if value.is_null() {
+        cfg.cheap_api_key_encrypted = None;
+        cfg.cheap_api_key_plain = None;
+    } else {
+        let plain = value
+            .as_str()
+            .ok_or_else(|| AppError::EncryptionError("cheap_api_key 必须是字符串".into()))?;
+        if plain.is_empty() {
+            cfg.cheap_api_key_encrypted = None;
+            cfg.cheap_api_key_plain = None;
+        } else if let Some(key) = unlocked_key {
+            cfg.cheap_api_key_encrypted = Some(encryption::encrypt_with_key(key, plain)?);
+            cfg.cheap_api_key_plain = None;
+        } else {
+            cfg.cheap_api_key_encrypted = None;
+            cfg.cheap_api_key_plain = Some(plain.to_string());
+        }
+    }
+    Ok(())
 }
 
 /// 重置所有配置为默认值（保留 master_password 与 api_key_encrypted？任务书：重置全部。
@@ -241,5 +288,56 @@ fn save_config_file(cfg: &AppConfig) -> Result<(), AppError> {
 fn notify_changed() {
     if let Some(app) = APP.lock().unwrap().as_ref() {
         let _ = app.emit("config-changed", ());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cheap_key_locked_saves_plaintext_and_clears_ciphertext() {
+        let mut cfg = default_config();
+        cfg.api_key_plain = Some("main-secret".into());
+        cfg.cheap_api_key_encrypted = Some("old-ciphertext".into());
+        update_cheap_api_key(&mut cfg, &Value::String("cheap-secret".into()), None).expect("save key");
+        assert_eq!(cfg.cheap_api_key_plain.as_deref(), Some("cheap-secret"));
+        assert!(cfg.cheap_api_key_encrypted.is_none());
+        assert_eq!(cfg.api_key_plain.as_deref(), Some("main-secret"));
+    }
+
+    #[test]
+    fn cheap_key_unlocked_encrypts_and_clears_plaintext() {
+        let mut cfg = default_config();
+        cfg.cheap_api_key_plain = Some("old-secret".into());
+        let key = [42; encryption::KEY_LEN];
+        update_cheap_api_key(&mut cfg, &Value::String("cheap-secret".into()), Some(&key)).expect("save key");
+        assert!(cfg.cheap_api_key_plain.is_none());
+        let encrypted = cfg.cheap_api_key_encrypted.as_deref().expect("ciphertext");
+        assert!(!encrypted.contains("cheap-secret"));
+        assert_eq!(encryption::decrypt_with_key(&key, encrypted).expect("decrypt key"), "cheap-secret");
+    }
+
+    #[test]
+    fn cheap_key_null_and_empty_clear_both_storage_fields() {
+        for value in [Value::Null, Value::String(String::new())] {
+            let mut cfg = default_config();
+            cfg.cheap_api_key_plain = Some("old-secret".into());
+            cfg.cheap_api_key_encrypted = Some("old-ciphertext".into());
+            update_cheap_api_key(&mut cfg, &value, None).expect("clear key");
+            assert!(cfg.cheap_api_key_plain.is_none());
+            assert!(cfg.cheap_api_key_encrypted.is_none());
+        }
+    }
+
+    #[test]
+    fn cheap_key_invalid_type_is_rejected_without_changes() {
+        let mut cfg = default_config();
+        cfg.cheap_api_key_plain = Some("old-secret".into());
+        assert!(matches!(
+            update_cheap_api_key(&mut cfg, &Value::Bool(true), None),
+            Err(AppError::EncryptionError(_))
+        ));
+        assert_eq!(cfg.cheap_api_key_plain.as_deref(), Some("old-secret"));
     }
 }

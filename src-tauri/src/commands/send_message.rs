@@ -51,6 +51,7 @@ async fn generate_and_emit(
     // 不再使用硬编码默认值（修复 API 无法接入的问题）
     let cfg = crate::config::store::get_config();
     let api_key = decrypt_api_key(&cfg)?;
+    let cheap_api_key = decrypt_cheap_api_key(&cfg)?;
     let (selected_api_model, route_info) = {
         let cheap = cfg
             .cheap_model
@@ -73,8 +74,13 @@ async fn generate_and_emit(
             let client = reqwest::Client::new();
             let result = crate::engine::model_router::classify_with_ai(
                 &client,
-                cfg.api_base_url.as_deref().unwrap_or_default(),
-                api_key.as_deref().unwrap_or_default(),
+                cfg.cheap_api_base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|url| !url.is_empty())
+                    .or(cfg.api_base_url.as_deref())
+                    .unwrap_or_default(),
+                cheap_api_key.as_deref().or(api_key.as_deref()).unwrap_or_default(),
                 cheap.unwrap_or_default(),
                 input,
             )
@@ -134,6 +140,12 @@ async fn generate_and_emit(
         context_length: cfg.context_length,
         api_base_url: cfg.api_base_url.clone(),
         api_key,
+        cheap_api_base_url: cfg.cheap_api_base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(str::to_string),
+        cheap_api_key,
         api_model: selected_api_model,
         model_mode: cfg.model_mode.clone(),
         depth: cfg.depth,
@@ -243,11 +255,9 @@ async fn generate_and_emit(
     // 按 model_mode 选择引擎
     let reply = match setting.model_mode.as_str() {
         "api" => {
-            let base = setting.api_base_url.clone().unwrap_or_default();
-            let key = setting.api_key.clone().unwrap_or_default();
             let self_name = setting.self_name.clone().unwrap_or_else(|| "铃".to_string());
             let user_name = setting.user_name.clone().unwrap_or_else(|| "主人".to_string());
-            engine::api::run_api(app, input, &memories, &base, &key, &setting.api_model, depth, &setting.persona, &self_name, &user_name).await?
+            engine::api::run_api_with_setting(app, input, &memories, &setting, cfg.cheap_model.as_deref(), depth, &self_name, &user_name).await?
         }
         "local" => {
             engine::local::run_local(app, input, &memories, depth).await?
@@ -326,4 +336,47 @@ fn decrypt_api_key(cfg: &crate::types::AppConfig) -> Result<Option<String>, AppE
         }
     }
     Ok(None)
+}
+
+fn decrypt_cheap_api_key(cfg: &crate::types::AppConfig) -> Result<Option<String>, AppError> {
+    if let Some(enc) = &cfg.cheap_api_key_encrypted {
+        if !enc.is_empty() {
+            let key = crate::config::encryption::get_key()?;
+            return Ok(Some(crate::config::encryption::decrypt_with_key(&key, enc)?));
+        }
+    }
+    if let Some(plain) = &cfg.cheap_api_key_plain {
+        if !plain.is_empty() {
+            return Ok(Some(plain.clone()));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(test)]
+mod cheap_key_tests {
+    use super::*;
+
+    #[test]
+    fn missing_cheap_key_returns_none_for_fallback() {
+        let cfg = crate::config::defaults::default_config();
+        assert_eq!(decrypt_cheap_api_key(&cfg).expect("fallback"), None);
+    }
+
+    #[test]
+    fn empty_cheap_key_fields_return_none_for_fallback() {
+        let mut cfg = crate::config::defaults::default_config();
+        cfg.cheap_api_key_plain = Some(String::new());
+        cfg.cheap_api_key_encrypted = Some(String::new());
+        assert_eq!(decrypt_cheap_api_key(&cfg).expect("fallback"), None);
+    }
+
+    #[test]
+    fn cheap_plaintext_key_is_independent_from_main_key() {
+        let mut cfg = crate::config::defaults::default_config();
+        cfg.api_key_plain = Some("main-secret".into());
+        cfg.cheap_api_key_plain = Some("cheap-secret".into());
+        assert_eq!(decrypt_cheap_api_key(&cfg).expect("cheap key").as_deref(), Some("cheap-secret"));
+        assert_eq!(decrypt_api_key(&cfg).expect("main key").as_deref(), Some("main-secret"));
+    }
 }
