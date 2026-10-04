@@ -50,26 +50,63 @@ async fn generate_and_emit(
     // 读取配置中心（AI-7 实现）：真实配置从 ~/.铃记忆体/config.json 加载，
     // 不再使用硬编码默认值（修复 API 无法接入的问题）
     let cfg = crate::config::store::get_config();
+    let api_key = decrypt_api_key(&cfg)?;
+    let selected_api_model = {
+        let cheap = cfg
+            .cheap_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|model| !model.is_empty());
+        let ai_enabled = cfg.ai_router && cheap.is_some();
+        let verdict = if ai_enabled {
+            let client = reqwest::Client::new();
+            let result = crate::engine::model_router::classify_with_ai(
+                &client,
+                cfg.api_base_url.as_deref().unwrap_or_default(),
+                api_key.as_deref().unwrap_or_default(),
+                cheap.unwrap_or_default(),
+                input,
+            )
+            .await;
+            if result.is_none() {
+                log::info!("[router] AI 判断失败或超时，回退本地判断");
+            }
+            result
+        } else {
+            None
+        };
+        let picked = crate::engine::model_router::pick_model_with_verdict(
+            input,
+            false, // 本命令不接收图片，天然无视觉风险
+            false, // Agent 模式走 agent_run，是另一条独立入口
+            cfg.cheap_model.as_deref(),
+            &cfg.api_model,
+            cfg.vision_model.as_deref(),
+            cfg.ai_router,
+            verdict,
+        );
+
+        if ai_enabled {
+            match verdict {
+                Some(v) => log::info!(
+                    "[router] AI 判断 easy={} needs_vision={}，最终选择模型 {picked}",
+                    v.easy,
+                    v.needs_vision
+                ),
+                None => log::info!("[router] 本地回退，最终选择模型 {picked}"),
+            }
+        } else if picked != cfg.api_model {
+            // AI 路由关闭时保留原有日志行为。
+            log::info!("[router] 闲聊走便宜模型 {picked}（主力 {}）", cfg.api_model);
+        }
+        picked
+    };
     let setting = Setting {
         theme: cfg.theme.clone(),
         context_length: cfg.context_length,
         api_base_url: cfg.api_base_url.clone(),
-        api_key: decrypt_api_key(&cfg)?,
-        api_model: {
-            // 难度路由：闲聊走便宜模型、任务类走主力模型。
-            // 未配置 cheap_model 时 pick_model 一律返回主力模型 = 路由关闭，行为与旧版一致。
-            let picked = crate::engine::model_router::pick_model(
-                input,
-                false, // 本命令不接收图片，天然无视觉风险
-                false, // Agent 模式走 agent_run，是另一条独立入口
-                cfg.cheap_model.as_deref(),
-                &cfg.api_model,
-            );
-            if picked != cfg.api_model {
-                log::info!("[router] 闲聊走便宜模型 {picked}（主力 {}）", cfg.api_model);
-            }
-            picked
-        },
+        api_key,
+        api_model: selected_api_model,
         model_mode: cfg.model_mode.clone(),
         depth: cfg.depth,
         self_name: cfg.self_name.clone(),

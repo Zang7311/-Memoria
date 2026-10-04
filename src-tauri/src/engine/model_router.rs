@@ -9,9 +9,159 @@
 // 设计原则：
 //   1. **默认关闭** —— cheap_model 留空时一律用 api_model，行为与旧版完全一致；
 //      只有用户显式填了便宜模型，路由才生效。绝不擅自改变既有行为。
-//   2. **零额外调用** —— 纯本地启发式判断，不为了「选择模型」再多花一次 LLM 调用
-//      （否则省下的 token 还不够付路由的成本）。
+//   2. **默认零额外调用** —— 默认使用本地启发式；只有用户打开 AI 路由开关时，
+//      才为选择模型额外发起一次极小的分类调用。
 //   3. **拿不准就给强的** —— 宁可多花一点，也不要该干活时派出弱模型。
+
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+use serde_json::Value;
+
+/// AI 路由的判定结果：难度和是否需要视觉模型。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Verdict {
+    pub easy: bool,
+    pub needs_vision: bool,
+}
+
+const ROUTER_CACHE_LIMIT: usize = 64;
+static ROUTER_CACHE: OnceLock<Mutex<HashMap<u64, Verdict>>> = OnceLock::new();
+static ROUTER_CACHE_ORDER: OnceLock<Mutex<VecDeque<u64>>> = OnceLock::new();
+
+fn router_cache() -> &'static Mutex<HashMap<u64, Verdict>> {
+    ROUTER_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn router_cache_order() -> &'static Mutex<VecDeque<u64>> {
+    ROUTER_CACHE_ORDER.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn input_hash(input: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn cached_verdict(input: &str) -> Option<Verdict> {
+    let key = input_hash(input);
+    let cache = router_cache().lock().unwrap_or_else(|e| e.into_inner());
+    cache.get(&key).copied()
+}
+
+fn cache_verdict(input: &str, verdict: Verdict) {
+    let key = input_hash(input);
+    let mut cache = router_cache().lock().unwrap_or_else(|e| e.into_inner());
+    let mut order = router_cache_order().lock().unwrap_or_else(|e| e.into_inner());
+
+    if cache.contains_key(&key) {
+        cache.insert(key, verdict);
+        if let Some(position) = order.iter().position(|cached| *cached == key) {
+            order.remove(position);
+        }
+        order.push_back(key);
+        return;
+    }
+
+    if cache.len() >= ROUTER_CACHE_LIMIT {
+        if let Some(oldest) = order.pop_front() {
+            cache.remove(&oldest);
+        }
+    }
+    cache.insert(key, verdict);
+    order.push_back(key);
+}
+
+/// 解析 AI 返回的难度和视觉结论。
+pub fn parse_verdict(raw: &str) -> Option<Verdict> {
+    let lower = raw.to_lowercase();
+    let has_easy = lower.contains("easy");
+    let has_hard = lower.contains("hard");
+    if !has_easy && !has_hard {
+        return None;
+    }
+
+    Some(Verdict {
+        // 同时出现时保守按 hard 处理，避免任务误派给便宜模型。
+        easy: has_easy && !has_hard,
+        needs_vision: lower.contains("vision")
+            || lower.contains("image")
+            || lower.contains("visual")
+            || lower.contains("图片")
+            || lower.contains('图'),
+    })
+}
+
+/// 对同一输入复用缓存，供网络分类和单元测试共用。
+#[cfg(test)]
+fn classify_with_cache<F>(input: &str, classify: F) -> Option<Verdict>
+where
+    F: FnOnce() -> Option<Verdict>,
+{
+    if let Some(verdict) = cached_verdict(input) {
+        return Some(verdict);
+    }
+
+    let verdict = classify()?;
+    cache_verdict(input, verdict);
+    Some(verdict)
+}
+
+/// 用便宜模型判定消息难度及是否需要视觉模型。
+///
+/// 任何网络、超时、状态码或解析失败都只返回 None，不影响主聊天流程。
+pub async fn classify_with_ai(
+    client: &reqwest::Client,
+    base_url: &str,
+    key: &str,
+    model: &str,
+    input: &str,
+) -> Option<Verdict> {
+    if let Some(verdict) = cached_verdict(input) {
+        return Some(verdict);
+    }
+
+    let user_input: String = input.chars().take(500).collect();
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "判断用户这句话：①是闲聊(easy)还是要动手的任务(hard)；②是否需要看图片或屏幕(vision)还是不需要(text)。直接输出两个词，不要任何解释或分析。例如：easy text / hard text / hard vision / easy vision"
+            },
+            { "role": "user", "content": user_input }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 512,
+    });
+    let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(base_url));
+
+    let response = client
+        .post(url)
+        .bearer_auth(key)
+        .json(&body)
+        .timeout(Duration::from_secs(8))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let value: Value = response.json().await.ok()?;
+    let raw = value
+        .get("choices")?
+        .get(0)?
+        .get("message")?
+        .get("content")?
+        .as_str()?;
+    let verdict = parse_verdict(raw)?;
+    cache_verdict(input, verdict);
+    Some(verdict)
+}
 
 /// 纯闲聊的长度上限（字符数）。超过这个长度就认为是有内容的话，交给能力强的模型。
 const CHAT_MAX_CHARS: usize = 50;
@@ -91,12 +241,123 @@ pub fn pick_model(
     capable.to_string()
 }
 
+/// 在保留现有三条强制规则的基础上应用 AI 路由结果。
+pub fn pick_model_with_verdict(
+    input: &str,
+    has_image: bool,
+    agent_mode: bool,
+    cheap: Option<&str>,
+    capable: &str,
+    vision: Option<&str>,
+    ai_router: bool,
+    verdict: Option<Verdict>,
+) -> String {
+    let Some(cheap) = cheap.map(str::trim).filter(|s| !s.is_empty()) else {
+        return capable.to_string();
+    };
+    if has_image || agent_mode {
+        return capable.to_string();
+    }
+    if !ai_router {
+        return pick_model(input, false, false, Some(cheap), capable);
+    }
+
+    match verdict {
+        Some(verdict) if verdict.needs_vision => vision
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(capable)
+            .to_string(),
+        Some(verdict) if verdict.easy => cheap.to_string(),
+        Some(_) => capable.to_string(),
+        None => pick_model(input, false, false, Some(cheap), capable),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const CAP: &str = "glm-5.2";
     const CHEAP: &str = "deepseek-v4-flash";
+
+    #[test]
+    fn parse_verdict_解析难度和视觉标记() {
+        assert_eq!(parse_verdict("easy text"), Some(Verdict { easy: true, needs_vision: false }));
+        assert_eq!(parse_verdict("EASY TEXT"), Some(Verdict { easy: true, needs_vision: false }));
+        assert_eq!(parse_verdict("hard"), Some(Verdict { easy: false, needs_vision: false }));
+        assert_eq!(parse_verdict("hard vision"), Some(Verdict { easy: false, needs_vision: true }));
+        assert_eq!(parse_verdict("这需要动手 hard"), Some(Verdict { easy: false, needs_vision: false }));
+        assert_eq!(parse_verdict("需要看图 vision easy"), Some(Verdict { easy: true, needs_vision: true }));
+        assert_eq!(parse_verdict(""), None);
+        assert_eq!(parse_verdict("???"), None);
+    }
+
+    #[test]
+    fn 缓存命中时不再调用分类器() {
+        let input = "缓存测试_同一输入_不重复调用";
+        let calls = AtomicUsize::new(0);
+        let first = classify_with_cache(input, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Some(Verdict { easy: true, needs_vision: false })
+        });
+        let second = classify_with_cache(input, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Some(Verdict { easy: false, needs_vision: true })
+        });
+        assert_eq!(first, second);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn ai_router关闭时保持本地路由行为() {
+        let long = "嗯嗯".repeat(30);
+        for input in ["在吗", "帮我打开QQ", long.as_str()] {
+            assert_eq!(
+                pick_model_with_verdict(
+                    input,
+                    false,
+                    false,
+                    Some(CHEAP),
+                    CAP,
+                    Some("vision-model"),
+                    false,
+                    Some(Verdict { easy: true, needs_vision: true }),
+                ),
+                pick_model(input, false, false, Some(CHEAP), CAP)
+            );
+        }
+    }
+
+    #[test]
+    fn 需要视觉时绝不使用便宜模型() {
+        assert_eq!(
+            pick_model_with_verdict(
+                "看一下",
+                false,
+                false,
+                Some(CHEAP),
+                CAP,
+                Some("vision-model"),
+                true,
+                Some(Verdict { easy: true, needs_vision: true }),
+            ),
+            "vision-model"
+        );
+    }
+
+    #[test]
+    fn ai判不出来时回退本地判断() {
+        assert_eq!(
+            pick_model_with_verdict("在吗", false, false, Some(CHEAP), CAP, None, true, None),
+            CHEAP
+        );
+        assert_eq!(
+            pick_model_with_verdict("帮我打开QQ", false, false, Some(CHEAP), CAP, None, true, None),
+            CAP
+        );
+    }
 
     #[test]
     fn 没配便宜模型时永远用主力模型() {

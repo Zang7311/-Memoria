@@ -95,6 +95,8 @@ const apiBaseUrl = ref('')
 const apiModel = ref('gpt-3.5-turbo')
 /** 便宜模型：留空 = 关闭难度路由，所有消息都走 apiModel */
 const cheapModel = ref('')
+/** AI 难度/视觉判断：未填写便宜模型时不生效 */
+const aiRouter = ref(false)
 const apiKeyInput = ref('')
 const depth = ref(2)
 // 离线语义检索模型（bge, 方案3）状态
@@ -288,6 +290,7 @@ function syncFromStore() {
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
   apiModel.value = setting.apiModel
   cheapModel.value = setting.cheapModel ?? ''
+  aiRouter.value = setting.aiRouter
   depth.value = setting.depth
   mixRate.value = setting.languageMixRate
   selfName.value = setting.selfName
@@ -389,6 +392,7 @@ async function saveModel() {
       api_base_url: apiBaseUrl.value.trim() || null,
       api_model: apiModel.value.trim() || 'gpt-3.5-turbo',
       cheap_model: cheapModel.value.trim() || null,
+      ai_router: aiRouter.value,
       depth: depth.value,
     })
     generalMsg.value = '✓ 模型设置已保存'
@@ -851,6 +855,13 @@ async function toggleAiToolbox() {
               <input v-model="cheapModel" class="input long" list="model-presets" placeholder="留空 = 不启用；例如 deepseek-v4-flash" />
               <p class="hint">
                 填了之后：闲聊、短消息自动走这个便宜的模型；要动手干活的任务仍走上面的主力模型。留空则全部走主力模型（默认，最稳）。
+              </p>
+              <label class="switch-wrap" style="margin-top:8px">
+                <input v-model="aiRouter" type="checkbox" class="switch" />
+                <span class="label">用 AI 判断难度</span>
+              </label>
+              <p class="hint" style="margin-left:48px">
+                更准，并会顺便判断要不要用视觉模型；每次判断会多发一次极小的廉价调用，失败或超时会自动回退到本地判断。未填便宜模型时不生效。
               </p>
             </div>
             <div class="row">

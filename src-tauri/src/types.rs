@@ -513,6 +513,9 @@ pub struct AppConfig {
     /// 填了之后：闲聊/短消息走它省钱，任务类消息仍走 api_model 保质量。
     #[serde(default)]
     pub cheap_model: Option<String>,
+    /// 是否使用一次廉价 AI 调用判断难度和视觉需求；默认关闭。
+    #[serde(default)]
+    pub ai_router: bool,
     /// 视觉（看图）专用模型名，如 glm-4v。
     /// 留空则回退到 api_model；填了就用它做「看图」。
     #[serde(default)]
