@@ -88,10 +88,23 @@ pnpm tauri build --bundles nsis msi
 
 产物在 `src-tauri/target/release/bundle/` 下。
 
+## 附件与模型路由（Beta）
+
+- 输入区「附件」可多选文件、移除已选标签，也可只发附件；发送失败时保留待发附件。
+- 图片支持 jpg/jpeg/png/gif/webp/bmp，每个不超过 5MB；文本支持 txt/md/json/csv/log/py/js/ts/rs/html/css/xml/yaml/toml/ini/sh，每个不超过 1MB。
+- 图片优先视觉槽位，没有视觉槽位则回退主力，绝不降级到便宜模型。文本附件遇到任务关键词、用户文字超过 50 字、或附件文本合计超过 500 字时走主力；短闲聊仍可走便宜槽位及原有轮询。
+- 云端请求中，文本附件按选择顺序合并为「【附件 文件名】」段落；带附件请求的总文本限制为 200KB（按 UTF-8 字节计算），超出会标记「已截断」。有图片时使用 OpenAI 多模态数组；无图片时仍为字符串。
+- AI 判断仅接收附件名称、大小、类型；判断失败或路由事件不可用不会阻断附件发送。附件消息不被快捷指令、工具箱意图或聊天彩蛋截走。
+- 会话仅存附件文件名与类型，不保存附件原文或 base64。重新打开会话或重放上下文时显示「[图片: 文件名]」/「[附件: 文件名]」，不会再次发送原附件。
+- 图片识别需要支持视觉的云端 API；本地/离线模式会给出中文提示，不会假装识图。带附件时即使开启 Agent 模式，也使用普通对话并在输入区说明。不支持 PDF/Word 等二进制文档，首版不提供缩略图。
+
 ## 🧪 验证
 
 ```bash
 pnpm run build          # 前端构建（vue-tsc + vite）
+pnpm run test:route-review # 路由与会话回归
+pnpm run test:model-slots  # 已提交模型槽位功能回归
+pnpm run test:attachments  # 文件读取、限制、发送、元信息持久化
 cd src-tauri && cargo check      # 后端检查
 cd src-tauri && cargo test --lib # 单元测试
 ```

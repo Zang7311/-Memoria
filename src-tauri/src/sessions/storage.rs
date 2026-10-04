@@ -169,6 +169,7 @@ mod tests {
             role: role.to_string(),
             content: content.to_string(),
             timestamp: crate::utils::now_str(),
+            attachments: Vec::new(),
         }
     }
 

@@ -1,11 +1,12 @@
 {
   "name": "mem",
   "private": true,
-  "version": "0.7.0-beta.1",
+  "version": "0.7.0-beta.2",
   "type": "module",
   "scripts": {
     "test:route-review": "node --test scripts/route-review.test.mjs",
     "test:model-slots": "node --test scripts/model-slots.test.mjs",
+    "test:attachments": "node --test scripts/attachments.test.mjs",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
