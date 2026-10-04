@@ -37,6 +37,7 @@ pub mod config_get;
 pub mod config_import;
 pub mod config_reset;
 pub mod config_update;
+pub mod model_slot;
 pub mod diagnostic_export;
 pub mod logs_clear;
 pub mod logs_get;

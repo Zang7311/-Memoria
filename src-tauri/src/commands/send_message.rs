@@ -53,10 +53,33 @@ async fn generate_and_emit(
 ) -> Result<(), AppError> {
     // 读取配置中心（AI-7 实现）：真实配置从 ~/.铃记忆体/config.json 加载，
     // 不再使用硬编码默认值（修复 API 无法接入的问题）
-    let cfg = crate::config::store::get_config();
-    let api_key = decrypt_api_key(&cfg)?;
-    let cheap_api_key = decrypt_cheap_api_key(&cfg)?;
-    let (selected_api_model, route_info) = {
+    let cfg = crate::config::store::get_runtime_config();
+    let api_key = if cfg.models.is_empty() { decrypt_api_key(&cfg)? } else { None };
+    let cheap_api_key = if cfg.models.is_empty() { decrypt_cheap_api_key(&cfg)? } else { None };
+    let mut selected_slot = None;
+    let (selected_api_model, route_info) = if !cfg.models.is_empty() {
+        let cheap = crate::engine::model_router::next_cheap_slot(&cfg);
+        let ai_enabled = cfg.model_mode == "api" && cfg.ai_router
+            && crate::engine::model_router::slot_ai_router_allowed(&cfg, cheap);
+        let verdict = if ai_enabled {
+            let (base_url, key) = crate::engine::api::slot_api_credentials(&cfg, cheap)?;
+            crate::engine::model_router::classify_with_ai(
+                &reqwest::Client::new(), &base_url, key.as_deref().unwrap_or_default(),
+                cheap.map(|slot| slot.name.trim()).unwrap_or_default(), input,
+            ).await
+        } else { None };
+        selected_slot = crate::engine::model_router::pick_slot_with_verdict(
+            &cfg, input, false, false, cheap, ai_enabled, verdict,
+        );
+        let picked = selected_slot.map(|slot| slot.name.trim()).unwrap_or(&cfg.api_model).to_string();
+        let route_info = crate::types::ChatRouteInfo {
+            session_id: session_id.map(str::to_string), request_id: request_id.to_string(),
+            source: if !ai_enabled { "off" } else if verdict.is_some() { "ai" } else { "local" }.into(),
+            easy: verdict.map(|verdict| verdict.easy).unwrap_or_else(|| crate::engine::model_router::is_chat_only(input)),
+            needs_vision: verdict.map(|verdict| verdict.needs_vision).unwrap_or(false), model: picked.clone(),
+        };
+        (picked, route_info)
+    } else {
         let cheap = cfg
             .cheap_model
             .as_deref()
@@ -137,7 +160,7 @@ async fn generate_and_emit(
     };
     // 产品有意设计：关闭 AI 判断也推送路由，显示「本地规则（未开 AI 判断）」。
     let _ = crate::stream::sender::send_route(app, &route_info);
-    let setting = Setting {
+    let mut setting = Setting {
         theme: cfg.theme.clone(),
         context_length: cfg.context_length,
         api_base_url: cfg.api_base_url.clone(),
@@ -155,6 +178,13 @@ async fn generate_and_emit(
         user_name: cfg.user_name.clone(),
         persona: cfg.persona.clone(),
     };
+    if !cfg.models.is_empty() && cfg.model_mode == "api" {
+        let (base_url, key) = crate::engine::api::slot_api_credentials(&cfg, selected_slot)?;
+        setting.api_base_url = Some(base_url);
+        setting.api_key = key;
+        setting.cheap_api_base_url = None;
+        setting.cheap_api_key = None;
+    }
 
     // 加载上下文（script 模式也读记忆：用于无关键词命中时的记忆兜底分类）
     // —— 会话感知：提供 session_id 时用该会话历史消息为主体上下文（多会话隔离），
@@ -358,10 +388,7 @@ fn decrypt_cheap_api_key(cfg: &crate::types::AppConfig) -> Result<Option<String>
 fn ai_classification_enabled(cfg: &crate::types::AppConfig) -> bool {
     cfg.model_mode == "api"
         && cfg.ai_router
-        && crate::engine::model_router::ai_router_allowed(
-            cfg.cheap_model.as_deref(),
-            &cfg.api_model,
-        )
+        && crate::engine::model_router::config_ai_router_allowed(cfg)
 }
 
 #[cfg(test)]

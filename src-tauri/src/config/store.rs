@@ -52,6 +52,12 @@ pub fn init(app: AppHandle) {
 
 /// 获取当前配置（克隆）
 pub fn get_config() -> AppConfig {
+    let mut cfg = get_runtime_config();
+    cfg.migrate_model_slots();
+    cfg
+}
+
+pub fn get_runtime_config() -> AppConfig {
     CONFIG.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(default_config)
 }
 
@@ -67,10 +73,16 @@ pub fn set_config(cfg: AppConfig) -> Result<(), AppError> {
 /// - 特殊字段 "api_key"（明文）：已解锁时加密；未解锁时沿用明文存储
 /// - "api_key_encrypted"（已加密串）：未解锁时拒绝直接覆盖，需先解锁
 pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
-    let mut cfg = get_config();
+    let mut cfg = get_runtime_config();
+    if let Some(models) = updates.get("models") {
+        cfg.models = merge_model_slots(&cfg, models)?;
+    }
 
     // 处理明文 api_key（主密码可选：已解锁→加密存储；未设置主密码→明文存储）
     if let Some(v) = updates.get("api_key") {
+        if cfg.has_master_password && !encryption::is_unlocked() {
+            return Err(AppError::EncryptionError("请先解锁主密码再保存密钥".into()));
+        }
         if v.is_null() {
             cfg.api_key_encrypted = None;
             cfg.api_key_plain = None;
@@ -95,6 +107,9 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
     }
 
     if let Some(value) = updates.get("cheap_api_key") {
+        if cfg.has_master_password && !encryption::is_unlocked() {
+            return Err(AppError::EncryptionError("请先解锁主密码再保存密钥".into()));
+        }
         let key = if encryption::is_unlocked() {
             Some(encryption::get_key()?)
         } else {
@@ -107,7 +122,7 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
         .map_err(|e| AppError::ConfigSaveError(format!("配置序列化失败：{e}")))?;
     if let Value::Object(map) = &mut obj {
         for (k, v) in updates {
-            if k == "api_key" || k == "cheap_api_key" {
+            if k == "api_key" || k == "cheap_api_key" || k == "models" {
                 continue;
             }
             if k == "cheap_api_key_encrypted" {
@@ -159,6 +174,55 @@ pub fn update(updates: &HashMap<String, Value>) -> Result<AppConfig, AppError> {
     Ok(new_cfg)
 }
 
+fn merge_model_slots(cfg: &AppConfig, value: &Value) -> Result<Vec<crate::types::ModelSlot>, AppError> {
+    let rows = value.as_array().ok_or_else(|| AppError::ConfigSaveError("模型列表必须是数组".into()))?;
+    let mut previous = cfg.clone();
+    previous.migrate_model_slots();
+    let mut ids = std::collections::HashSet::new();
+    let mut models = Vec::new();
+    for row in rows {
+        if row.get("api_key_plain").is_some() || row.get("api_key_encrypted").is_some() {
+            return Err(AppError::ConfigSaveError("模型密钥必须单独保存".into()));
+        }
+        let mut slot: crate::types::ModelSlot = serde_json::from_value(row.clone())
+            .map_err(|_| AppError::ConfigSaveError("模型槽位格式错误".into()))?;
+        if slot.id.trim().is_empty() { slot.id = crate::utils::gen_id(); }
+        if !ids.insert(slot.id.clone()) {
+            return Err(AppError::ConfigSaveError("模型槽位 id 不能重复".into()));
+        }
+        if let Some(old) = previous.models.iter().find(|old| old.id == slot.id) {
+            slot.api_key_plain = old.api_key_plain.clone();
+            slot.api_key_encrypted = old.api_key_encrypted.clone();
+        }
+        models.push(slot);
+    }
+    Ok(models)
+}
+
+pub fn save_model_slot_key(slot_id: &str, plain: &str) -> Result<(), AppError> {
+    let mut cfg = get_config();
+    let has_master_password = cfg.has_master_password;
+    let slot = cfg.models.iter_mut().find(|slot| slot.id == slot_id)
+        .ok_or_else(|| AppError::ConfigSaveError("模型槽位不存在，请先保存模型设置".into()))?;
+    store_slot_key(slot, plain, has_master_password)?;
+    set_config(cfg)
+}
+
+fn store_slot_key(slot: &mut crate::types::ModelSlot, plain: &str, has_master_password: bool) -> Result<(), AppError> {
+    if plain.is_empty() {
+        slot.api_key_plain = None;
+        slot.api_key_encrypted = None;
+    } else if has_master_password {
+        let key = encryption::get_key()?;
+        slot.api_key_encrypted = Some(encryption::encrypt_with_key(&key, plain)?);
+        slot.api_key_plain = None;
+    } else {
+        slot.api_key_plain = Some(plain.into());
+        slot.api_key_encrypted = None;
+    }
+    Ok(())
+}
+
 fn update_cheap_api_key(
     cfg: &mut AppConfig,
     value: &Value,
@@ -206,18 +270,46 @@ pub fn set_master_password(password: &str) -> Result<(), AppError> {
     if password.is_empty() {
         return Err(AppError::EncryptionError("主密码不能为空".into()));
     }
+    let mut cfg = get_runtime_config();
+    let previous_key = if cfg.has_master_password { Some(encryption::get_key()?) } else { None };
     let salt_b64 = encryption::generate_salt_b64();
     let salt = encryption::decode_salt(&salt_b64)?;
     let key = encryption::derive_key(password, &salt);
     // 用派生密钥加密固定校验明文，后续 unlock 时用于验证密码是否正确
     let check = encryption::encrypt_with_key(&key, "ling-check-v1")?;
+    reencrypt_api_keys(&mut cfg, previous_key.as_ref(), &key)?;
     encryption::set_key(key);
 
-    let mut cfg = get_config();
     cfg.master_password_salt = Some(salt_b64);
     cfg.has_master_password = true;
     cfg.master_password_check = Some(check);
     set_config(cfg)
+}
+
+fn reencrypt_api_keys(
+    cfg: &mut AppConfig,
+    previous_key: Option<&[u8; encryption::KEY_LEN]>,
+    key: &[u8; encryption::KEY_LEN],
+) -> Result<(), AppError> {
+    fn reencrypt(
+        plain: &mut Option<String>, encrypted: &mut Option<String>,
+        previous_key: Option<&[u8; encryption::KEY_LEN]>, key: &[u8; encryption::KEY_LEN],
+    ) -> Result<(), AppError> {
+        let value = if let Some(value) = encrypted.as_deref().filter(|value| !value.is_empty()) {
+            Some(encryption::decrypt_with_key(previous_key.ok_or(AppError::Locked)?, value)?)
+        } else { plain.as_deref().filter(|value| !value.is_empty()).map(str::to_string) };
+        if let Some(value) = value {
+            *encrypted = Some(encryption::encrypt_with_key(key, &value)?);
+            *plain = None;
+        }
+        Ok(())
+    }
+    reencrypt(&mut cfg.api_key_plain, &mut cfg.api_key_encrypted, previous_key, key)?;
+    reencrypt(&mut cfg.cheap_api_key_plain, &mut cfg.cheap_api_key_encrypted, previous_key, key)?;
+    for slot in &mut cfg.models {
+        reencrypt(&mut slot.api_key_plain, &mut slot.api_key_encrypted, previous_key, key)?;
+    }
+    Ok(())
 }
 
 /// 解锁：用主密码 + 已存盐派生密钥，先解密校验段验证密码正确性，再持有密钥
@@ -285,6 +377,169 @@ fn save_config_file(cfg: &AppConfig) -> Result<(), AppError> {
 fn notify_changed() {
     if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         let _ = app.emit("config-changed", ());
+    }
+}
+
+#[cfg(test)]
+mod model_slot_tests {
+    use super::*;
+    use crate::types::ModelSlot;
+
+    #[test]
+    fn metadata_save_preserves_keys_by_id_not_by_name_and_removes_deleted_slots() {
+        let mut cfg = default_config();
+        cfg.models = vec![
+            ModelSlot { id: "one".into(), name: "same".into(), api_key_plain: Some("one-secret".into()), enabled: true, ..ModelSlot::default() },
+            ModelSlot { id: "two".into(), name: "same".into(), api_key_encrypted: Some("two-ciphertext".into()), enabled: true, ..ModelSlot::default() },
+        ];
+        let slots = merge_model_slots(&cfg, &serde_json::json!([
+            {"id":"two", "name":"renamed", "roles":["main"], "enabled":true},
+            {"id":"", "name":"same", "roles":["cheap"], "enabled":true}
+        ])).unwrap();
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0].api_key_encrypted.as_deref(), Some("two-ciphertext"));
+        assert_eq!(slots[0].api_key_plain, None);
+        assert_eq!(slots[1].api_key_plain, None);
+        assert_eq!(slots[1].api_key_encrypted, None);
+        assert!(!slots[1].id.is_empty());
+        assert_ne!(slots[0].id, slots[1].id);
+    }
+
+    #[test]
+    fn metadata_save_generates_unique_ids_for_multiple_empty_slots() {
+        let slots = merge_model_slots(&default_config(), &serde_json::json!([
+            {"id":"", "name":"one"}, {"id":"", "name":"two"}
+        ])).unwrap();
+        assert!(!slots[0].id.is_empty());
+        assert_ne!(slots[0].id, slots[1].id);
+    }
+
+    #[test]
+    fn metadata_save_rejects_embedded_keys_and_duplicate_ids_without_echoing_secrets() {
+        for field in ["api_key_plain", "api_key_encrypted"] {
+            let value = serde_json::json!([{"id":"one", "name":"one", field:"never-echo-secret"}]);
+            let error = merge_model_slots(&default_config(), &value).unwrap_err().to_string();
+            assert!(!error.contains("never-echo-secret"));
+        }
+        assert!(merge_model_slots(&default_config(), &serde_json::json!([
+            {"id":"same", "name":"one"}, {"id":"same", "name":"two"}
+        ])).is_err());
+    }
+
+    #[test]
+    fn metadata_save_carries_legacy_credentials_only_for_matching_migrated_ids() {
+        let mut cfg = default_config();
+        cfg.api_key_plain = Some("legacy-secret".into());
+        let slots = merge_model_slots(&cfg, &serde_json::json!([
+            {"id":"legacy-main", "name":"new-main", "roles":["main"]}
+        ])).unwrap();
+        assert_eq!(slots[0].api_key_plain.as_deref(), Some("legacy-secret"));
+        assert!(cfg.models.is_empty());
+    }
+
+    #[test]
+    fn master_password_rewraps_all_keys_with_existing_algorithm() {
+        let previous_key = [1; encryption::KEY_LEN];
+        let key = [2; encryption::KEY_LEN];
+        let mut cfg = default_config();
+        cfg.api_key_plain = Some("global-secret".into());
+        cfg.cheap_api_key_encrypted = Some(encryption::encrypt_with_key(&previous_key, "cheap-secret").unwrap());
+        cfg.models = vec![ModelSlot {
+            id: "slot".into(), name: "slot".into(), api_key_encrypted: Some(encryption::encrypt_with_key(&previous_key, "slot-secret").unwrap()),
+            ..ModelSlot::default()
+        }];
+        reencrypt_api_keys(&mut cfg, Some(&previous_key), &key).unwrap();
+        assert_eq!(cfg.api_key_plain, None);
+        assert_eq!(encryption::decrypt_with_key(&key, cfg.api_key_encrypted.as_deref().unwrap()).unwrap(), "global-secret");
+        assert_eq!(encryption::decrypt_with_key(&key, cfg.cheap_api_key_encrypted.as_deref().unwrap()).unwrap(), "cheap-secret");
+        assert_eq!(encryption::decrypt_with_key(&key, cfg.models[0].api_key_encrypted.as_deref().unwrap()).unwrap(), "slot-secret");
+    }
+
+    #[test]
+    fn slot_keys_migration_persistence_locking_rotation_and_exports_are_isolated() {
+        const CHILD_MARKER: &str = "MEM_MODEL_SLOT_TEST_CHILD";
+        if std::env::var_os(CHILD_MARKER).is_none() {
+            let directory = std::env::temp_dir().join(format!("mem-model-slot-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&directory).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "config::store::model_slot_tests::slot_keys_migration_persistence_locking_rotation_and_exports_are_isolated", "--nocapture"])
+                .env(CHILD_MARKER, "1").env("USERPROFILE", &directory).output().unwrap();
+            std::fs::remove_dir_all(&directory).unwrap();
+            assert!(output.status.success(), "isolated slot test failed: {} {}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        encryption::clear_key();
+        let mut cfg = default_config();
+        cfg.api_key_plain = Some("global-secret".into());
+        cfg.cheap_model = Some("cheap-text".into());
+        cfg.cheap_api_key_plain = Some("cheap-secret".into());
+        set_config(cfg).unwrap();
+        let before = std::fs::read(config::config_path()).unwrap();
+        let migrated = get_config();
+        assert_eq!(migrated.models.len(), 2);
+        assert_eq!(get_config().models[0].id, migrated.models[0].id);
+        assert!(get_runtime_config().models.is_empty());
+        assert_eq!(std::fs::read(config::config_path()).unwrap(), before);
+        update(&HashMap::from([("theme".into(), Value::String("light".into()))])).unwrap();
+        assert!(get_runtime_config().models.is_empty());
+        assert!(save_model_slot_key("missing", "secret").is_err());
+        let public_models = migrated.to_public().unwrap()["models"].clone();
+        update(&HashMap::from([("models".into(), public_models)])).unwrap();
+        save_model_slot_key("legacy-cheap", "slot-secret").unwrap();
+        assert_eq!(get_runtime_config().models[1].api_key_plain.as_deref(), Some("slot-secret"));
+        set_master_password("first-password").unwrap();
+        assert_eq!(get_runtime_config().models[1].api_key_plain, None);
+        save_model_slot_key("legacy-cheap", "encrypted-slot-secret").unwrap();
+        let encrypted = get_runtime_config().models[1].api_key_encrypted.clone().unwrap();
+        assert_ne!(encrypted, "encrypted-slot-secret");
+        let rows = get_config().to_public().unwrap()["models"].clone();
+        update(&HashMap::from([("models".into(), rows)])).unwrap();
+        assert_eq!(get_runtime_config().models[1].api_key_encrypted.as_deref(), Some(encrypted.as_str()));
+        encryption::clear_key();
+        assert!(save_model_slot_key("legacy-cheap", "locked-write").is_err());
+        assert_eq!(get_runtime_config().models[1].api_key_encrypted.as_deref(), Some(encrypted.as_str()));
+        assert!(update(&HashMap::from([("api_key".into(), Value::String("locked-write".into()))])).is_err());
+        assert!(set_master_password("locked-reset").is_err());
+        unlock("first-password").unwrap();
+        set_master_password("second-password").unwrap();
+        encryption::clear_key();
+        assert!(unlock("first-password").is_err());
+        unlock("second-password").unwrap();
+        let cfg = get_runtime_config();
+        assert_eq!(crate::engine::api::slot_api_credentials(&cfg, Some(&cfg.models[1])).unwrap().1.as_deref(), Some("encrypted-slot-secret"));
+        let secret_line = format!("global-secret cheap-secret encrypted-slot-secret {}", cfg.models[1].api_key_encrypted.as_deref().unwrap());
+        let redacted = cfg.redact_api_secrets(&secret_line);
+        for secret in ["global-secret", "cheap-secret", "encrypted-slot-secret", cfg.models[1].api_key_encrypted.as_deref().unwrap()] {
+            assert!(!redacted.contains(secret));
+        }
+        crate::logs::init();
+        log::info!("{secret_line}");
+        assert!(!std::fs::read_to_string(crate::logs::app_log_path()).unwrap().contains("encrypted-slot-secret"));
+        std::fs::write(crate::logs::app_log_path(), &secret_line).unwrap();
+        let exported = crate::commands::config_export::export_config().unwrap();
+        let exported_text = std::fs::read_to_string(exported.path.unwrap()).unwrap();
+        assert!(!exported_text.contains("api_key_plain"));
+        assert!(!exported_text.contains("api_key_encrypted"));
+        for secret in ["global-secret", "cheap-secret", "encrypted-slot-secret", encrypted.as_str(), cfg.models[1].api_key_encrypted.as_deref().unwrap()] {
+            assert!(!exported_text.contains(secret));
+        }
+        let diagnostic = crate::diagnostic::export::export(crate::types::ExportDiagnosticRequest {
+            include_logs: true, include_config: true, include_system_info: false,
+        }).unwrap();
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(diagnostic.file_path.unwrap()).unwrap()).unwrap();
+        let mut diagnostic_text = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("config.json").unwrap(), &mut diagnostic_text).unwrap();
+        assert!(!diagnostic_text.contains("api_key_plain"));
+        assert!(!diagnostic_text.contains("api_key_encrypted"));
+        assert!(!diagnostic_text.contains("global-secret"));
+        assert!(!diagnostic_text.contains("encrypted-slot-secret"));
+        assert!(!diagnostic_text.contains(cfg.models[1].api_key_encrypted.as_deref().unwrap()));
+        let mut diagnostic_log = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("logs/app.log").unwrap(), &mut diagnostic_log).unwrap();
+        assert_eq!(diagnostic_log, redacted);
+        save_model_slot_key("legacy-cheap", "").unwrap();
+        assert_eq!(get_runtime_config().models[1].api_key_encrypted, None);
+        assert_eq!(get_runtime_config().models[1].api_key_plain, None);
     }
 }
 

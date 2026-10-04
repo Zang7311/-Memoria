@@ -47,7 +47,7 @@ pub fn export(req: ExportDiagnosticRequest) -> Result<ExportDiagnosticResponse, 
                     let entry = format!("logs/{name}");
                     zip.start_file(&entry, opts)
                         .map_err(|e| AppError::DiagnosticExportError(format!("写入日志失败：{e}")))?;
-                    zip.write_all(content.as_bytes())
+                    zip.write_all(cfg.redact_api_secrets(&content).as_bytes())
                         .map_err(|e| AppError::DiagnosticExportError(format!("写入日志内容失败：{e}")))?;
                 }
             }
@@ -72,35 +72,24 @@ pub fn export(req: ExportDiagnosticRequest) -> Result<ExportDiagnosticResponse, 
     })
 }
 
-/// 读取 config.json 并脱敏（隐藏 api_key_encrypted，仅保留首尾 4 位）
+/// 读取配置并移除全局与槽位密钥，不保留密钥片段。
 fn redact_config() -> String {
     let path = crate::config::config_path();
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(_) => return "{}".to_string(),
     };
-    let mut value: Value = serde_json::from_str(&raw).unwrap_or(Value::Object(Default::default()));
-
+    let cfg: crate::types::AppConfig = match serde_json::from_str(&raw) {
+        Ok(cfg) => cfg,
+        Err(_) => return "{}".into(),
+    };
+    let mut value = match cfg.to_public() {
+        Ok(value) => value,
+        Err(_) => return "{}".into(),
+    };
     if let Some(obj) = value.as_object_mut() {
-        obj.remove("cheap_api_key_plain");
-        obj.remove("cheap_api_key_encrypted");
-        if let Some(Value::String(key)) = obj.get("api_key_encrypted") {
-            let masked = if key.len() <= 8 {
-                "********".to_string()
-            } else {
-                format!("{}...{}", &key[..4], &key[key.len() - 4..])
-            };
-            obj.insert("api_key_encrypted".to_string(), Value::String(masked));
-        }
-        // api_key_plain 脱敏
-        if obj.contains_key("api_key_plain") {
-            obj.insert("api_key_plain".to_string(), Value::String("********".to_string()));
-        }
-        // 盐也打码（虽非密钥材料，一并脱敏更稳妥）
-        if let Some(Value::String(salt)) = obj.get("master_password_salt") {
-            let masked = format!("{}...({} 字符)", &salt[..6.min(salt.len())], salt.len());
-            obj.insert("master_password_salt".to_string(), Value::String(masked));
-        }
+        obj.remove("master_password_salt");
+        obj.remove("master_password_check");
         // toolbox_items 含用户自定义命令（可能含敏感路径/脚本），导出时清空
         obj.insert("toolbox_items".to_string(), Value::Array(vec![]));
         // monitor_rules 可能含进程名/路径，导出时清空

@@ -3488,7 +3488,7 @@ dependencies = [
 
 [[package]]
 name = "mem"
-version = "0.6.4"
+version = "0.7.0-beta.1"
 dependencies = [
  "aes-gcm",
  "anyhow",

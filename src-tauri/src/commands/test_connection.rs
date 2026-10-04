@@ -8,10 +8,18 @@ use crate::types::TestConnectionResponse;
 pub async fn test_api_connection(
     base_url: String,
     api_key: String,
+    slot_id: Option<String>,
 ) -> Result<TestConnectionResponse, AppError> {
     // 未传明文 key 时，回退用配置中心已保存的 key（避免输入框为空时误报 401）
     let key = if api_key.trim().is_empty() {
-        resolve_saved_key()
+        if let Some(slot_id) = slot_id {
+            let cfg = crate::config::store::get_config();
+            let slot = cfg.models.iter().find(|slot| slot.id == slot_id)
+                .ok_or_else(|| AppError::ConfigError("模型槽位不存在，请先保存模型设置".into()))?;
+            crate::engine::api::slot_api_credentials(&cfg, Some(slot))?.1.unwrap_or_default()
+        } else {
+            resolve_saved_key()
+        }
     } else {
         api_key.trim().to_string()
     };

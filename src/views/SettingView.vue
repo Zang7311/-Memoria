@@ -12,6 +12,7 @@ import ToolboxPanel from '../components/ToolboxPanel.vue'
 import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
 import { MODEL_MODE_LABEL } from '../types'
+import type { ModelSlot } from '../types'
 import TheIcon from '../components/TheIcon.vue'
 import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate } from '../utils/tauri'
 
@@ -92,14 +93,9 @@ const exportPath = ref('')
 // —— 模型/加密 ——
 const modelMode = ref<'script' | 'api' | 'local'>('script')
 const apiBaseUrl = ref('')
-const apiModel = ref('gpt-3.5-turbo')
-/** 便宜模型：留空 = 关闭难度路由，所有消息都走 apiModel */
-const cheapModel = ref('')
-/** 视觉模型：需要看图时使用，留空则仍用主力模型 */
-const visionModel = ref('')
-const cheapApiBaseUrl = ref('')
-const cheapApiKeyInput = ref('')
-/** AI 难度/视觉判断：未填写便宜模型时不生效 */
+type ModelDraft = ModelSlot & { keyInput: string }
+const modelSlots = ref<ModelDraft[]>([])
+const savingModels = ref(false)
 const aiRouter = ref(false)
 const apiKeyInput = ref('')
 const depth = ref(2)
@@ -159,11 +155,11 @@ function pickQuick(kind: 'deepseek' | 'openai' | 'local' | 'script') {
   if (kind === 'deepseek') {
     modelMode.value = 'api'
     apiBaseUrl.value = 'https://api.deepseek.com'
-    apiModel.value = 'deepseek-chat'
+    setMainModel('deepseek-chat')
   } else if (kind === 'openai') {
     modelMode.value = 'api'
     if (!apiBaseUrl.value) apiBaseUrl.value = 'https://api.openai.com/v1'
-    if (!apiModel.value) apiModel.value = 'gpt-4o-mini'
+    if (!modelSlots.value.some((slot) => slot.roles.includes('main') && slot.name.trim())) setMainModel('gpt-4o-mini')
   } else if (kind === 'local') {
     modelMode.value = 'local'
   } else {
@@ -292,10 +288,7 @@ const abilityMatrix = computed(() => {
 function syncFromStore() {
   modelMode.value = setting.modelMode
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
-  apiModel.value = setting.apiModel
-  cheapModel.value = setting.cheapModel ?? ''
-  visionModel.value = setting.visionModel ?? ''
-  cheapApiBaseUrl.value = setting.cheapApiBaseUrl ?? ''
+  modelSlots.value = setting.models.map((slot) => ({ ...slot, roles: [...slot.roles], keyInput: '' }))
   aiRouter.value = setting.aiRouter
   depth.value = setting.depth
   mixRate.value = setting.languageMixRate
@@ -391,56 +384,93 @@ async function saveDataPath() {
 }
 
 // —— 模型 ——
-async function saveModel() {
+function addModel() {
+  modelSlots.value.push({ id: '', name: '', base_url: null, roles: [], enabled: true, keyInput: '' })
+}
+function setMainModel(name: string) {
+  let main = modelSlots.value.find((slot) => slot.roles.includes('main'))
+  if (!main) {
+    addModel()
+    main = modelSlots.value[modelSlots.value.length - 1]
+    main.roles = ['main']
+  }
+  main.name = name
+}
+async function saveModel(): Promise<boolean> {
+  if (modelMode.value === 'api' && !modelSlots.value.some((slot) => slot.enabled && slot.roles.includes('main'))) {
+    generalMsg.value = '请至少启用一个勾选了「主力」的模型'
+    return false
+  }
+  if (modelSlots.value.some((slot) => !slot.name.trim())) {
+    generalMsg.value = '请填写每个模型的名称'
+    return false
+  }
+  savingModels.value = true
   try {
     await setting.update({
       model_mode: modelMode.value,
       api_base_url: apiBaseUrl.value.trim() || null,
-      api_model: apiModel.value.trim() || 'gpt-3.5-turbo',
-      cheap_model: cheapModel.value.trim() || null,
-      vision_model: visionModel.value.trim() || null,
-      cheap_api_base_url: cheapApiBaseUrl.value.trim() || null,
-      ...(cheapApiKeyInput.value.trim() ? { cheap_api_key: cheapApiKeyInput.value } : {}),
+      models: modelSlots.value.map((slot) => ({
+        id: slot.id, name: slot.name.trim(), base_url: slot.base_url?.trim() || null,
+        roles: [...slot.roles], enabled: slot.enabled,
+      })),
       ai_router: aiRouter.value,
       depth: depth.value,
     })
-    cheapApiKeyInput.value = ''
-    generalMsg.value = '✓ 模型设置已保存'
-  } catch (e) {
-    generalMsg.value = `✗ ${e}`
+    modelSlots.value.forEach((slot, index) => {
+      slot.id = setting.models[index].id
+      slot.has_api_key = setting.models[index].has_api_key
+    })
+    generalMsg.value = '模型设置已保存'
+    return true
+  } catch {
+    generalMsg.value = '模型设置保存失败，请检查配置'
+    return false
+  } finally {
+    savingModels.value = false
+  }
+}
+async function saveSlotKey(index: number) {
+  const slot = modelSlots.value[index]
+  const plain = slot.keyInput
+  if (!slot.id && !(await saveModel())) return
+  savingModels.value = true
+  try {
+    await setting.saveSlotKey(slot.id, plain)
+    slot.keyInput = ''
+    slot.has_api_key = setting.models.find((saved) => saved.id === slot.id)?.has_api_key ?? false
+    generalMsg.value = plain ? '模型密钥已保存' : '模型密钥已清除，将沿用全局密钥'
+  } catch {
+    generalMsg.value = '模型密钥保存失败，请检查主密码是否已解锁'
+  } finally {
+    savingModels.value = false
   }
 }
 async function saveApiKey() {
   try {
     await setting.saveApiKey(apiKeyInput.value)
     apiKeyInput.value = ''
-    generalMsg.value = setting.unlocked ? '✓ API 密钥已加密保存' : '✓ API 密钥已保存（明文，建议设置主密码加密）'
-  } catch (e) {
-    generalMsg.value = `✗ ${e}`
+    generalMsg.value = setting.hasMasterPassword ? '全局密钥已加密保存' : '全局密钥已保存（明文，建议设置主密码）'
+  } catch {
+    generalMsg.value = '全局密钥保存失败，请检查主密码是否已解锁'
   }
 }
-async function saveCheapApiKey() {
-  if (!cheapApiKeyInput.value.trim()) return
-  try {
-    await setting.saveCheapApiKey(cheapApiKeyInput.value)
-    cheapApiKeyInput.value = ''
-    generalMsg.value = setting.unlocked ? '便宜模型 API 密钥已加密保存' : '便宜模型 API 密钥已保存（明文，建议设置主密码加密）'
-  } catch (e) {
-    generalMsg.value = `保存失败：${e}`
-  }
-}
+
 async function testConnection() {
-  if (!apiBaseUrl.value.trim()) {
-    testMsg.value = '⚠️ 请先填写 API 地址'
+  const main = modelSlots.value.find((slot) => slot.enabled && slot.roles.includes('main'))
+  const baseUrl = main?.base_url?.trim() || apiBaseUrl.value.trim()
+  if (!baseUrl) {
+    testMsg.value = '请先填写模型地址或全局地址'
     return
   }
   testing.value = true
-  testMsg.value = '⏳ 正在测试连接…'
+  testMsg.value = '正在测试连接…'
   try {
-    const res = await testApiConnection(apiBaseUrl.value.trim(), apiKeyInput.value.trim())
-    testMsg.value = res.success ? `✅ ${res.message}` : `⚠️ ${res.message}`
-  } catch (e) {
-    testMsg.value = `✗ 测试失败：${e}`
+    const keyInput = main?.keyInput.trim() || (main?.has_api_key ? '' : apiKeyInput.value.trim())
+    const res = await testApiConnection(baseUrl, keyInput, main?.id || undefined)
+    testMsg.value = res.message
+  } catch {
+    testMsg.value = '测试失败，请检查地址与主密码解锁状态'
   } finally {
     testing.value = false
   }
@@ -859,65 +889,55 @@ async function toggleAiToolbox() {
             <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">本地 AI</div>
           </div>
           <template v-if="modelMode === 'api'">
+            <div class="row">
+              <div class="card-title">模型列表</div>
+              <button class="btn ghost" :disabled="savingModels" @click="addModel">+ 添加模型</button>
+            </div>
+            <fieldset v-for="(slot, index) in modelSlots" :key="slot.id || index" class="model-slot" :disabled="savingModels">
+              <div class="row">
+                <label :for="'model-name-' + index">模型 {{ index + 1 }}</label>
+                <input :id="'model-name-' + index" v-model="slot.name" class="input" list="model-presets" placeholder="模型名" />
+                <span>用途：</span>
+                <label><input v-model="slot.roles" type="checkbox" value="main" /> 主力</label>
+                <label><input v-model="slot.roles" type="checkbox" value="cheap" /> 便宜</label>
+                <label><input v-model="slot.roles" type="checkbox" value="vision" /> 视觉</label>
+                <label><input v-model="slot.enabled" type="checkbox" /> 启用</label>
+                <button class="btn danger" @click="modelSlots.splice(index, 1)">删除</button>
+              </div>
+              <div class="field">
+                <label :for="'model-url-' + index">地址</label>
+                <input :id="'model-url-' + index" v-model="slot.base_url" class="input long" placeholder="留空 = 用下面的全局地址" />
+              </div>
+              <div class="field">
+                <label :for="'model-key-' + index">密钥</label>
+                <div class="row">
+                  <input :id="'model-key-' + index" v-model="slot.keyInput" type="password" autocomplete="new-password" class="input long" placeholder="留空 = 沿用全局密钥" />
+                  <button class="btn primary" @click="saveSlotKey(index)">保存密钥</button>
+                </div>
+                <p class="hint">{{ slot.has_api_key ? '已保存独立密钥（不回显）；留空保存可清除' : '未保存独立密钥，沿用全局密钥' }}</p>
+              </div>
+            </fieldset>
+            <datalist id="model-presets">
+              <option v-for="model in MODEL_PRESETS" :key="model" :value="model" />
+            </datalist>
             <div class="field">
-              <label>API 地址（OpenAI 兼容，带/不带 /v1 均可）</label>
+              <label>全局地址（OpenAI 兼容，带/不带 /v1 均可）</label>
               <input v-model="apiBaseUrl" class="input long" placeholder="https://api.deepseek.com" />
             </div>
             <div class="field">
-              <label>模型名（可选预设，也可手填）</label>
-              <input v-model="apiModel" class="input long" list="model-presets" placeholder="deepseek-chat / qwen-plus / gpt-4o-mini…" />
-              <datalist id="model-presets">
-                <option v-for="m in MODEL_PRESETS" :key="m" :value="m" />
-              </datalist>
-            </div>
-            <div class="field">
-              <label>{{ setting.unlocked ? '主力模型 API 密钥（加密存储，主密码保护）' : '主力模型 API 密钥（当前明文存储）' }}</label>
+              <label>全局密钥</label>
               <div class="row">
-                <input v-model="apiKeyInput" type="password" class="input long" placeholder="sk-..." />
-                <button class="btn primary" @click="saveApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
+                <input v-model="apiKeyInput" type="password" autocomplete="new-password" class="input long" placeholder="输入新密钥（不回显）" />
+                <button class="btn primary" @click="saveApiKey">保存</button>
               </div>
-              <p class="hint">
-                主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁' : '已设置 · 未解锁') : '未设置（密钥明文存储，建议在下方设置主密码加密）' }}
-              </p>
+              <p class="hint">{{ setting.hasApiKey ? '已保存全局密钥' : '未保存全局密钥' }}；主密码：{{ setting.hasMasterPassword ? (setting.unlocked ? '已解锁' : '未解锁，请先解锁再保存密钥') : '未设置，密钥将明文存储' }}</p>
             </div>
             <div class="field">
-              <label>便宜模型（可选 · 用来省 token）</label>
-              <input v-model="cheapModel" class="input long" list="model-presets" placeholder="留空 = 不启用；例如 deepseek-v4-flash" />
-              <div class="field">
-                <label>便宜模型 API 地址</label>
-                <input v-model="cheapApiBaseUrl" class="input long" placeholder="留空 = 用上面的地址" />
-              </div>
-              <div class="field">
-                <label>便宜模型 API 密钥</label>
-                <div class="row">
-                  <input v-model="cheapApiKeyInput" type="password" class="input long" placeholder="留空 = 用上面的密钥" />
-                  <button class="btn primary" @click="saveCheapApiKey">{{ setting.unlocked ? '加密保存' : '保存密钥' }}</button>
-                </div>
-                <p class="hint">留空则沿用上面的地址与密钥；已保存过密钥时这里不回显</p>
-              </div>
-              <p class="hint">
-                填了之后：闲聊、短消息自动走这个便宜的模型；要动手干活的任务仍走上面的主力模型。留空则全部走主力模型（默认，最稳）。
-              </p>
-            </div>
-            <div class="field">
-              <label>视觉模型（可选 · 需要看图时使用）</label>
-              <input v-model="visionModel" class="input long" list="model-presets" placeholder="留空 = 需要看图时仍用主力模型；例如 deepseek-flash" />
-              <p class="hint">消息里带图片、或 AI 判断认为需要看图时使用；沿用上面的 API 地址与密钥。</p>
-            </div>
-            <div class="field">
-              <label class="switch-wrap" style="margin-top:8px">
-                <input v-model="aiRouter" type="checkbox" class="switch" />
-                <span class="label">用 AI 判断难度</span>
-              </label>
-              <p class="hint" style="margin-left:48px">
-                更准，并会顺便判断要不要用视觉模型；每次判断会多发一次极小的廉价调用，失败或超时会自动回退到本地判断。仅当配置了两个以上同类型的模型（例如都是纯文本模型）时才会生效。
-              </p>
+              <label><input v-model="aiRouter" type="checkbox" /> 用 AI 判断难度</label>
+              <p class="hint">需要主力与便宜槽位的 id、模型名均不同且类型相同；便宜槽位轮询使用自己的地址和密钥。失败时回退本地判断。</p>
             </div>
             <div class="row">
-              <button class="btn ghost" :disabled="testing" @click="testConnection">
-                {{ testing ? '⏳ 测试中…' : '🔌 测试连接' }}
-              </button>
-              <button class="btn ghost" @click="openExternal('https://platform.deepseek.com')">🔑 获取 DeepSeek API Key</button>
+              <button class="btn ghost" :disabled="testing" @click="testConnection">{{ testing ? '测试中…' : '测试连接' }}</button>
             </div>
             <div v-if="testMsg" class="msg">{{ testMsg }}</div>
           </template>
@@ -930,7 +950,7 @@ async function toggleAiToolbox() {
               </div>
               <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
             </div>
-            <button class="btn primary" @click="saveModel">保存模型设置</button>
+            <button class="btn primary" :disabled="savingModels" @click="saveModel">保存模型设置</button>
 
           </template>
         </section>
@@ -1266,6 +1286,13 @@ async function toggleAiToolbox() {
 </template>
 
 <style scoped>
+.model-slot {
+  min-width: 0;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border, #555);
+  border-radius: var(--radius, 12px);
+}
 .setting-view {
   padding: 20px 24px;
   max-width: 820px;

@@ -1,5 +1,6 @@
-# Logs
-logs
+# Logs（日志输出；注意不要误伤 src/logs 源码模块）
+/logs/
+src-tauri/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*

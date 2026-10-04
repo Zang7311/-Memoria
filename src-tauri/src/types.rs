@@ -509,6 +509,8 @@ pub struct MonitorTriggerEvent {
 /// 全局配置（与前端 useSettingStore 严格对应，snake_case）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
+    pub models: Vec<ModelSlot>,
     /// 配置版本号（迁移用，当前 1）
     #[serde(default = "default_config_version")]
     pub config_version: u32,
@@ -722,7 +724,66 @@ fn default_persona() -> String {
     "daily".to_string()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelSlot {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub api_key_plain: Option<String>,
+    #[serde(default)]
+    pub api_key_encrypted: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 impl AppConfig {
+    pub fn redact_api_secrets(&self, text: &str) -> String {
+        let unlocked_key = crate::config::encryption::get_key().ok();
+        let pairs = std::iter::once((&self.api_key_plain, &self.api_key_encrypted))
+            .chain(std::iter::once((&self.cheap_api_key_plain, &self.cheap_api_key_encrypted)))
+            .chain(self.models.iter().map(|slot| (&slot.api_key_plain, &slot.api_key_encrypted)));
+        let mut secrets = Vec::new();
+        for (plain, encrypted) in pairs {
+            if let Some(plain) = plain.as_deref().filter(|key| !key.is_empty()) { secrets.push(plain.to_string()); }
+            if let Some(encrypted) = encrypted.as_deref().filter(|key| !key.is_empty()) {
+                secrets.push(encrypted.to_string());
+                if let Some(key) = unlocked_key.as_ref() {
+                    if let Ok(plain) = crate::config::encryption::decrypt_with_key(key, encrypted) {
+                        if !plain.is_empty() { secrets.push(plain); }
+                    }
+                }
+            }
+        }
+        secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+        secrets.dedup();
+        secrets.into_iter().fold(text.to_string(), |text, secret| text.replace(&secret, "[已隐藏]"))
+    }
+
+    pub fn migrate_model_slots(&mut self) {
+        if !self.models.is_empty() { return; }
+        self.models.push(ModelSlot {
+            id: "legacy-main".into(), name: self.api_model.clone(),
+            base_url: self.api_base_url.clone(), api_key_plain: self.api_key_plain.clone(),
+            api_key_encrypted: self.api_key_encrypted.clone(), roles: vec!["main".into()], enabled: true,
+        });
+        if let Some(name) = self.cheap_model.as_deref().map(str::trim).filter(|name| !name.is_empty()) {
+            self.models.push(ModelSlot {
+                id: "legacy-cheap".into(), name: name.into(), base_url: self.cheap_api_base_url.clone(),
+                api_key_plain: self.cheap_api_key_plain.clone(), api_key_encrypted: self.cheap_api_key_encrypted.clone(),
+                roles: vec!["cheap".into()], enabled: true,
+            });
+        }
+        if let Some(name) = self.vision_model.as_deref().map(str::trim).filter(|name| !name.is_empty()) {
+            self.models.push(ModelSlot {
+                id: "legacy-vision".into(), name: name.into(), roles: vec!["vision".into()],
+                enabled: true, ..ModelSlot::default()
+            });
+        }
+    }
     /// 生成脱敏配置（发往前端的唯一形态）
     ///
     /// 去掉主力和便宜模型的敏感字段，替换为布尔标记：
@@ -742,6 +803,18 @@ impl AppConfig {
             .any(|key| !key.is_empty());
         let mut v = serde_json::to_value(self)?;
         if let Some(obj) = v.as_object_mut() {
+            if let Some(models) = obj.get_mut("models").and_then(serde_json::Value::as_array_mut) {
+                for (model, slot) in models.iter_mut().zip(&self.models) {
+                    if let Some(model) = model.as_object_mut() {
+                        model.remove("api_key_plain");
+                        model.remove("api_key_encrypted");
+                        model.insert("has_api_key".into(), serde_json::Value::Bool(
+                            slot.api_key_plain.as_deref().into_iter().chain(slot.api_key_encrypted.as_deref())
+                                .any(|key| !key.is_empty())
+                        ));
+                    }
+                }
+            }
             obj.remove("api_key_plain");
             obj.remove("api_key_encrypted");
             obj.remove("cheap_api_key_plain");
@@ -767,6 +840,8 @@ pub struct GetConfigResponse {
 impl GetConfigResponse {
     /// 从完整配置构造脱敏响应
     pub fn from_config(cfg: &AppConfig) -> Result<Self, crate::error::AppError> {
+        let mut cfg = cfg.clone();
+        cfg.migrate_model_slots();
         Ok(Self {
             config: cfg.to_public().map_err(|e| {
                 crate::error::AppError::InternalError(format!("配置脱敏序列化失败：{e}"))
