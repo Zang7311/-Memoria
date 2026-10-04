@@ -28,6 +28,7 @@ pub struct Verdict {
     pub needs_vision: bool,
 }
 
+// FIFO 缓存上限 64；命中不调整插入顺序，不是 LRU。
 const ROUTER_CACHE_LIMIT: usize = 64;
 static ROUTER_CACHE: OnceLock<Mutex<HashMap<u64, Verdict>>> = OnceLock::new();
 static ROUTER_CACHE_ORDER: OnceLock<Mutex<VecDeque<u64>>> = OnceLock::new();
@@ -46,23 +47,19 @@ fn input_hash(input: &str) -> u64 {
     hasher.finish()
 }
 
-fn cached_verdict(input: &str) -> Option<Verdict> {
+fn cached_verdict_fifo(input: &str) -> Option<Verdict> {
     let key = input_hash(input);
     let cache = router_cache().lock().unwrap_or_else(|e| e.into_inner());
     cache.get(&key).copied()
 }
 
-fn cache_verdict(input: &str, verdict: Verdict) {
+fn cache_verdict_fifo(input: &str, verdict: Verdict) {
     let key = input_hash(input);
     let mut cache = router_cache().lock().unwrap_or_else(|e| e.into_inner());
     let mut order = router_cache_order().lock().unwrap_or_else(|e| e.into_inner());
 
     if cache.contains_key(&key) {
         cache.insert(key, verdict);
-        if let Some(position) = order.iter().position(|cached| *cached == key) {
-            order.remove(position);
-        }
-        order.push_back(key);
         return;
     }
 
@@ -78,20 +75,23 @@ fn cache_verdict(input: &str, verdict: Verdict) {
 /// 解析 AI 返回的难度和视觉结论。
 pub fn parse_verdict(raw: &str) -> Option<Verdict> {
     let lower = raw.to_lowercase();
-    let has_easy = lower.contains("easy");
-    let has_hard = lower.contains("hard");
-    if !has_easy && !has_hard {
+    let tokens: Vec<&str> = lower
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect();
+    let has_easy = tokens.contains(&"easy");
+    let has_hard = tokens.contains(&"hard");
+    let has_text = tokens.contains(&"text");
+    let has_vision = tokens.contains(&"vision");
+    if tokens.contains(&"not") || tokens.contains(&"no")
+        || has_easy == has_hard || has_text == has_vision
+    {
         return None;
     }
 
     Some(Verdict {
-        // 同时出现时保守按 hard 处理，避免任务误派给便宜模型。
-        easy: has_easy && !has_hard,
-        needs_vision: lower.contains("vision")
-            || lower.contains("image")
-            || lower.contains("visual")
-            || lower.contains("图片")
-            || lower.contains('图'),
+        easy: has_easy,
+        needs_vision: has_vision,
     })
 }
 
@@ -101,12 +101,12 @@ fn classify_with_cache<F>(input: &str, classify: F) -> Option<Verdict>
 where
     F: FnOnce() -> Option<Verdict>,
 {
-    if let Some(verdict) = cached_verdict(input) {
+    if let Some(verdict) = cached_verdict_fifo(input) {
         return Some(verdict);
     }
 
     let verdict = classify()?;
-    cache_verdict(input, verdict);
+    cache_verdict_fifo(input, verdict);
     Some(verdict)
 }
 
@@ -120,11 +120,14 @@ pub async fn classify_with_ai(
     model: &str,
     input: &str,
 ) -> Option<Verdict> {
-    if let Some(verdict) = cached_verdict(input) {
+    // 不允许用截断消息的结论降级整条消息；长输入连缓存也不采用。
+    if input.chars().count() > 500 {
+        return None;
+    }
+    if let Some(verdict) = cached_verdict_fifo(input) {
         return Some(verdict);
     }
 
-    let user_input: String = input.chars().take(500).collect();
     let body = serde_json::json!({
         "model": model,
         "messages": [
@@ -132,7 +135,7 @@ pub async fn classify_with_ai(
                 "role": "system",
                 "content": "判断用户这句话：①是闲聊(easy)还是要动手的任务(hard)；②是否需要看图片或屏幕(vision)还是不需要(text)。直接输出两个词，不要任何解释或分析。例如：easy text / hard text / hard vision / easy vision"
             },
-            { "role": "user", "content": user_input }
+            { "role": "user", "content": input }
         ],
         "temperature": 0.0,
         "max_tokens": 512,
@@ -159,7 +162,7 @@ pub async fn classify_with_ai(
         .get("content")?
         .as_str()?;
     let verdict = parse_verdict(raw)?;
-    cache_verdict(input, verdict);
+    cache_verdict_fifo(input, verdict);
     Some(verdict)
 }
 
@@ -241,26 +244,29 @@ pub fn pick_model(
     capable.to_string()
 }
 
-/// 模型能力类型：只区分「纯文本」与「疑似支持视觉」两大类。
+/// 模型能力类型：明确文本、疑似视觉与未知。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelKind {
     Text,
     Vision,
+    Unknown,
 }
 
 /// 从模型名推测能力类型（启发式）。
 ///
-/// 只按名字里的常见视觉标识判断；名字没线索时一律当纯文本处理
-/// —— 宁可少开路由，也不要把「看图」的活交给纯文本模型。
+/// 视觉关键词与设置页保持一致；没有能力线索的名字归为未知。
 pub fn model_kind(name: &str) -> ModelKind {
     const VISION_HINTS: &[&str] = &[
-        "vision", "vl", "4v", "image", "omni", "看图", "视觉",
+        "vision", "vl", "4v", "4o", "4.1", "llava", "gemini", "gpt-4",
+        "claude", "image", "omni", "看图", "视觉",
     ];
     let lower = name.trim().to_lowercase();
     if VISION_HINTS.iter().any(|hint| lower.contains(hint)) {
         ModelKind::Vision
-    } else {
+    } else if ["text", "纯文本"].iter().any(|hint| lower.contains(hint)) {
         ModelKind::Text
+    } else {
+        ModelKind::Unknown
     }
 }
 
@@ -268,14 +274,13 @@ pub fn model_kind(name: &str) -> ModelKind {
 ///
 /// 主人规则（2026-10-04）：**只有配置了两个及以上「同类型」模型**
 /// （例如都是纯文本模型）时才允许开启，且开不开始终由用户自己选。
-/// 这里把「两个及以上」落成：便宜模型与主力模型都存在，且类型一致；
-/// 类型不同（一个纯文本、一个支持视觉）时不做路由，避免混用不同能力的模型。
+/// 两个不同名字的模型类型须一致；双方均未知时允许，一方未知时拒绝。
 pub fn ai_router_allowed(cheap: Option<&str>, capable: &str) -> bool {
     let Some(cheap) = cheap.map(str::trim).filter(|s| !s.is_empty()) else {
         return false;
     };
     let capable = capable.trim();
-    if capable.is_empty() {
+    if capable.is_empty() || cheap == capable {
         return false;
     }
     model_kind(cheap) == model_kind(capable)
@@ -325,8 +330,9 @@ mod tests {
 
     #[test]
     fn 模型类型按名字区分() {
-        assert_eq!(model_kind("deepseek-v4-flash"), ModelKind::Text);
-        assert_eq!(model_kind("glm-5.2"), ModelKind::Text);
+        assert_eq!(model_kind("deepseek-v4-flash"), ModelKind::Unknown);
+        assert_eq!(model_kind("glm-5.2"), ModelKind::Unknown);
+        assert_eq!(model_kind("custom-text"), ModelKind::Text);
         assert_eq!(model_kind("glm-4v"), ModelKind::Vision);
         assert_eq!(model_kind("qwen-vl-max"), ModelKind::Vision);
     }
@@ -341,6 +347,35 @@ mod tests {
         assert!(!ai_router_allowed(None, "glm-5.2"));
         assert!(!ai_router_allowed(Some("   "), "glm-5.2"));
         assert!(!ai_router_allowed(Some("glm-5.3"), ""));
+    }
+
+    #[test]
+    fn 视觉关键词与未知类型保守路由() {
+        for name in [
+            "custom-vision", "qwen-vl-max", "glm-4v", "gpt-4o", "gpt-4.1",
+            "llava", "gemini", "gpt-4", "claude", "custom-image", "custom-omni",
+            "看图模型", "视觉模型",
+        ] {
+            assert_eq!(model_kind(name), ModelKind::Vision, "{name}");
+        }
+        assert!(ai_router_allowed(Some("gpt-4o"), "qwen-vl-max"));
+        assert!(!ai_router_allowed(Some("gpt-4o"), "deepseek-chat"));
+        assert!(!ai_router_allowed(Some("deepseek-chat"), "gpt-4o"));
+        assert!(ai_router_allowed(Some("deepseek-flash"), "deepseek-v4-pro"));
+        assert!(ai_router_allowed(Some("small-text"), "large-text"));
+        assert!(!ai_router_allowed(Some("small-text"), "gpt-4o"));
+        assert!(!ai_router_allowed(Some("small-text"), "deepseek-chat"));
+    }
+
+    #[test]
+    fn 同名模型去掉空格后仍不能开启ai路由() {
+        for (cheap, capable) in [
+            ("deepseek-chat", "deepseek-chat"),
+            ("  deepseek-chat ", " deepseek-chat  "),
+            ("gpt-4o", " gpt-4o "),
+        ] {
+            assert!(!ai_router_allowed(Some(cheap), capable));
+        }
     }
 
     #[test]
@@ -365,12 +400,82 @@ mod tests {
     fn parse_verdict_解析难度和视觉标记() {
         assert_eq!(parse_verdict("easy text"), Some(Verdict { easy: true, needs_vision: false }));
         assert_eq!(parse_verdict("EASY TEXT"), Some(Verdict { easy: true, needs_vision: false }));
-        assert_eq!(parse_verdict("hard"), Some(Verdict { easy: false, needs_vision: false }));
+        assert_eq!(parse_verdict("hard"), None);
         assert_eq!(parse_verdict("hard vision"), Some(Verdict { easy: false, needs_vision: true }));
-        assert_eq!(parse_verdict("这需要动手 hard"), Some(Verdict { easy: false, needs_vision: false }));
+        assert_eq!(parse_verdict("这需要动手 hard text"), Some(Verdict { easy: false, needs_vision: false }));
         assert_eq!(parse_verdict("需要看图 vision easy"), Some(Verdict { easy: true, needs_vision: true }));
         assert_eq!(parse_verdict(""), None);
         assert_eq!(parse_verdict("???"), None);
+    }
+
+    #[test]
+    fn 分类缺维度否定冲突与子串一律拒绝() {
+        for raw in [
+            "easy", "hard", "vision", "text", "not easy text", "no hard vision",
+            "easygoing", "easygoing text", "hardship vision", "easy textual",
+            "easy hard text", "easy text vision", "", "???",
+        ] {
+            assert_eq!(parse_verdict(raw), None, "{raw}");
+        }
+        assert_eq!(parse_verdict("easy,text"), Some(Verdict { easy: true, needs_vision: false }));
+        assert_eq!(parse_verdict("HARD / VISION"), Some(Verdict { easy: false, needs_vision: true }));
+    }
+
+    #[tokio::test]
+    async fn 超过500字符不读取缓存也不发送网络请求() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("local server");
+        listener.set_nonblocking(true).expect("nonblocking server");
+        let url = format!("http://{}", listener.local_addr().expect("local address"));
+        let client = reqwest::Client::builder().no_proxy().build().expect("client");
+        for input in ["长".repeat(501), "x".repeat(501)] {
+            cache_verdict_fifo(&input, Verdict { easy: true, needs_vision: false });
+            assert_eq!(classify_with_ai(&client, &url, "test-key", CHEAP, &input).await, None);
+            assert!(matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock));
+            assert_eq!(pick_model_with_verdict(&input, false, false, Some(CHEAP), CAP, None, true, None), CAP);
+        }
+    }
+
+    #[tokio::test]
+    async fn 不超过500字符按原文发送并接受完整分类() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        for input in ["网络边界测试短消息".to_string(), "界".repeat(500)] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("local server");
+            let url = format!("http://{}", listener.local_addr().expect("local address"));
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.expect("request");
+                let mut request = Vec::new();
+                let mut buffer = [0u8; 4096];
+                let (body_start, body_length) = loop {
+                    let count = socket.read(&mut buffer).await.expect("read headers");
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                    if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..position]);
+                        let length = headers.lines().find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length").then(|| value.trim().parse::<usize>().ok()).flatten()
+                        }).expect("body length");
+                        break (position + 4, length);
+                    }
+                };
+                while request.len() < body_start + body_length {
+                    let count = socket.read(&mut buffer).await.expect("read body");
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                let body: Value = serde_json::from_slice(&request[body_start..body_start + body_length]).expect("JSON request");
+                let response = r#"{"choices":[{"message":{"content":"easy text"}}]}"#;
+                let headers = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", response.len());
+                socket.write_all(headers.as_bytes()).await.expect("response headers");
+                socket.write_all(response.as_bytes()).await.expect("response body");
+                body
+            });
+            let client = reqwest::Client::builder().no_proxy().build().expect("client");
+            assert_eq!(classify_with_ai(&client, &url, "test-key", CHEAP, &input).await, Some(Verdict { easy: true, needs_vision: false }));
+            let body = tokio::time::timeout(Duration::from_secs(2), server).await.expect("server timeout").expect("server task");
+            assert_eq!(body["messages"][1]["content"].as_str(), Some(input.as_str()));
+        }
     }
 
     #[test]
@@ -393,19 +498,23 @@ mod tests {
     fn ai_router关闭时保持本地路由行为() {
         let long = "嗯嗯".repeat(30);
         for input in ["在吗", "帮我打开QQ", long.as_str()] {
-            assert_eq!(
-                pick_model_with_verdict(
-                    input,
-                    false,
-                    false,
-                    Some(CHEAP),
-                    CAP,
-                    Some("vision-model"),
-                    false,
-                    Some(Verdict { easy: true, needs_vision: true }),
-                ),
-                pick_model(input, false, false, Some(CHEAP), CAP)
-            );
+            for has_image in [true, false] {
+                for agent_mode in [true, false] {
+                    for verdict in [
+                        None,
+                        Some(Verdict { easy: true, needs_vision: true }),
+                        Some(Verdict { easy: false, needs_vision: false }),
+                    ] {
+                        assert_eq!(
+                            pick_model_with_verdict(
+                                input, has_image, agent_mode, Some(CHEAP), CAP,
+                                Some("vision-model"), false, verdict,
+                            ),
+                            pick_model(input, has_image, agent_mode, Some(CHEAP), CAP)
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -452,6 +561,17 @@ mod tests {
                         "路由关闭时应当一律用主力模型"
                     );
                     assert_eq!(pick_model(input, img, agent, Some("   "), CAP), CAP);
+                    for ai_router in [true, false] {
+                        for cheap in [None, Some("   ")] {
+                            assert_eq!(
+                                pick_model_with_verdict(
+                                    input, img, agent, cheap, CAP, Some("vision-model"),
+                                    ai_router, Some(Verdict { easy: true, needs_vision: true }),
+                                ),
+                                CAP
+                            );
+                        }
+                    }
                 }
             }
         }

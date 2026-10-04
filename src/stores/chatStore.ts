@@ -30,6 +30,12 @@ export const useChatStore = defineStore('chat', () => {
   const lastUsage = ref<ChatUsage | null>(null)
   // 最近一次回复的选模型情况（AI 判断 / 本地回退 / 未启用）
   const lastRoute = ref<ChatRouteInfo | null>(null)
+  let routeRequestId: string | null = null
+
+  function clearRoute() {
+    lastRoute.value = null
+    routeRequestId = null
+  }
   // saveCurrentSession 并发锁（防止并发写入同一会话）
   let _saveLock: Promise<void> | null = null
 
@@ -50,6 +56,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // 把指定会话的消息加载进内存
   async function loadInto(id: string) {
+    clearRoute()
     const s = await loadSessionCmd(id)
     messages.value = s.messages
     streamingId.value = null
@@ -58,6 +65,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // —— 新建会话 ——
   async function createSession() {
+    clearRoute()
     await saveCurrentSession().catch(() => {})
     const s = await createSessionCmd()
     sessions.value.unshift(s.meta)
@@ -72,6 +80,7 @@ export const useChatStore = defineStore('chat', () => {
   let _switchLock: Promise<void> | null = null
   async function switchSession(id: string) {
     if (id === activeSessionId.value) return
+    clearRoute()
     // 串行化切换，防止快速连点导致 messages 混入多个会话
     if (_switchLock) await _switchLock.catch(() => {})
     _switchLock = (async () => {
@@ -102,6 +111,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // —— 删除会话（若删除当前会话则切换到下一个/新建）——
   async function deleteSession(id: string) {
+    if (activeSessionId.value === id) clearRoute()
     await deleteSessionCmd(id)
     sessions.value = sessions.value.filter((x) => x.id !== id)
     if (activeSessionId.value === id) {
@@ -121,6 +131,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function clearMessages() {
+    clearRoute()
     messages.value = []
     streamingId.value = null
     interruptedIds.value = {}
@@ -128,6 +139,8 @@ export const useChatStore = defineStore('chat', () => {
 
   // 流式开始：标记当前正在输出的消息并上锁
   function beginStream(id: string) {
+    clearRoute()
+    routeRequestId = id
     streamingId.value = id
     isLoading.value = true
   }
@@ -140,14 +153,20 @@ export const useChatStore = defineStore('chat', () => {
 
   // 流式正常结束
   function finishStream(id: string) {
-    if (streamingId.value === id) streamingId.value = null
+    if (streamingId.value === id) {
+      streamingId.value = null
+      routeRequestId = null
+    }
     isLoading.value = false
   }
 
   // 流式出错：标记中断提示
   function errorStream(id: string) {
     interruptedIds.value[id] = true
-    if (streamingId.value === id) streamingId.value = null
+    if (streamingId.value === id) {
+      streamingId.value = null
+      routeRequestId = null
+    }
     isLoading.value = false
   }
 
@@ -158,7 +177,13 @@ export const useChatStore = defineStore('chat', () => {
 
   // 记录最近一次回复的选模型情况
   function setRoute(r: ChatRouteInfo | null) {
-    lastRoute.value = r
+    if (r === null) {
+      lastRoute.value = null
+    } else if (r.session_id === activeSessionId.value
+      && r.request_id === routeRequestId
+      && r.request_id === streamingId.value) {
+      lastRoute.value = r
+    }
   }
 
   return {

@@ -141,6 +141,9 @@ pub struct Usage {
 /// 本次回复的选模型情况（推给前端显示「这次是怎么选的」）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRouteInfo {
+    /// 发起请求的会话与请求标识，用于拒绝过期或其他会话的事件。
+    pub session_id: Option<String>,
+    pub request_id: String,
     /// "ai" = 由 AI 判断决定；"local" = AI 判断失败/超时，回退本地关键词；"off" = 未开启 AI 判断
     pub source: String,
     /// 判定为闲聊（true）还是要动手的任务（false）

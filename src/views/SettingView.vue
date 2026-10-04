@@ -267,7 +267,7 @@ const userName = ref('主人')
 
 // —— 能力面板（大项目）：当前模型与能力矩阵 ——
 // 已知模型视觉能力表（未知模型显示"未知"）
-const VISION_MODELS = ['vl', 'vision', '4o', '4.1', 'llava', 'gemini', 'gpt-4', 'claude', 'qwen2.5-vl', 'qwen3-vl', 'moonshot-vision']
+const VISION_MODELS = ['vision', 'vl', '4v', '4o', '4.1', 'llava', 'gemini', 'gpt-4', 'claude', 'image', 'omni', '看图', '视觉']
 // 能力矩阵（computed，跟随当前模式/模型实时变化）
 const abilityMatrix = computed(() => {
   const mode = setting.modelMode
