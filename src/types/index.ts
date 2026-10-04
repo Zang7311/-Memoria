@@ -232,6 +232,8 @@ export interface AppConfig {
   long_term_memory_limit: number
   /** 难度路由用的便宜模型名：留空 = 关闭路由（所有消息都走 api_model） */
   cheap_model?: string | null
+  /** 是否使用一次廉价 AI 调用判断难度和视觉需求；未填写 cheap_model 时不生效 */
+  ai_router?: boolean
   /** Agent 任务完成后自检（只对「调用过工具」的任务生效，纯聊天零开销） */
   self_check_enabled: boolean
   api_base_url?: string | null

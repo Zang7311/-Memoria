@@ -13,6 +13,8 @@ pub fn default_config() -> AppConfig {
         long_term_memory_limit: 5,
         // 难度路由：留空 = 关闭（所有消息都用 api_model）
         cheap_model: None,
+        // AI 难度/视觉判断：默认关闭，确保旧配置行为不变
+        ai_router: false,
         // 任务完成自检：默认开启，但只对「调用过工具」的任务生效
         self_check_enabled: true,
         api_base_url: None,
