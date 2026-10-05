@@ -178,6 +178,9 @@ pub fn run() {
                 }
             }
 
+            if agent::goals::start(app.handle().clone()).is_err() {
+                log::warn!("目标存储初始化失败，自动推进未启动，请检查 goals.json");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -185,6 +188,12 @@ pub fn run() {
             // —— AI-10 Agent 命令 ——
             commands::agent_run::agent_run,
             commands::agent_cancel::agent_cancel,
+            commands::goals::list_goals,
+            commands::goals::create_goal,
+            commands::goals::goal_advance,
+            commands::goals::set_goal_status,
+            commands::goals::update_goal_settings,
+            commands::goals::delete_goal,
             commands::send_message::send_message,
             commands::forged_tools::list_forged_tools,
             commands::forged_tools::delete_forged_tool,

@@ -66,3 +66,4 @@ pub mod ocr;
 pub mod search_mode;
 // —— 应用生命周期 ——
 pub mod app_lifecycle;
+pub mod goals;

@@ -32,7 +32,9 @@ pub async fn send_message(
     log::info!("[send_message] 收到消息 id={message_id} depth={depth} session={session_id:?}");
 
     // 立即返回，后台异步生成
+    let busy = crate::agent::goals::ChatBusyGuard::new();
     tauri::async_runtime::spawn(async move {
+        let _busy = busy;
         if let Err(e) = generate_and_emit(&app, &input, depth, session_id.as_deref(), &request_id, &attachments).await {
             log::error!("对话生成失败：{e}");
             // 尽力推送错误事件

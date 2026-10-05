@@ -776,6 +776,7 @@ async function toggleAiToolbox() {
 
         <section class="card">
           <div class="card-title">Agent 权限</div>
+          <p class="hint">长期目标的自动推进默认关闭，在「目标」面板逐个开启。仅在应用进程运行时按间隔推进，退出应用即停止。每次约消耗 1 次 API 调用（工具、规划与自检可能增加调用），按当前配置模型计费；推进次数和超时上限始终生效。</p>
           <p class="hint">以下操作会改动系统或文件，请确认你信任后再开启。</p>
           <label class="switch-wrap">
             <input type="checkbox" :checked="setting.agentAllowDownload" class="switch"

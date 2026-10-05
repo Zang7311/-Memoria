@@ -32,6 +32,9 @@ pub async fn dispatch_tool_call(
     name: &str,
     args: &HashMap<String, Value>,
 ) -> ToolResult {
+    if ["create_goal", "goal_status", "goal_advance"].contains(&name) {
+        return Box::pin(crate::agent::goals::dispatch(app, name, args)).await;
+    }
     // 内置原生工具：看图。Rust 侧直连多模态模型，不走 PowerShell 执行器
     if name == "toolbox_agent_look" || name == "agent_look" {
         return dispatch_look(args).await;
