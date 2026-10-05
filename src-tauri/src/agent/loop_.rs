@@ -313,8 +313,10 @@ pub async fn run_agent_loop(
         allow_software: cfg.agent_allow_software,
         allow_file_write: cfg.agent_allow_file_write,
         allow_shell: cfg.agent_allow_shell,
+        allow_tool_forge: cfg.agent_allow_tool_forge,
     };
-    let tools = build_tools(&toolbox_items, &plugins, &perms);
+    let mut tools = build_tools(&toolbox_items, &plugins, &perms);
+    tools.extend(crate::agent::forged_tools::tool_definitions(perms.allow_tool_forge));
 
     // 2. 拉取相关记忆（默认记忆集，取最近 N 条作为上下文）
     let memories = load_recent_memories(10);
@@ -627,7 +629,12 @@ pub(super) async fn run_one_task(
                     };
 
                     // 记进「动作账本」：任务完成自评要靠它核对「是不是真做成了」
-                    action_log.push(format!("{fn_name} → {content}"));
+                    let action_content = if crate::agent::forged_tools::is_forged_call(&fn_name) {
+                        "自制工具已执行，结果不写入诊断账本".to_string()
+                    } else {
+                        content.clone()
+                    };
+                    action_log.push(format!("{fn_name} → {action_content}"));
                     if let Some(trace) = trace {
                         trace.sources.lock().unwrap_or_else(|poison| poison.into_inner()).push(content.clone());
                     }
@@ -721,6 +728,12 @@ async fn execute_task_tool(
     is_sub_agent: bool,
     trace: Option<&crate::agent::sub_agents::TaskTrace>,
 ) -> ToolResult {
+    if !is_sub_agent && name == "forge_tool" {
+        return crate::agent::forged_tools::forge_from_args(args, runtime.perms.allow_tool_forge, request_id).await;
+    }
+    if !is_sub_agent && (name == "list_forged_tools" || name == "delete_forged_tool" || crate::agent::forged_tools::is_forged_call(name)) {
+        return crate::agent::forged_tools::dispatch(name, args).await;
+    }
     if is_sub_agent {
         if let Err(error) = crate::agent::sub_agents::check_tool_call(name, args, tools) {
             if let Some(trace) = trace {

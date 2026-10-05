@@ -713,6 +713,9 @@ pub struct AppConfig {
     /// 允许 Agent 执行任意命令（shell，最高危：能改系统、装东西、删数据）
     #[serde(default)]
     pub agent_allow_shell: bool,
+    /// 允许 Agent 编写并试跑自制工具（默认关闭）
+    #[serde(default)]
+    pub agent_allow_tool_forge: bool,
 }
 
 fn default_search_mode() -> String {

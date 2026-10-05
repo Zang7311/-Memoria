@@ -77,5 +77,6 @@ pub fn default_config() -> AppConfig {
         agent_allow_software: false,
         agent_allow_file_write: false,
         agent_allow_shell: false,
+        agent_allow_tool_forge: false,
     }
 }

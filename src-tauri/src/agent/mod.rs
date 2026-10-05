@@ -13,6 +13,7 @@ pub mod cancel;
 pub mod download;
 pub mod evaluator;
 pub mod experience;
+pub mod forged_tools;
 pub mod loop_;
 pub mod planner;
 pub mod recovery;

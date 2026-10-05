@@ -43,6 +43,7 @@ export const useSettingStore = defineStore('setting', () => {
   const agentAllowSoftware = ref(false)
   const agentAllowFileWrite = ref(false)
   const agentAllowShell = ref(false)
+  const agentAllowToolForge = ref(false)
   const contextLength = ref(10)
   /** 长期记忆注入条数（按相关性检索后注入；0 = 不注入） */
   const longTermMemoryLimit = ref(5)
@@ -115,6 +116,7 @@ export const useSettingStore = defineStore('setting', () => {
     agentAllowSoftware.value = c.agent_allow_software ?? false
     agentAllowFileWrite.value = c.agent_allow_file_write ?? false
     agentAllowShell.value = c.agent_allow_shell ?? false
+    agentAllowToolForge.value = c.agent_allow_tool_forge ?? false
     contextLength.value = (typeof c.context_length === 'number' && c.context_length > 0) ? Math.min(c.context_length, 100) : 10
     // 0 是合法值（表示不注入长期记忆），所以判据用 >= 0 而不是 > 0
     longTermMemoryLimit.value = (typeof c.long_term_memory_limit === 'number' && c.long_term_memory_limit >= 0) ? Math.min(c.long_term_memory_limit, 20) : 5
@@ -302,7 +304,7 @@ export const useSettingStore = defineStore('setting', () => {
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,
     emojiMode, aiToolbox,
-    agentAllowDownload, agentAllowSoftware, agentAllowFileWrite, agentAllowShell,
+    agentAllowDownload, agentAllowSoftware, agentAllowFileWrite, agentAllowShell, agentAllowToolForge,
     saveThemePreset, switchThemePreset, deleteThemePreset,
     languageMixRate, floatingBallMode, floatingBallEnabled, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallPosition, monitorEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
