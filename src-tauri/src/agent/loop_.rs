@@ -294,6 +294,16 @@ pub async fn run_agent_loop(
     app: &AppHandle,
     request: AgentRunRequest,
 ) -> Result<AgentRunResponse, AppError> {
+    let audit = crate::audit::AuditRun::new("agent", &request.task, Some(&request.request_id), None, None);
+    let result = audit.scope(run_agent_loop_inner(app, request)).await;
+    audit.finish(crate::audit::agent_result(&result));
+    result
+}
+
+async fn run_agent_loop_inner(
+    app: &AppHandle,
+    request: AgentRunRequest,
+) -> Result<AgentRunResponse, AppError> {
     let _busy = crate::agent::goals::ChatBusyGuard::new();
     let (base, key, model) = api_config()?;
     let depth = config::store::get_config().depth;
@@ -783,6 +793,23 @@ pub(super) async fn run_one_task(
 
 
 pub(super) async fn execute_task_tool(
+    app: Option<&AppHandle>,
+    name: &str,
+    args: &HashMap<String, Value>,
+    tools: &[Value],
+    runtime: &TaskRuntime,
+    emitter: &StreamEmitter,
+    request_id: &str,
+    is_sub_agent: bool,
+    trace: Option<&crate::agent::sub_agents::TaskTrace>,
+) -> ToolResult {
+    let mut audit = crate::audit::ToolAttempt::new(name, args, tools);
+    let result = execute_task_tool_inner(app, name, args, tools, runtime, emitter, request_id, is_sub_agent, trace).await;
+    audit.finish(result.as_ref().is_ok_and(|text| !text.starts_with("执行失败：")));
+    result
+}
+
+async fn execute_task_tool_inner(
     app: Option<&AppHandle>,
     name: &str,
     args: &HashMap<String, Value>,

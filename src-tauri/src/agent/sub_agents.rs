@@ -401,6 +401,7 @@ pub(super) async fn spawn_sub_agents(
             let trace = &traces[index];
             let tools = tools.clone();
             async move {
+                let audit = crate::audit::AuditRun::new("sub_agent", &task.goal, Some(request_id), None, None);
                 emitter.push_sub_agent("sub_agent_started", event);
                 let request = AgentRunRequest {
                     task: task.goal.clone(),
@@ -408,7 +409,7 @@ pub(super) async fn spawn_sub_agents(
                     max_steps: MAX_STEPS,
                     progress_events: false,
                 };
-                let response = run_one_task(
+                let response = audit.scope(run_one_task(
                     app,
                     request,
                     runtime,
@@ -418,9 +419,15 @@ pub(super) async fn spawn_sub_agents(
                     None,
                     true,
                     Some(trace),
-                )
-                .await?;
+                )).await;
+                audit.finish(crate::audit::agent_result(&response));
+                let response = response?;
+                let interrupted = response.interrupted;
                 let mut result = result_from_response(response, trace, runtime);
+                audit.finish(match result.status.as_str() {
+                    "被拒" if interrupted => "cancelled", "被拒" => "blocked", "失败" => "failed",
+                    "步数用尽" => "partial", _ => "ok",
+                });
                 result.summary = public_summary(&result.summary, &task, trace, &runtime.key);
                 Ok(result)
             }

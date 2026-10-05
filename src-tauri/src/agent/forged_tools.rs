@@ -145,6 +145,19 @@ pub async fn dispatch(name: &str, args: &HashMap<String, Value>) -> Result<Strin
 }
 
 pub async fn forge_from_args(args: &HashMap<String, Value>, allowed: bool, request_id: &str) -> Result<String, AppError> {
+    let name = args.get("name").and_then(Value::as_str).unwrap_or("未命名工具");
+    let audit = crate::audit::AuditRun::new("forge", name, Some(request_id), None, None);
+    let result = audit.scope(async {
+        let mut attempt = crate::audit::ToolAttempt::new("forge_tool", args, &tool_definitions(true));
+        let result = forge_from_args_inner(args, allowed, request_id).await;
+        attempt.finish(result.is_ok());
+        result
+    }).await;
+    audit.finish(match &result { Ok(_) => "ok", Err(AppError::PermissionDenied(_)) => "blocked", Err(_) => "failed" });
+    result
+}
+
+async fn forge_from_args_inner(args: &HashMap<String, Value>, allowed: bool, request_id: &str) -> Result<String, AppError> {
     if !allowed { return Err(AppError::PermissionDenied("未授权 Agent 自己编写小工具，请先在设置中开启".into())); }
     { let mut attempts = forge_attempts().lock().unwrap_or_else(|poison| poison.into_inner()); let count = attempts.entry(request_id.to_string()).or_default(); if *count >= MAX_FORGE_ATTEMPTS { return Err(AppError::ToolboxError("同一任务最多尝试造工具 3 次，已停止继续尝试".into())); } *count += 1; }
     let tool = parse_forged_tool(args)?;

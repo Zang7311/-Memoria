@@ -10,6 +10,7 @@ import MemoryPanel from '../components/MemoryPanel.vue'
 import PluginManager from '../components/PluginManager.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
 import GoalsPanel from '../components/GoalsPanel.vue'
+import AuditPanel from '../components/AuditPanel.vue'
 import { useGoalStore } from '../stores/goalStore'
 import SettingView from './SettingView.vue'
 import TheIcon from '../components/TheIcon.vue'
@@ -26,6 +27,7 @@ const sync = useSyncStore()
 const chat = useChatStore()
 const goals = useGoalStore()
 const showGoals = ref(false)
+const showAudit = ref(false)
 watch(() => chat.activeSessionId, id => { if (id) goals.remind() })
 onUnmounted(() => goals.dispose())
 
@@ -104,6 +106,7 @@ async function onPersonaChange(e: Event) {
             </div>
           </div>
           <div class="top-right">
+            <button class="audit-toggle" @click="showAudit = !showAudit">执行记录</button>
             <!-- AI-8：网络状态指示器（点击进设置-同步） -->
             <span
               class="net-indicator"
@@ -214,6 +217,7 @@ async function onPersonaChange(e: Event) {
       <!-- 工具箱悬浮面板（AI-6） -->
       <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
       <GoalsPanel v-if="showGoals" @close="showGoals = false" />
+      <AuditPanel v-if="showAudit" @close="showAudit = false" />
 
       <!-- 设置页遮罩（AI-6） -->
       <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
@@ -227,6 +231,7 @@ async function onPersonaChange(e: Event) {
 </template>
 
 <style scoped>
+.audit-toggle { cursor: pointer; padding: 6px 10px; border: 1px solid var(--border, #8886); border-radius: 6px; background: transparent; color: var(--text-main); }
 .main-layout {
   height: 100vh;
   display: flex;
