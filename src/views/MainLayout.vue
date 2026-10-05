@@ -2,13 +2,15 @@
      任务 1：绑定主题 class，嵌入 StatusIndicator / ChatList / ChatInput
      AI-5：插件管理面板；AI-6：悬浮球开关 / 工具箱 / 设置页 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import StatusIndicator from '../components/StatusIndicator.vue'
 import ChatList from '../components/ChatList.vue'
 import ChatInput from '../components/ChatInput.vue'
 import MemoryPanel from '../components/MemoryPanel.vue'
 import PluginManager from '../components/PluginManager.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
+import GoalsPanel from '../components/GoalsPanel.vue'
+import { useGoalStore } from '../stores/goalStore'
 import SettingView from './SettingView.vue'
 import TheIcon from '../components/TheIcon.vue'
 import { useSettingStore } from '../stores/settingStore'
@@ -22,6 +24,10 @@ const setting = useSettingStore()
 const desktop = useDesktopStore()
 const sync = useSyncStore()
 const chat = useChatStore()
+const goals = useGoalStore()
+const showGoals = ref(false)
+watch(() => chat.activeSessionId, id => { if (id) goals.remind() })
+onUnmounted(() => goals.dispose())
 
 /** 把路由信息翻成人话，显示在底部状态栏（让用户知道这次是怎么选的模型） */
 function routeLabel(r: { source: string; easy: boolean; needs_vision: boolean; model: string }): string {
@@ -46,6 +52,7 @@ const showSettings = ref(false)
 const showToolbox = ref(false)
 
 onMounted(() => {
+  goals.init().catch(reason => { goals.error = String(reason) })
   // 悬浮球状态与后端同步（初始隐藏）
   desktop.loadMonitorRules().catch(() => {})
   // AI-8：初始化同步 Store（网络状态监听 + 设备缓存）
@@ -144,6 +151,7 @@ async function onPersonaChange(e: Event) {
               title="铃的工具箱（AI-6）"
               @click="showToolbox = !showToolbox"
             ><TheIcon name="toolbox" :size="18" /></span>
+            <button class="gear goal-button" :class="{ active: showGoals }" @click="showGoals = !showGoals">目标{{ goals.attentionCount ? ' (' + goals.attentionCount + ')' : '' }}</button>
             <span
               class="gear"
               :class="{ active: showPlugins }"
@@ -176,6 +184,8 @@ async function onPersonaChange(e: Event) {
         </div>
 
         <!-- 中间对话流 -->
+        <p v-if="goals.reminder" class="goal-system-message" role="status">{{ goals.reminder }}</p>
+        <p v-if="goals.runningId && goals.automatic" class="goal-global-status" role="status">正在自动推进：{{ goals.runningTitle }}</p>
         <ChatList />
 
         <!-- 底部输入栏 -->
@@ -203,6 +213,7 @@ async function onPersonaChange(e: Event) {
 
       <!-- 工具箱悬浮面板（AI-6） -->
       <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
+      <GoalsPanel v-if="showGoals" @close="showGoals = false" />
 
       <!-- 设置页遮罩（AI-6） -->
       <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
@@ -314,6 +325,8 @@ async function onPersonaChange(e: Event) {
   transform: rotate(30deg);
   color: var(--accent);
 }
+.top-right .goal-button { background: transparent; border: 1px solid var(--border, #8886); border-radius: 6px; padding: 4px 8px; font-size: 13px; white-space: nowrap; }
+.top-right .goal-button:hover, .top-right .goal-button.active { transform: none; }
 .persona-select {
   background: transparent;
   border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
@@ -325,6 +338,8 @@ async function onPersonaChange(e: Event) {
   max-width: 96px;
 }
 /* 多会话标签栏 */
+.goal-system-message, .goal-global-status { margin: 4px 16px; padding: 8px 12px; border-left: 3px solid var(--accent); color: var(--text-main); background: var(--bg-main); font-size: 13px; }
+.goal-system-message { color: var(--text-secondary); font-size: 12px; }
 .session-tabs {
   display: flex;
   align-items: center;

@@ -1413,3 +1413,62 @@ mod tests {
         assert!(text.contains("has_plain_key"));
     }
 }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct GoalStep {
+    pub text: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GoalBudget {
+    pub max_runs: u32,
+    pub max_seconds_per_run: u32,
+}
+
+impl Default for GoalBudget {
+    fn default() -> Self {
+        Self { max_runs: 20, max_seconds_per_run: 600 }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct GoalUsage {
+    pub runs: u32,
+    pub total_seconds: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Checkpoint {
+    pub at: i64,
+    pub summary: String,
+    pub outcome: String,
+}
+
+pub fn default_auto_interval() -> u32 { 300 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AgentGoal {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub steps: Vec<GoalStep>,
+    pub progress: String,
+    pub next_action: Option<String>,
+    pub blocked_reason: Option<String>,
+    pub budget: GoalBudget,
+    pub used: GoalUsage,
+    pub checkpoints: Vec<Checkpoint>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    #[serde(default)]
+    pub auto_advance: bool,
+    #[serde(default = "default_auto_interval")]
+    pub auto_interval_secs: u32,
+    #[serde(default)]
+    pub auto_runs: u32,
+    #[serde(default)]
+    pub no_change_runs: u32,
+    #[serde(default)]
+    pub last_auto_at: i64,
+}

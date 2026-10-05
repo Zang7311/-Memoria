@@ -247,7 +247,7 @@ fn summarize_tool_result(text: &str) -> String {
 }
 
 /// 从配置读取 API 相关参数
-fn api_config() -> Result<(String, String, String), AppError> {
+pub(super) fn api_config() -> Result<(String, String, String), AppError> {
     let cfg = config::store::get_runtime_config();
     if !cfg.models.is_empty() {
         let slot = crate::engine::model_router::main_slot(&cfg);
@@ -270,8 +270,9 @@ fn api_config() -> Result<(String, String, String), AppError> {
 }
 
 /// 构造「用户中断」响应并推送中断通知
-fn interrupted_response(emitter: &StreamEmitter, steps: usize) -> AgentRunResponse {
-    let msg = format!("好，我已经停下来了。刚才做到第 {steps} 步。");
+fn interrupted_response(emitter: &StreamEmitter, steps: usize, notices: &[String]) -> AgentRunResponse {
+    let mut msg = format!("好，我已经停下来了。刚才做到第 {steps} 步。");
+    for notice in notices { msg.push_str(&format!("\n{notice}")); }
     emitter.push_final_reply(&msg);
     AgentRunResponse {
         success: true,
@@ -282,11 +283,18 @@ fn interrupted_response(emitter: &StreamEmitter, steps: usize) -> AgentRunRespon
     }
 }
 
+pub(super) fn goal_notice_response(emitter: &StreamEmitter, steps: usize, notices: &[String]) -> AgentRunResponse {
+    let message = format!("{}\n目标已保存，但后续回复未完成，请在「目标」面板继续。", notices.join("\n"));
+    emitter.push_final_reply(&message);
+    AgentRunResponse { success: true, final_reply: Some(message), steps, error: None, interrupted: false }
+}
+
 /// Agent 循环主入口
 pub async fn run_agent_loop(
     app: &AppHandle,
     request: AgentRunRequest,
 ) -> Result<AgentRunResponse, AppError> {
+    let _busy = crate::agent::goals::ChatBusyGuard::new();
     let (base, key, model) = api_config()?;
     let depth = config::store::get_config().depth;
 
@@ -317,6 +325,7 @@ pub async fn run_agent_loop(
     };
     let mut tools = build_tools(&toolbox_items, &plugins, &perms);
     tools.extend(crate::agent::forged_tools::tool_definitions(perms.allow_tool_forge));
+    tools.extend(crate::agent::goals::tool_definitions());
 
     // 2. 拉取相关记忆（默认记忆集，取最近 N 条作为上下文）
     let memories = load_recent_memories(10);
@@ -387,6 +396,7 @@ pub(super) async fn run_one_task(
     let max_steps = request.max_steps.min(HARD_MAX_STEPS);
     // 本次任务实际调用过的工具（成功结束后沉淀成经验）
     let mut used_tools: Vec<String> = Vec::new();
+    let mut goal_notices: Vec<String> = Vec::new();
     // 动作账本：工具名 → 结果，供「任务完成自评」核对是不是真做成了
     let mut action_log: Vec<String> = Vec::new();
     // 自评只做一次 —— 避免「未通过 → 补一轮 → 又未通过」无限循环
@@ -405,7 +415,7 @@ pub(super) async fn run_one_task(
     // 取消检查点：任务规划前
     if cancel::is_cancelled(&_request_id) {
 
-        return Ok(interrupted_response(&emitter, 0));
+        return Ok(interrupted_response(&emitter, 0, &goal_notices));
     }
 
     if !is_sub_agent && looks_multi_step {
@@ -460,7 +470,7 @@ pub(super) async fn run_one_task(
         // 取消检查点：每轮开头
         if cancel::is_cancelled(&_request_id) {
 
-            return Ok(interrupted_response(&emitter, steps - 1));
+            return Ok(interrupted_response(&emitter, steps - 1, &goal_notices));
         }
 
         if steps > max_steps {
@@ -471,10 +481,10 @@ pub(super) async fn run_one_task(
             }));
             // 兜底：这一步只是「生成总结」而不是干活，失败也必须降级返回 ——
             // 原本这里用了 `?`，一旦网络抖动，整个 Agent 请求就变成报错，前端什么内容都收不到。
-            let summary = call_llm_text(&client, &url, &key, &model, &messages, temperature, top_p)
+            let mut summary = call_llm_text(&client, &url, &key, &model, &messages, temperature, top_p)
                 .await
                 .unwrap_or_else(|e| {
-                    if !is_sub_agent && !used_tools.iter().any(|name| name == "spawn_sub_agents") {
+                    if !is_sub_agent && trace.is_none() && !used_tools.iter().any(|name| name == "spawn_sub_agents") {
                         log::warn!("[agent] 超步总结调用失败，降级返回：{e}");
                     }
                     format!(
@@ -483,6 +493,9 @@ pub(super) async fn run_one_task(
                 });
             // 流式推送：进度提示 + 最终总结
             emitter.push_progress("已达到最大工具调用步数，为你总结当前进度…");
+            for notice in &goal_notices {
+                if !summary.contains(notice) { summary.push_str(&format!("\n{notice}")); }
+            }
             emitter.push_final_reply(&summary);
 
             return Ok(AgentRunResponse {
@@ -496,12 +509,17 @@ pub(super) async fn run_one_task(
 
         // 调用 LLM（带 tools）
         let t_llm = std::time::Instant::now();
-        let resp = call_llm(&client, &url, &key, &model, &messages, &tools, temperature, top_p)
+        let response = call_llm(&client, &url, &key, &model, &messages, &tools, temperature, top_p)
             .await.map_err(|error| {
                 if !is_sub_agent && used_tools.iter().any(|name| name == "spawn_sub_agents") {
                     AppError::NetworkError("子任务汇总模型调用失败，请稍后重试；已完成的子任务结果不受影响".into())
                 } else { error }
-            })?;
+            });
+        let resp = match response {
+            Ok(response) => response,
+            Err(_) if !goal_notices.is_empty() => return Ok(goal_notice_response(emitter, steps, &goal_notices)),
+            Err(error) => return Err(error),
+        };
         log::info!(
             "[agent] 第 {}/{} 轮决策完成，LLM 耗时 {}ms",
             steps,
@@ -512,7 +530,7 @@ pub(super) async fn run_one_task(
         // 取消检查点：call_llm 返回后立即检查（省掉等待一轮再发现）
         if cancel::is_cancelled(&_request_id) {
 
-            return Ok(interrupted_response(&emitter, steps));
+            return Ok(interrupted_response(&emitter, steps, &goal_notices));
         }
 
         // 解析：tool_calls 还是纯文本？
@@ -520,7 +538,12 @@ pub(super) async fn run_one_task(
             .get("choices")
             .and_then(|c| c.get(0))
             .cloned()
-            .ok_or_else(|| AppError::InternalError("LLM 响应缺少 choices".into()))?;
+            .ok_or_else(|| AppError::InternalError("LLM 响应缺少 choices".into()));
+        let choice = match choice {
+            Ok(choice) => choice,
+            Err(_) if !goal_notices.is_empty() => return Ok(goal_notice_response(emitter, steps, &goal_notices)),
+            Err(error) => return Err(error),
+        };
 
         let message = choice.get("message").cloned().unwrap_or(json!({}));
 
@@ -536,7 +559,7 @@ pub(super) async fn run_one_task(
             // 取消检查点：工具调用之前（已启动的进程无法杀，但不再发起新的）
             if cancel::is_cancelled(&_request_id) {
 
-                return Ok(interrupted_response(&emitter, steps));
+                return Ok(interrupted_response(&emitter, steps, &goal_notices));
             }
 
             // 把 assistant 消息（含 tool_calls）追加进消息流
@@ -602,7 +625,7 @@ pub(super) async fn run_one_task(
 
                     // 结果摘要化后回传
                     let content = match result {
-                        Ok(text) if fn_name == "spawn_sub_agents" => text,
+                        Ok(text) if ["spawn_sub_agents", "create_goal", "goal_status", "goal_advance"].contains(&fn_name.as_str()) => text,
                         Ok(text) => summarize_tool_result(&text),
                         Err(e) => {
                             // 诊断错误类型，给 LLM 提供结构化建议
@@ -628,6 +651,12 @@ pub(super) async fn run_one_task(
                         }
                     };
 
+                    if fn_name == "create_goal" {
+                        if let Ok(value) = serde_json::from_str::<Value>(&content) {
+                            if let Some(notice) = value["notice"].as_str() { goal_notices.push(notice.to_string()); }
+                        }
+                    }
+
                     // 记进「动作账本」：任务完成自评要靠它核对「是不是真做成了」
                     let action_content = if crate::agent::forged_tools::is_forged_call(&fn_name) {
                         "自制工具已执行，结果不写入诊断账本".to_string()
@@ -647,18 +676,21 @@ pub(super) async fn run_one_task(
                     }));
                 }
             }
+            if !is_sub_agent && trace.is_some_and(|trace| *trace.refused.lock().unwrap_or_else(|poison| poison.into_inner())) {
+                return Ok(AgentRunResponse { success: false, final_reply: None, steps, error: Some("需要用户决定是否授权，已停止推进".into()), interrupted: false });
+            }
             // 继续循环，让 LLM 看结果
             continue;
         }
 
         // 纯文本回复 → 最终答案
-        let content = message
+        let mut content = message
             .get("content")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
         if content.is_empty() {
-
+            if !goal_notices.is_empty() { return Ok(goal_notice_response(emitter, steps, &goal_notices)); }
             return Err(AppError::InternalError("LLM 返回空回复".into()));
         }
         // 【任务完成自评】依据 Anthropic 的 evaluator-optimizer 模式：
@@ -672,7 +704,7 @@ pub(super) async fn run_one_task(
                     .await
             {
                 if !v.done {
-                    if used_tools.iter().any(|name| name == "spawn_sub_agents") {
+                    if trace.is_some() || used_tools.iter().any(|name| name == "spawn_sub_agents") {
                         log::warn!("[agent] 子任务汇总自检未通过");
                     } else {
                         log::warn!("[agent] 自检未通过：{}", v.reason);
@@ -692,6 +724,9 @@ pub(super) async fn run_one_task(
         }
 
         // 流式推送最终回复（漏了这里会导致前端收不到）
+        for notice in &goal_notices {
+            if !content.contains(notice) { content.push_str(&format!("\n{notice}")); }
+        }
         emitter.push_final_reply(&content);
 
         // 任务正常收尾：把「这个任务 → 用到的工具路线」沉淀成经验，下次少走弯路。
@@ -717,7 +752,7 @@ pub(super) async fn run_one_task(
 }
 
 
-async fn execute_task_tool(
+pub(super) async fn execute_task_tool(
     app: Option<&AppHandle>,
     name: &str,
     args: &HashMap<String, Value>,
@@ -728,6 +763,17 @@ async fn execute_task_tool(
     is_sub_agent: bool,
     trace: Option<&crate::agent::sub_agents::TaskTrace>,
 ) -> ToolResult {
+    if !is_sub_agent {
+        if let Some(trace) = trace {
+            if *trace.refused.lock().unwrap_or_else(|poison| poison.into_inner()) {
+                return Err(AppError::PermissionDenied("目标推进已停止，等待用户决定是否授权".into()));
+            }
+            if let Err(error) = crate::agent::goals::check_goal_tool(name, tools, &runtime.perms) {
+                *trace.refused.lock().unwrap_or_else(|poison| poison.into_inner()) = true;
+                return Err(error);
+            }
+        }
+    }
     if !is_sub_agent && name == "forge_tool" {
         return crate::agent::forged_tools::forge_from_args(args, runtime.perms.allow_tool_forge, request_id).await;
     }
