@@ -72,7 +72,9 @@ fn is_dangerous(id: &str) -> bool {
 /// 返回 None 表示该工具不应暴露给 Agent（危险工具 / 空命令纯前端工具）。
 fn toolbox_to_tool(item: &ToolboxItem, perms: &AgentPermissions) -> Option<Value> {
     if item.id == "spawn_sub_agents" {
-        return item.enabled.then(crate::agent::sub_agents::tool_definition);
+        return item.enabled.then(|| super::taxonomy::decorate_toolbox(
+            crate::agent::sub_agents::tool_definition(), &item.id, item.agent_permission.as_deref(),
+        ));
     }
     // 跳过危险工具
     if is_dangerous(&item.id) {
@@ -121,7 +123,7 @@ fn toolbox_to_tool(item: &ToolboxItem, perms: &AgentPermissions) -> Option<Value
     };
     let required: Vec<&str> = if item.needs_input { vec!["input"] } else { vec![] };
 
-    Some(json!({
+    Some(super::taxonomy::decorate_toolbox(json!({
         "type": "function",
         "function": {
             "name": format!("toolbox_{}", item.id),
@@ -132,7 +134,7 @@ fn toolbox_to_tool(item: &ToolboxItem, perms: &AgentPermissions) -> Option<Value
                 "required": required,
             }
         }
-    }))
+    }), &item.id, item.agent_permission.as_deref()))
 }
 
 /// 把一个插件技能转成 OpenAI tool 定义。
@@ -160,10 +162,12 @@ fn skill_to_tool(plugin: &Plugin, skill: &crate::types::Skill) -> Value {
 
     json!({
         "type": "function",
+        "x-intent": format!("plugin.{}.{}", plugin.id, skill.name),
+        "x-source": "plugin",
         "function": {
             // 用 plugin_id::skill_name 做命名空间，避免不同插件技能同名冲突
             "name": format!("skill_{}__{}", plugin.id, skill.name),
-            "description": skill.description,
+            "description": format!("{}。不要用于其他技能，请用对应插件工具。", skill.description.chars().take(95).collect::<String>()),
             "parameters": {
                 "type": "object",
                 "properties": properties,
@@ -196,6 +200,9 @@ pub fn build_tools(
             tools.push(t);
         }
     }
+    if let Some(tool) = super::open::tool_definition(&tools) {
+        tools.push(tool);
+    }
 
     // 2. 插件技能（仅已启用的插件）
     for plugin in plugins.iter().filter(|p| p.enabled) {
@@ -217,9 +224,11 @@ pub fn build_tools(
 fn look_tool() -> Value {
     json!({
         "type": "function",
+        "x-intent": "media.look",
+        "x-source": "native",
         "function": {
             "name": "toolbox_agent_look",
-            "description": "看图片内容：把本地图片交给视觉模型理解，能描述画面、读出图中的文字。想知道屏幕上现在是什么样，先用 agent_screenshot 截图，再把截图路径交给这个工具。",
+            "description": "把本地图片交给视觉模型理解、描述画面或读文字。不要用于截屏，请先用 toolbox_agent_screenshot；只做文字识别请用 toolbox_agent_ocr。",
             "parameters": {
                 "type": "object",
                 "properties": {

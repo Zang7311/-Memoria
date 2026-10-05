@@ -1035,9 +1035,9 @@ pub async fn advance(app: &AppHandle, id: &str) -> Result<GoalReport, AppError> 
 
 pub fn tool_definitions() -> Vec<Value> {
     vec![
-        json!({"type":"function","function":{"name":"create_goal","description":"创建跨会话长期目标（默认不自动推进）。只有用户要求长期目标时使用。创建后必须原样告诉用户：我建了一个目标：<标题>，你可以在「目标」面板里看到并让我继续。","parameters":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"steps":{"type":"array","items":{"type":"object","properties":{"text":{"type":"string"},"status":{"type":"string","enum":["pending","doing","done","failed"]}},"required":["text","status"]}}},"required":["title","description"]}}}),
-        json!({"type":"function","function":{"name":"goal_status","description":"读取长期目标状态、进展、下一步和已用次数。不传 id 则列出目标。","parameters":{"type":"object","properties":{"id":{"type":"string"}}}}}),
-        json!({"type":"function","function":{"name":"goal_advance","description":"用户要求继续某个长期目标时推进一次。仅进行中目标可推进，暂停或被阻塞的目标必须由用户在目标面板继续。","parameters":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}}),
+        json!({"type":"function","x-intent":"goal.create","x-source":"native","function":{"name":"create_goal","description":"创建跨会话长期目标，默认不自动推进。创建后原样告知：我建了一个目标：<标题>，你可以在「目标」面板里看到并让我继续。不要用于继续已有目标，请用 goal_advance。","parameters":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"steps":{"type":"array","items":{"type":"object","properties":{"text":{"type":"string"},"status":{"type":"string","enum":["pending","doing","done","failed"]}},"required":["text","status"]}}},"required":["title","description"]}}}),
+        json!({"type":"function","x-intent":"goal.read","x-source":"native","function":{"name":"goal_status","description":"读取目标状态、进展、下一步和已用次数；不传 id 列出目标。不要用于推进目标，请用 goal_advance。","parameters":{"type":"object","properties":{"id":{"type":"string"}}}}}),
+        json!({"type":"function","x-intent":"goal.advance","x-source":"native","function":{"name":"goal_advance","description":"用户要求继续长期目标时推进一次；仅进行中目标可推进，暂停或阻塞须用户在面板继续。不要用于只读查看，请用 goal_status；创建请用 create_goal。","parameters":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}}),
     ]
 }
 
