@@ -108,14 +108,14 @@ pub fn set_enabled(id: &str, enabled: bool) -> Result<(), AppError> {
 
 pub fn tool_definitions(allow_forge: bool) -> Vec<Value> {
     let mut tools = vec![
-        json!({"type":"function","function":{"name":"list_forged_tools","description":"列出已经经过用户可见审核的自制工具，避免重复编写。","parameters":{"type":"object","properties":{},"required":[]}}}),
-        json!({"type":"function","function":{"name":"delete_forged_tool","description":"删除一个已经注册的自制工具。只能删除自制工具，不能修改人格、权限或应用配置。","parameters":{"type":"object","properties":{"id":{"type":"string","description":"自制工具 id"}},"required":["id"]}}}),
+        json!({"type":"function","x-intent":"tool.list","x-source":"native","function":{"name":"list_forged_tools","description":"列出经过用户可见审核的自制工具，避免重复编写。不要用于创建新工具，请用 forge_tool（需 tool_forge 授权）。","parameters":{"type":"object","properties":{},"required":[]}}}),
+        json!({"type":"function","x-intent":"tool.delete","x-source":"native","function":{"name":"delete_forged_tool","description":"删除已注册的自制工具，不能修改人格、权限或应用配置。不要用于删除普通文件，请用 toolbox_agent_delete_file（需 file_write 授权）。","parameters":{"type":"object","properties":{"id":{"type":"string","description":"自制工具 id"}},"required":["id"]}}}),
     ];
     for tool in list().unwrap_or_default().into_iter().filter(|tool| tool.enabled) {
-        tools.push(json!({"type":"function","function":{"name":format!("{FORGED_TOOL_PREFIX}{}",tool.name),"description":tool.description,"parameters":tool.params}}));
+        tools.push(json!({"type":"function","x-intent":"tool.execute","x-source":"native","function":{"name":format!("{FORGED_TOOL_PREFIX}{}",tool.name),"description":format!("{}。不要用于其他自制技能，请用 list_forged_tools 查找。",tool.description.chars().take(80).collect::<String>()),"parameters":tool.params}}));
     }
     if allow_forge {
-        tools.push(json!({"type":"function","function":{"name":"forge_tool","description":"编写一个只允许经过统一沙箱验证的小工具。联网、提权、持久化、注册表写入、凭据读取和系统破坏操作一律拒绝。试跑成功后才会注册。","parameters":{"type":"object","properties":{"name":{"type":"string","description":"英文小写字母、数字、下划线组成的唯一名称"},"description":{"type":"string","description":"给 Agent 看的中文用途说明"},"language":{"type":"string","enum":["python","powershell","node"]},"code":{"type":"string","description":"脚本源码；参数 JSON 位于 Python sys.argv[1]、PowerShell $args[0] 或 Node process.argv[2]"},"params":{"type":"object","description":"JSON Schema 参数对象"},"test_args":{"type":"object","description":"注册前试跑使用的参数对象"}},"required":["name","description","language","code","params","test_args"]}}}));
+        tools.push(json!({"type":"function","x-intent":"tool.forge","x-source":"native","x-agent-permission":"tool_forge","function":{"name":"forge_tool","description":"编写并试跑沙箱小工具（需 tool_forge 授权），成功才注册；拒绝联网、提权、持久化、注册表写、凭据读取及破坏。不要用于重复创建已有工具，请用 list_forged_tools。","parameters":{"type":"object","properties":{"name":{"type":"string","description":"英文小写字母、数字、下划线组成的唯一名称"},"description":{"type":"string","description":"给 Agent 看的中文用途说明"},"language":{"type":"string","enum":["python","powershell","node"]},"code":{"type":"string","description":"脚本源码；参数 JSON 位于 Python sys.argv[1]、PowerShell $args[0] 或 Node process.argv[2]"},"params":{"type":"object","description":"JSON Schema 参数对象"},"test_args":{"type":"object","description":"注册前试跑使用的参数对象"}},"required":["name","description","language","code","params","test_args"]}}}));
     }
     tools
 }

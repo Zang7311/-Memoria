@@ -32,6 +32,17 @@ pub async fn dispatch_tool_call(
     name: &str,
     args: &HashMap<String, Value>,
 ) -> ToolResult {
+    if name == super::open::TOOL_NAME {
+        let route = super::open::from_args(args)?;
+        let items = crate::desktop::toolbox::list_agent_items();
+        let item = super::open::authorized_item(&route, &items, &current_permissions())?;
+        let response = crate::desktop::toolbox::execute_open(item, &route).await?;
+        return Ok(if response.success {
+            response.output.unwrap_or_else(|| "执行成功（无输出）".into())
+        } else {
+            format!("执行失败：{}", response.error.unwrap_or_default())
+        });
+    }
     if ["create_goal", "goal_status", "goal_advance"].contains(&name) {
         return Box::pin(crate::agent::goals::dispatch(app, name, args)).await;
     }
@@ -83,6 +94,10 @@ async fn dispatch_toolbox(
     item_id: &str,
     args: &HashMap<String, Value>,
 ) -> ToolResult {
+    let items = crate::desktop::toolbox::list_agent_items();
+    let item = items.iter().find(|item| item.id == item_id)
+        .ok_or_else(|| AppError::ToolboxError(format!("工具箱条目不存在：{item_id}")))?;
+    authorize_toolbox(item, &current_permissions())?;
     let input = args.get("input").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     let resp = crate::commands::toolbox_execute::execute_toolbox(
@@ -100,6 +115,27 @@ async fn dispatch_toolbox(
     } else {
         Ok(format!("执行失败：{}", resp.error.unwrap_or_default()))
     }
+}
+
+fn current_permissions() -> super::tools::AgentPermissions {
+    let cfg = crate::config::store::get_config();
+    super::tools::AgentPermissions {
+        allow_download: cfg.agent_allow_download,
+        allow_software: cfg.agent_allow_software,
+        allow_file_write: cfg.agent_allow_file_write,
+        allow_shell: cfg.agent_allow_shell,
+        allow_tool_forge: cfg.agent_allow_tool_forge,
+    }
+}
+
+pub(super) fn authorize_toolbox(
+    item: &crate::types::ToolboxItem,
+    perms: &super::tools::AgentPermissions,
+) -> Result<(), AppError> {
+    if !item.enabled || !perms.allows(item.agent_permission.as_deref()) {
+        return Err(AppError::PermissionDenied(format!("工具 {} 未授权或已禁用，已拒绝", item.id)));
+    }
+    Ok(())
 }
 
 /// 路由到插件技能执行器

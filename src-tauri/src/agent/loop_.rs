@@ -426,6 +426,7 @@ pub(super) async fn run_one_task(
         log::info!("[agent] 任务较长，启用多步规划");
         let tool_names: Vec<String> = tools
             .iter()
+            .filter(|tool| tool["x-alias-for"].is_null())
             .filter_map(|t| {
                 t.get("function")
                     .and_then(|f| f.get("name"))
@@ -840,6 +841,7 @@ fn load_recent_memories(limit: usize) -> Vec<Memory> {
 pub(super) fn build_system_prompt(tools: &[Value]) -> String {
     let tool_names: Vec<String> = tools
         .iter()
+        .filter(|tool| tool["x-alias-for"].is_null())
         .filter_map(|t| {
             t.get("function")
                 .and_then(|f| f.get("name"))
@@ -852,6 +854,7 @@ pub(super) fn build_system_prompt(tools: &[Value]) -> String {
         "你是「铃」，一只生活在用户 Windows 电脑里的猫娘助手。你可以调用工具帮用户完成任务。\n\
          \n\
          【可用工具】共 {} 个：{}\n\
+         {}\n\
          \n\
          【行为准则】\n\
          1. 用户提出任务后，先判断是否需要调用工具；能自己回答的就直接回答。\n\
@@ -866,8 +869,9 @@ pub(super) fn build_system_prompt(tools: &[Value]) -> String {
          10. 【动手后必须验证·重要】凡是会改变电脑状态的操作（启动或关闭软件、写删文件、安装卸载、改注册表或设置、关机等），做完之后必须再调用一次只读工具核对结果，确认真的生效了，才可以汇报成功。核对举例：启动软件后查进程或窗口列表；写完文件读回来看内容；安装或卸载后查已安装列表；改完启动项重新读一次注册表。核对没过就如实说明，绝不谎报成功。\n\
          \n\
          【重要】你只能调用上面列出的工具，不要调用不存在的工具。",
-        tools.len(),
-        tool_names.join("、")
+        tool_names.len(),
+        tool_names.join("、"),
+        super::taxonomy::generate_intent_index(tools)
     )
 }
 
@@ -891,7 +895,7 @@ async fn call_llm(
         "top_p": engine::round2(top_p),
     });
     if !tools.is_empty() {
-        body["tools"] = json!(tools);
+        body["tools"] = json!(super::taxonomy::api_tools(tools));
     }
 
     let resp = client

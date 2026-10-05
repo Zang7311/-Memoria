@@ -115,6 +115,28 @@ pub fn delete_user_item(item_id: &str) -> Result<(), AppError> {
 /// Windows：隐藏控制台窗口（CREATE_NO_WINDOW），避免执行时弹出黑色终端；
 /// 命令输出仍通过 stdout 捕获并返回前端反馈。
 pub async fn execute(item: &ToolboxItem, input: Option<String>) -> Result<ExecuteToolboxResponse, AppError> {
+    if item.id == "agent_open_url" || item.id == "agent_open_path" {
+        let kind = (item.id == "agent_open_url").then_some("url");
+        let route = crate::agent::open::route(input.as_deref().unwrap_or(""), kind)?;
+        return execute_open(item, &route).await;
+    }
+    execute_command(item, input).await
+}
+
+pub async fn execute_open(
+    item: &ToolboxItem,
+    route: &crate::agent::open::OpenRoute,
+) -> Result<ExecuteToolboxResponse, AppError> {
+    if item.id != route.item_id {
+        return Err(AppError::ToolboxError("打开能力与执行路径不符".into()));
+    }
+    let (command, input) = crate::agent::open::execution(route);
+    let mut item = item.clone();
+    item.command = command;
+    execute_command(&item, Some(input)).await
+}
+
+async fn execute_command(item: &ToolboxItem, input: Option<String>) -> Result<ExecuteToolboxResponse, AppError> {
     if item.id == "agent_download" {
         return tokio::time::timeout(Duration::from_secs(30), crate::agent::download::download(
             input.as_deref(), &crate::config::store::get_config(),
