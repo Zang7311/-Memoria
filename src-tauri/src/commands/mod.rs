@@ -5,6 +5,7 @@ pub mod network_diagnostic;
 // —— AI-10 Agent 命令 ——
 pub mod agent_cancel;
 pub mod agent_run;
+pub mod forged_tools;
 // —— AI-4 记忆命令 ——
 pub mod memory_delete;
 pub mod memory_get;

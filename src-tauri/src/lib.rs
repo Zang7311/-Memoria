@@ -60,6 +60,7 @@ pub fn run() {
             // ==================== P3 救援模式 ====================
             // 触发条件：启动参数 --recovery（配置损坏/启动失败时用户手动进入）
             config::store::init(app.handle().clone());
+            agent::forged_tools::init();
             let recovery_mode = std::env::args().any(|a| a == "--recovery");
             if recovery_mode {
                 // 恢复模式：只建极简窗口，跳过全部正常初始化
@@ -185,6 +186,9 @@ pub fn run() {
             commands::agent_run::agent_run,
             commands::agent_cancel::agent_cancel,
             commands::send_message::send_message,
+            commands::forged_tools::list_forged_tools,
+            commands::forged_tools::delete_forged_tool,
+            commands::forged_tools::set_forged_tool_enabled,
             commands::test_connection::test_api_connection,
             commands::network_diagnostic::network_diagnostic,
             // —— AI-4 记忆命令 ——

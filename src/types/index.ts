@@ -43,6 +43,20 @@ export interface Memory {
   use_count?: number
 }
 
+/** 已注册的 Agent 自制工具 */
+export interface ForgedTool {
+  id: string
+  name: string
+  description: string
+  params: Record<string, unknown>
+  language: 'python' | 'powershell' | 'node' | string
+  code: string
+  created_at: number
+  call_count: number
+  last_error?: string | null
+  enabled: boolean
+}
+
 /** 应用设置 */
 export interface Setting {
   theme: 'light' | 'dark'
@@ -338,6 +352,8 @@ export interface AppConfig {
   agent_allow_file_write?: boolean
   /** Agent 权限：允许执行系统命令（最高危，默认 false） */
   agent_allow_shell?: boolean
+  /** Agent 自己编写小工具权限（默认关闭） */
+  agent_allow_tool_forge?: boolean
 }
 
 /** 一套完整的外观自定义组合（用户命名保存，可一键切换） */

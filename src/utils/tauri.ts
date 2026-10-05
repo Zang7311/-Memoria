@@ -3,7 +3,7 @@
 // 后端命令与事件由 AI-3 实现；此处仅做前端封装，不写 Rust。
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { Attachment, SubAgentEvent } from '../types'
+import type { Attachment, ForgedTool, SubAgentEvent } from '../types'
 
 export function onSubAgentStarted(callback: (event: SubAgentEvent) => void): Promise<UnlistenFn> {
   return listen<SubAgentEvent>('sub_agent_started', (event) => callback(event.payload))
@@ -339,6 +339,21 @@ export function toggleMonitoring(enabled: boolean, interval_seconds?: number): P
 /** 列出工具箱条目（预设 + 用户自定义） */
 export function listToolboxItems(): Promise<{ items: ToolboxItem[] }> {
   return invoke('list_toolbox_items')
+}
+
+/** 列出 Agent 自制工具 */
+export function listForgedTools(): Promise<ForgedTool[]> {
+  return invoke('list_forged_tools')
+}
+
+/** 删除 Agent 自制工具 */
+export function deleteForgedTool(id: string): Promise<void> {
+  return invoke('delete_forged_tool', { request: { id } })
+}
+
+/** 切换 Agent 自制工具启用状态 */
+export function setForgedToolEnabled(id: string, enabled: boolean): Promise<void> {
+  return invoke('set_forged_tool_enabled', { request: { id, enabled } })
 }
 
 /** 执行工具箱命令（需要输入参数的工具传 input，对应 {input} 占位符）

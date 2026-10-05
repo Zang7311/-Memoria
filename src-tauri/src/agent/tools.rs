@@ -30,6 +30,8 @@ pub struct AgentPermissions {
     pub allow_file_write: bool,
     /// 允许执行任意命令（shell，最高危）
     pub allow_shell: bool,
+    /// 允许 Agent 编写新工具；已有自制工具的查看、删除和执行不依赖此开关
+    pub allow_tool_forge: bool,
 }
 
 impl AgentPermissions {
@@ -44,6 +46,7 @@ impl AgentPermissions {
             Some("software") => self.allow_software,
             Some("file_write") => self.allow_file_write,
             Some("shell") => self.allow_shell,
+            Some("tool_forge") => self.allow_tool_forge,
             Some(_) => false,
         }
     }
@@ -418,6 +421,7 @@ mod tests {
             allow_software: true,
             allow_file_write: true,
             allow_shell: true,
+            allow_tool_forge: false,
         };
         assert!(toolbox_to_tool(&item, &all_on).is_some());
     }
@@ -432,6 +436,7 @@ mod tests {
             allow_software: true,
             allow_file_write: true,
             allow_shell: true,
+            allow_tool_forge: false,
         };
         assert!(
             toolbox_to_tool(&item, &all_on).is_none(),
@@ -447,6 +452,7 @@ mod tests {
             allow_software: false,
             allow_file_write: false,
             allow_shell: false,
+            allow_tool_forge: false,
         };
         assert!(perms.allows(None));
         assert!(perms.allows(Some("download")));
@@ -532,6 +538,7 @@ mod tests {
             allow_software: true,
             allow_file_write: true,
             allow_shell: true,
+            allow_tool_forge: false,
         };
         let tools = build_tools(&items, &[], &all_on);
         let names: Vec<&str> = tools

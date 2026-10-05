@@ -5,14 +5,16 @@ import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { assetUrl, checkDependency, decodeQrcode, generateQrcode, getMemories, ocrImage, openUrl } from '../utils/tauri'
-import type { ToolboxItem } from '../types'
+import { assetUrl, checkDependency, decodeQrcode, deleteForgedTool, generateQrcode, getMemories, listForgedTools, ocrImage, openUrl, setForgedToolEnabled } from '../utils/tauri'
+import type { ForgedTool, ToolboxItem } from '../types'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
 
 const desktop = useDesktopStore()
 const setting = useSettingStore()
 const milestone = useMilestoneStore()
+const forgedTools = ref<ForgedTool[]>([])
+const expandedForgedId = ref<string | null>(null)
 
 // 关闭工具箱（父组件监听后隐藏）
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -158,8 +160,24 @@ function removeStep(i: number) {
 const showDeleteConfirm = ref(false)
 const pendingDeleteId = ref('')
 
+async function loadForgedTools() {
+  try { forgedTools.value = await listForgedTools() } catch (error) { feedback.value = { ok: false, text: String(error) } }
+}
+function forgedCreatedAt(timestamp: number) { return new Date(timestamp * 1000).toLocaleString('zh-CN') }
+async function toggleForgedTool(tool: ForgedTool) {
+  try { await setForgedToolEnabled(tool.id, !tool.enabled); tool.enabled = !tool.enabled } catch (error) { feedback.value = { ok: false, text: String(error) } }
+}
+async function copyForgedCode(tool: ForgedTool) {
+  try { await navigator.clipboard.writeText(tool.code); feedback.value = { ok: true, text: '源码已复制' } } catch (error) { feedback.value = { ok: false, text: String(error) } }
+}
+async function removeForgedTool(tool: ForgedTool) {
+  if (!window.confirm('确定删除这个自制工具吗？删除后无法恢复。')) return
+  try { await deleteForgedTool(tool.id); forgedTools.value = forgedTools.value.filter((item) => item.id !== tool.id) } catch (error) { feedback.value = { ok: false, text: String(error) } }
+}
+
 onMounted(() => {
   desktop.loadToolboxItems()
+  loadForgedTools()
 })
 
 // —— 依赖缺失检测：输出含依赖关键词 → 返回安装引导 ——
@@ -488,6 +506,27 @@ async function confirmDelete() {
       </div>
       <div v-if="desktop.toolboxLoading" class="cell loading-cell">加载中…</div>
     </div>
+
+    <section class="forged-section">
+      <div class="forged-title">自制工具</div>
+      <p v-if="!setting.agentAllowToolForge" class="forged-hint">需在设置里授权 Agent 自己编写小工具</p>
+      <div v-if="forgedTools.length === 0" class="forged-empty">暂无自制工具</div>
+      <article v-for="tool in forgedTools" :key="tool.id" class="forged-card">
+        <div class="forged-card-head">
+          <strong>{{ tool.name }}</strong>
+          <label class="forged-toggle"><input type="checkbox" :checked="tool.enabled" @change="toggleForgedTool(tool)" />启用</label>
+        </div>
+        <div class="forged-description">{{ tool.description }}</div>
+        <div class="forged-meta">{{ tool.language }} · {{ forgedCreatedAt(tool.created_at) }} · 调用 {{ tool.call_count }} 次</div>
+        <div class="forged-actions">
+          <button class="btn" type="button" @click="expandedForgedId = expandedForgedId === tool.id ? null : tool.id">{{ expandedForgedId === tool.id ? '收起源码' : '查看源码' }}</button>
+          <button v-if="expandedForgedId === tool.id" class="btn" type="button" @click="copyForgedCode(tool)">复制源码</button>
+          <button class="btn danger" type="button" @click="removeForgedTool(tool)">删除</button>
+        </div>
+        <pre v-if="expandedForgedId === tool.id" class="forged-source">{{ tool.code }}</pre>
+        <div v-if="tool.last_error" class="forged-error">最近失败：{{ tool.last_error }}</div>
+      </article>
+    </section>
 
     <div class="panel-footer">清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</div>
 
@@ -894,6 +933,17 @@ async function confirmDelete() {
   color: var(--text-secondary, #9a9294);
   font-size: var(--fs-12);
 }
+.forged-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border, rgba(255,255,255,.12)); }
+.forged-title { font-weight: 600; margin-bottom: 6px; }
+.forged-hint, .forged-empty, .forged-meta { color: var(--text-secondary); font-size: var(--fs-11); }
+.forged-card { padding: 8px 0; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
+.forged-card-head, .forged-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.forged-description { margin-top: 4px; font-size: var(--fs-12); line-height: 1.35; }
+.forged-meta { margin-top: 4px; }
+.forged-toggle { display: flex; align-items: center; gap: 4px; font-size: var(--fs-11); color: var(--text-secondary); }
+.forged-actions { justify-content: flex-start; margin-top: 6px; }
+.forged-source { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; user-select: text; background: var(--input-bg, #2a272b); border-radius: 6px; font-size: 11px; }
+.forged-error { margin-top: 5px; color: var(--danger, #ff6b6b); font-size: var(--fs-11); }
 .panel-footer {
   margin-top: 10px;
   text-align: center;

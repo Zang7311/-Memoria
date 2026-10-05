@@ -811,6 +811,16 @@ async function toggleAiToolbox() {
             <span class="label">允许执行命令</span>
           </label>
           <p class="hint" style="margin-left:48px">开启后铃可以执行系统命令（能力最强，也最危险，请谨慎开启）</p>
+          <label class="switch-wrap" style="margin-top:8px">
+            <input type="checkbox" :checked="setting.agentAllowToolForge" class="switch"
+              @change="setting.agentAllowToolForge = !setting.agentAllowToolForge; setting.update({ agent_allow_tool_forge: setting.agentAllowToolForge })" />
+            <span class="label">允许 Agent 自己编写小工具</span>
+          </label>
+          <p class="hint" style="margin-left:48px">
+            默认关闭。开启后 Agent 可以自己写小工具（Python / PowerShell / Node）来扩展能力，写完先试跑，源码随时可在「工具箱 → 自制工具」里查看、禁用、删除。
+            <br />
+            <strong>注意：这是关键字过滤 + 独立临时目录 + 超时限制，不是操作系统级隔离。</strong>请只在你信任的脚本上开启这个开关。
+          </p>
         </section>
 
         <section class="card">

@@ -322,6 +322,7 @@ fn default_tools_are_strictly_read_only_and_never_nested() {
         allow_software: true,
         allow_file_write: true,
         allow_shell: true,
+            allow_tool_forge: false,
     };
     let tools = child_tools(&parent_tools(&perms), &perms, false);
     assert!(!tools.is_empty());
