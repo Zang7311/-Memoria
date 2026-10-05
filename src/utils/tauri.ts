@@ -3,7 +3,15 @@
 // 后端命令与事件由 AI-3 实现；此处仅做前端封装，不写 Rust。
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { Attachment } from '../types'
+import type { Attachment, SubAgentEvent } from '../types'
+
+export function onSubAgentStarted(callback: (event: SubAgentEvent) => void): Promise<UnlistenFn> {
+  return listen<SubAgentEvent>('sub_agent_started', (event) => callback(event.payload))
+}
+
+export function onSubAgentFinished(callback: (event: SubAgentEvent) => void): Promise<UnlistenFn> {
+  return listen<SubAgentEvent>('sub_agent_finished', (event) => callback(event.payload))
+}
 
 /**
  * 发送一条用户消息（后台 AI-3 负责生成回复）

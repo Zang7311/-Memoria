@@ -69,6 +69,10 @@ const displayContent = computed(() => {
 
     <div class="bubble" :class="isUser ? 'bubble-user' : 'bubble-suzu'">
       <span class="content">{{ displayContent }}</span>
+      <details v-for="result in chat.subAgentResults[message.id]" :key="result.sub_id" class="sub-agent-card">
+        <summary>{{ result.goal }} · {{ result.status }}</summary>
+        <div class="content sub-agent-summary">{{ result.summary || '正在处理子任务…' }}</div>
+      </details>
       <div v-for="(attachment, index) in message.attachments" :key="index" class="content">
         [{{ attachment.kind === 'image' ? '图片' : '附件' }}: {{ attachment.name }}]
       </div>
@@ -89,6 +93,22 @@ const displayContent = computed(() => {
 </template>
 
 <style scoped>
+.sub-agent-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #7775);
+  border-radius: 8px;
+  font-size: var(--fs-12);
+}
+.sub-agent-card summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.sub-agent-summary {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .bubble-row {
   display: flex;
   align-items: flex-start;

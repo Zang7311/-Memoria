@@ -66,7 +66,7 @@ const READ_ONLY_TOOLS: &[&str] = &[
 ];
 
 /// 该工具是否只读（可安全并发）
-fn is_read_only_tool(name: &str) -> bool {
+pub(super) fn is_read_only_tool(name: &str) -> bool {
     READ_ONLY_TOOLS.contains(&name)
 }
 
@@ -338,6 +338,48 @@ pub async fn run_agent_loop(
         messages.push(json!({ "role": "user", "content": h.clone() }));
     }
 
+    let runtime = TaskRuntime {
+        base, key, model, depth, cfg, perms,
+        dispatch: |app, name, args, is_sub_agent| Box::pin(async move {
+            if is_sub_agent {
+                return crate::agent::router::dispatch_sub_agent_tool_call(name, args).await;
+            }
+            match app {
+                Some(app) => dispatch_tool_call(app, name, args).await,
+                None => Err(AppError::ToolboxError("工具执行环境不可用，子任务被拒绝".into())),
+            }
+        }),
+    };
+    run_one_task(Some(app), request, &runtime, tools, messages, &emitter, exp_hint, false, None).await
+}
+
+pub(super) type ToolDispatcher = for<'a> fn(
+    Option<&'a AppHandle>, &'a str, &'a HashMap<String, Value>, bool,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolResult> + Send + 'a>>;
+
+pub(super) struct TaskRuntime {
+    pub base: String,
+    pub key: String,
+    pub model: String,
+    pub depth: u8,
+    pub cfg: crate::types::AppConfig,
+    pub perms: AgentPermissions,
+    pub dispatch: ToolDispatcher,
+}
+
+pub(super) async fn run_one_task(
+    app: Option<&AppHandle>,
+    request: AgentRunRequest,
+    runtime: &TaskRuntime,
+    tools: Vec<Value>,
+    mut messages: Vec<Value>,
+    emitter: &StreamEmitter,
+    exp_hint: Option<String>,
+    is_sub_agent: bool,
+    trace: Option<&crate::agent::sub_agents::TaskTrace>,
+) -> Result<AgentRunResponse, AppError> {
+    let TaskRuntime { base, key, model, depth, cfg, .. } = runtime;
+    let _request_id = &request.request_id;
     // 5. 循环
     let mut steps = 0usize;
     let max_steps = request.max_steps.min(HARD_MAX_STEPS);
@@ -349,7 +391,7 @@ pub async fn run_agent_loop(
     let mut self_checked = false;
     let client = crate::engine::net::build_client(&cfg)?;
     let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(&base));
-    let (temperature, top_p, _) = engine::apply_depth(depth);
+    let (temperature, top_p, _) = engine::apply_depth(*depth);
 
     // 循环前：仅对「看起来是多步」的任务调用 planner
     //（单步任务如「打开QQ」直接跳过，省掉一次 LLM 往返，明显更快）
@@ -364,7 +406,7 @@ pub async fn run_agent_loop(
         return Ok(interrupted_response(&emitter, 0));
     }
 
-    if looks_multi_step {
+    if !is_sub_agent && looks_multi_step {
         log::info!("[agent] 任务较长，启用多步规划");
         let tool_names: Vec<String> = tools
             .iter()
@@ -430,7 +472,9 @@ pub async fn run_agent_loop(
             let summary = call_llm_text(&client, &url, &key, &model, &messages, temperature, top_p)
                 .await
                 .unwrap_or_else(|e| {
-                    log::warn!("[agent] 超步总结调用失败，降级返回：{e}");
+                    if !is_sub_agent && !used_tools.iter().any(|name| name == "spawn_sub_agents") {
+                        log::warn!("[agent] 超步总结调用失败，降级返回：{e}");
+                    }
                     format!(
                         "已经连续执行了 {max_steps} 步并停下。上面是实际做过的操作，但我没能生成总结（模型调用失败）。"
                     )
@@ -451,7 +495,11 @@ pub async fn run_agent_loop(
         // 调用 LLM（带 tools）
         let t_llm = std::time::Instant::now();
         let resp = call_llm(&client, &url, &key, &model, &messages, &tools, temperature, top_p)
-            .await?;
+            .await.map_err(|error| {
+                if !is_sub_agent && used_tools.iter().any(|name| name == "spawn_sub_agents") {
+                    AppError::NetworkError("子任务汇总模型调用失败，请稍后重试；已完成的子任务结果不受影响".into())
+                } else { error }
+            })?;
         log::info!(
             "[agent] 第 {}/{} 轮决策完成，LLM 耗时 {}ms",
             steps,
@@ -528,12 +576,12 @@ pub async fn run_agent_loop(
 
                 let results: Vec<ToolResult> = if can_parallel {
                     log::info!("[agent] 本轮 {} 个只读工具，并发执行", batch.len());
-                    let futs = batch.iter().map(|(_, n, a)| dispatch_tool_call(app, n, a));
+                    let futs = batch.iter().map(|(_, n, a)| execute_task_tool(app, n, a, &tools, runtime, emitter, &_request_id, is_sub_agent, trace));
                     futures_util::future::join_all(futs).await
                 } else {
                     let mut rs = Vec::with_capacity(batch.len());
                     for (_, n, a) in batch.iter() {
-                        rs.push(dispatch_tool_call(app, n, a).await);
+                        rs.push(execute_task_tool(app, n, a, &tools, runtime, emitter, &_request_id, is_sub_agent, trace).await);
                     }
                     rs
                 };
@@ -541,9 +589,18 @@ pub async fn run_agent_loop(
                 // 第三遍：按原顺序把结果回填为 tool 消息
                 for ((call_id, fn_name, args), result) in batch.into_iter().zip(results) {
                     used_tools.push(fn_name.clone());
+                    if let Some(trace) = trace {
+                        let failed = match &result {
+                            Err(_) => true,
+                            Ok(text) => text.starts_with("执行失败："),
+                        };
+                        let mut outcomes = trace.outcomes.lock().unwrap_or_else(|poison| poison.into_inner());
+                        if failed { outcomes.1 += 1; } else { outcomes.0 += 1; }
+                    }
 
                     // 结果摘要化后回传
                     let content = match result {
+                        Ok(text) if fn_name == "spawn_sub_agents" => text,
                         Ok(text) => summarize_tool_result(&text),
                         Err(e) => {
                             // 诊断错误类型，给 LLM 提供结构化建议
@@ -571,6 +628,9 @@ pub async fn run_agent_loop(
 
                     // 记进「动作账本」：任务完成自评要靠它核对「是不是真做成了」
                     action_log.push(format!("{fn_name} → {content}"));
+                    if let Some(trace) = trace {
+                        trace.sources.lock().unwrap_or_else(|poison| poison.into_inner()).push(content.clone());
+                    }
 
                     messages.push(json!({
                         "role": "tool",
@@ -598,14 +658,18 @@ pub async fn run_agent_loop(
         // 动手类任务先让独立一次调用核对「是不是真的做成了」，再决定要不要收尾。
         // 纯聊天不触发（used_tools 为空直接跳过）= 零额外开销；
         // 只做一次，未通过就补一轮，补完无论结果如何都收尾 —— 绝不无限循环。
-        if cfg.self_check_enabled && !used_tools.is_empty() && !self_checked {
+        if !is_sub_agent && cfg.self_check_enabled && !used_tools.is_empty() && !self_checked {
             self_checked = true;
             if let Some(v) =
                 evaluator::evaluate(&client, &url, &key, &model, &request.task, &action_log, &content)
                     .await
             {
                 if !v.done {
-                    log::warn!("[agent] 自检未通过：{}", v.reason);
+                    if used_tools.iter().any(|name| name == "spawn_sub_agents") {
+                        log::warn!("[agent] 子任务汇总自检未通过");
+                    } else {
+                        log::warn!("[agent] 自检未通过：{}", v.reason);
+                    }
                     emitter.push_progress("让我再确认一下…");
                     messages.push(json!({
                         "role": "user",
@@ -625,7 +689,7 @@ pub async fn run_agent_loop(
 
         // 任务正常收尾：把「这个任务 → 用到的工具路线」沉淀成经验，下次少走弯路。
         // 失败 / 超步数的分支不记录，避免把错误路线也学进去。
-        if !used_tools.is_empty() {
+        if !is_sub_agent && !used_tools.is_empty() {
             experience::record(&request.task, &used_tools);
             log::info!(
                 "[agent] 已沉淀经验：本次用 {} 个工具，经验库共 {} 条",
@@ -645,6 +709,33 @@ pub async fn run_agent_loop(
     }
 }
 
+
+async fn execute_task_tool(
+    app: Option<&AppHandle>,
+    name: &str,
+    args: &HashMap<String, Value>,
+    tools: &[Value],
+    runtime: &TaskRuntime,
+    emitter: &StreamEmitter,
+    request_id: &str,
+    is_sub_agent: bool,
+    trace: Option<&crate::agent::sub_agents::TaskTrace>,
+) -> ToolResult {
+    if is_sub_agent {
+        if let Err(error) = crate::agent::sub_agents::check_tool_call(name, args, tools) {
+            if let Some(trace) = trace {
+                *trace.refused.lock().unwrap_or_else(|poison| poison.into_inner()) = true;
+            }
+            return Err(error);
+        }
+    } else if name == "spawn_sub_agents" {
+        return Box::pin(crate::agent::sub_agents::spawn_sub_agents(
+            app, args, tools, runtime, emitter, request_id,
+        )).await;
+    }
+    (runtime.dispatch)(app, name, args, is_sub_agent).await
+}
+
 /// 加载最近 N 条记忆（默认记忆集，作为 Agent 规划上下文）
 fn load_recent_memories(limit: usize) -> Vec<Memory> {
     let path = crate::memory::storage::default_index_path();
@@ -655,7 +746,7 @@ fn load_recent_memories(limit: usize) -> Vec<Memory> {
 }
 
 /// 构造 system prompt
-fn build_system_prompt(tools: &[Value]) -> String {
+pub(super) fn build_system_prompt(tools: &[Value]) -> String {
     let tool_names: Vec<String> = tools
         .iter()
         .filter_map(|t| {
