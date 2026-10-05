@@ -115,9 +115,33 @@ pub fn delete_user_item(item_id: &str) -> Result<(), AppError> {
 /// Windows：隐藏控制台窗口（CREATE_NO_WINDOW），避免执行时弹出黑色终端；
 /// 命令输出仍通过 stdout 捕获并返回前端反馈。
 pub async fn execute(item: &ToolboxItem, input: Option<String>) -> Result<ExecuteToolboxResponse, AppError> {
-    let command = item.command.clone();
+    if item.id == "agent_download" {
+        return tokio::time::timeout(Duration::from_secs(30), crate::agent::download::download(
+            input.as_deref(), &crate::config::store::get_config(),
+        )).await.map_err(|_| AppError::ToolboxTimeout("下载文件，请检查「设置 → 网络」".into()))?;
+    }
+    let cfg = crate::config::store::get_config();
+    let network_tool = crate::engine::tool_net::is_network_tool(&item.id);
+    let command = if network_tool {
+        crate::engine::tool_net::prepare_command(&item.command)?
+    } else {
+        item.command.clone()
+    };
     let mut cmd = tokio::process::Command::new("cmd");
     cmd.arg("/C");
+    if network_tool {
+        let proxy = crate::engine::net::proxy_url(&cfg).map(|url| url.to_string()).unwrap_or_default();
+        cmd.env("MEM_PROXY_URL", &proxy);
+        let warning = crate::engine::net::proxy_warning(&cfg).unwrap_or_default();
+        cmd.env("MEM_NETWORK_ERROR", format!(
+            "网络连接失败。{}。{warning}。请检查本机网络或在「设置 → 网络」中启用代理并填写地址；使用代理时请确认代理软件已启动。",
+            crate::engine::net::policy_message(&cfg),
+        ));
+        for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+            cmd.env(name, &proxy);
+        }
+        cmd.env("NO_PROXY", "").env("no_proxy", "");
+    }
     // 需要输入参数的工具：输入经环境变量 TOOLBOX_INPUT（base64 UTF-8）传给 PowerShell 脚本，
     // 规避 cmd/-EncodedCommand 下中文与引号在命令行传参的编码/解析问题（PowerShell -EncodedCommand 后不接受位置参数）
     if let Some(inp) = input {
@@ -136,7 +160,7 @@ pub async fn execute(item: &ToolboxItem, input: Option<String>) -> Result<Execut
     }
     #[cfg(not(windows))]
     {
-        cmd.arg(&item.command);
+        cmd.arg(&command);
     }
 
     let result = tokio::time::timeout(Duration::from_secs(30), cmd.output()).await;

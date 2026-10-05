@@ -123,14 +123,15 @@ pub async fn look(image_path: &str, question: Option<&str>) -> Result<String, Ap
         }]
     });
 
-    let client = reqwest::Client::new();
+    let cfg = crate::config::store::get_config();
+    let client = crate::engine::net::build_client(&cfg)?;
     let resp = client
         .post(&url)
         .bearer_auth(&key)
         .json(&body)
         .send()
         .await
-        .map_err(AppError::from)?;
+        .map_err(|error| AppError::NetworkError(crate::engine::net::connection_message(&cfg, &url, &error)))?;
 
     if !resp.status().is_success() {
         let status = resp.status();

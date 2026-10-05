@@ -14,6 +14,7 @@ import { useMilestoneStore } from '../stores/milestoneStore'
 import { MODEL_MODE_LABEL } from '../types'
 import type { ModelSlot } from '../types'
 import TheIcon from '../components/TheIcon.vue'
+import { networkDiagnostic } from '../utils/tauri'
 import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate } from '../utils/tauri'
 
 const setting = useSettingStore()
@@ -172,6 +173,38 @@ const unlockPwd = ref('')
 const cryptoMsg = ref('')
 const testMsg = ref('')
 const testing = ref(false)
+const proxyEnabled = ref(false)
+const proxyUrl = ref('')
+const networkMsg = ref('')
+const savingNetwork = ref(false)
+const diagnosingNetwork = ref(false)
+
+async function saveNetwork(): Promise<boolean> {
+  savingNetwork.value = true
+  try {
+    await setting.update({ proxy_enabled: proxyEnabled.value, proxy_url: proxyUrl.value.trim() || null })
+    networkMsg.value = '网络设置已保存'
+    return true
+  } catch {
+    networkMsg.value = '网络设置保存失败，请重试'
+    return false
+  } finally {
+    savingNetwork.value = false
+  }
+}
+
+async function diagnoseNetwork() {
+  diagnosingNetwork.value = true
+  try {
+    if (!(await saveNetwork())) return
+    networkMsg.value = '正在诊断网络…'
+    networkMsg.value = await networkDiagnostic()
+  } catch {
+    networkMsg.value = '网络诊断失败，请检查网络设置后重试'
+  } finally {
+    diagnosingNetwork.value = false
+  }
+}
 // 管理员权限状态（null 检测中 / true 已管理员 / false 普通）
 const adminState = ref<boolean | null>(null)
 // —— 一键本地部署 AI ——
@@ -288,6 +321,8 @@ const abilityMatrix = computed(() => {
 function syncFromStore() {
   modelMode.value = setting.modelMode
   apiBaseUrl.value = setting.apiBaseUrl ?? ''
+  proxyEnabled.value = setting.proxyEnabled ?? false
+  proxyUrl.value = setting.proxyUrl ?? ''
   modelSlots.value = setting.models.map((slot) => ({ ...slot, roles: [...slot.roles], keyInput: '' }))
   aiRouter.value = setting.aiRouter
   depth.value = setting.depth
@@ -466,6 +501,12 @@ async function testConnection() {
   testing.value = true
   testMsg.value = '正在测试连接…'
   try {
+    const networkChanged = proxyEnabled.value !== (setting.proxyEnabled ?? false)
+      || (proxyUrl.value.trim() || null) !== (setting.proxyUrl ?? null)
+    if (networkChanged && !(await saveNetwork())) {
+      testMsg.value = '网络设置保存失败，请重试'
+      return
+    }
     const keyInput = main?.keyInput.trim() || (main?.has_api_key ? '' : apiKeyInput.value.trim())
     const res = await testApiConnection(baseUrl, keyInput, main?.id || undefined)
     testMsg.value = res.message
@@ -882,6 +923,20 @@ async function toggleAiToolbox() {
         </section>
 
         <section class="card">
+          <div class="card-title">网络</div>
+          <fieldset class="model-slot" :disabled="savingNetwork || diagnosingNetwork || testing">
+            <label><input v-model="proxyEnabled" type="checkbox" /> 使用代理（默认关闭：国内 API 直连；要用国外 API 时才需要开）</label>
+            <div class="field">
+              <label for="network-proxy-url">代理地址</label>
+              <input id="network-proxy-url" v-model="proxyUrl" class="input long" :disabled="!proxyEnabled" placeholder="http://127.0.0.1:7890" autocomplete="off" />
+            </div>
+            <p class="hint">Clash / FlClash 之类的本地代理一般就是 http://127.0.0.1:7890。默认直连，完全忽略系统代理。</p>
+            <div class="row">
+              <button class="btn primary" @click="saveNetwork">保存网络设置</button>
+              <button class="btn ghost" @click="diagnoseNetwork">网络诊断</button>
+            </div>
+          </fieldset>
+          <div v-if="networkMsg" class="msg network-msg" role="status">{{ networkMsg }}</div>
           <div class="card-title">运行模式<span class="card-sub">高级参数</span></div>
           <div class="modes">
             <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">离线</div>
@@ -1540,4 +1595,6 @@ async function toggleAiToolbox() {
 .switch { width: 40px; height: 20px; accent-color: var(--accent, #ff7a94); }
 .msg { font-size: var(--fs-12); margin-top: 6px; color: var(--accent, #ff7a94); }
 .msg.global { margin-top: 12px; }
+.network-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+#network-proxy-url:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

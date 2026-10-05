@@ -49,21 +49,22 @@ pub async fn check_update(force: bool) -> Result<CheckUpdateResponse, AppError> 
     }
 
     let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
-    let client = reqwest::Client::builder()
+    let cfg = crate::config::store::get_config();
+    let client = crate::engine::net::finish_client(crate::engine::net::client_builder(&cfg)
         .user_agent("Memoria-Client/1.0")
         .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .map_err(|e| AppError::UpdateCheckError(e.to_string()))?;
+    )?;
 
     let resp = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
             // 静默降级：网络失败不阻塞启动
-            log::warn!("[update] 版本检查失败（网络）：{e}");
+            let message = crate::engine::net::connection_message(&cfg, &url, &e);
+            log::warn!("[update] 版本检查失败（网络）：{message}");
             return Ok(CheckUpdateResponse {
                 has_update: false,
                 version_info: None,
-                error: Some(format!("网络不可用：{e}")),
+                error: Some(message),
             });
         }
     };

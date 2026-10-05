@@ -69,10 +69,9 @@ async fn probe() -> NetworkStatus {
 
 /// reqwest HEAD 探测（3 秒超时）
 async fn reqwest_ok(url: &str) -> bool {
-    let client = match reqwest::Client::builder()
+    let client = match crate::engine::net::finish_client(crate::engine::net::client_builder(&config_store::get_config())
         .timeout(std::time::Duration::from_secs(PROBE_TIMEOUT_SECS))
-        .build()
-    {
+    ) {
         Ok(c) => c,
         Err(_) => return false,
     };

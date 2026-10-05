@@ -10,6 +10,7 @@ pub async fn test_api_connection(
     api_key: String,
     slot_id: Option<String>,
 ) -> Result<TestConnectionResponse, AppError> {
+    let cfg = crate::config::store::get_config();
     // 未传明文 key 时，回退用配置中心已保存的 key（避免输入框为空时误报 401）
     let key = if api_key.trim().is_empty() {
         if let Some(slot_id) = slot_id {
@@ -25,7 +26,7 @@ pub async fn test_api_connection(
     };
     let url = format!("{}/models", crate::utils::normalize_v1_url(&base_url));
 
-    let client = reqwest::Client::new();
+    let client = crate::engine::net::build_client(&cfg)?;
     let resp = client
         .get(&url)
         .bearer_auth(&key)
@@ -33,7 +34,7 @@ pub async fn test_api_connection(
         .send()
         .await;
 
-    match resp {
+    let result: Result<TestConnectionResponse, AppError> = match resp {
         Ok(r) if r.status().is_success() => Ok(TestConnectionResponse {
             success: true,
             message: format!("连接成功（HTTP {}）", r.status()),
@@ -48,9 +49,14 @@ pub async fn test_api_connection(
         }),
         Err(e) => Ok(TestConnectionResponse {
             success: false,
-            message: format!("连接失败：{e}"),
+            message: crate::engine::net::connection_message(&cfg, &base_url, &e),
         }),
+    };
+    let mut result = result?;
+    if let Some(warning) = crate::engine::net::proxy_warning(&cfg) {
+        result.message = format!("{warning}。\n{}", result.message);
     }
+    Ok(result)
 }
 
 /// 从配置中心解析已保存的 API Key（优先加密、回退明文；未保存返回空串）

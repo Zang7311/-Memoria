@@ -39,14 +39,16 @@ struct ChatMessage {
 
 /// 检测 Ollama 服务是否可用，返回可用模型名
 async fn detect_model() -> Result<String, AppError> {
-    let client = reqwest::Client::new();
+    let cfg = crate::config::store::get_config();
+    let client = crate::engine::net::build_client(&cfg)?;
     let resp = client
         .get(format!("{OLLAMA_BASE}/api/tags"))
         .send()
         .await
         .map_err(|e| {
             AppError::ModelError(format!(
-                "未检测到 Ollama 服务，请手动启动或安装（{e}）"
+                "未检测到 Ollama 服务，请手动启动或安装。{}",
+                crate::engine::net::connection_message(&cfg, OLLAMA_BASE, &e)
             ))
         })?;
 
@@ -96,13 +98,14 @@ pub async fn run_local(
         },
     });
 
-    let client = reqwest::Client::new();
+    let cfg = crate::config::store::get_config();
+    let client = crate::engine::net::build_client(&cfg)?;
     let resp = client
         .post(format!("{OLLAMA_BASE}/api/chat"))
         .json(&body)
         .send()
         .await
-        .map_err(|e| AppError::ModelError(format!("请求 Ollama 失败：{e}")))?;
+        .map_err(|e| AppError::NetworkError(crate::engine::net::connection_message(&cfg, OLLAMA_BASE, &e)))?;
 
     if !resp.status().is_success() {
         return Err(AppError::ModelError(format!(
@@ -116,7 +119,7 @@ pub async fn run_local(
     let mut buf = String::new();
 
     while let Some(item) = stream.next().await {
-        let bytes = item.map_err(|e| AppError::ModelError(e.to_string()))?;
+        let bytes = item.map_err(|e| AppError::NetworkError(crate::engine::net::connection_message(&cfg, OLLAMA_BASE, &e)))?;
         buf.push_str(&String::from_utf8_lossy(&bytes));
 
         while let Some(pos) = buf.find('\n') {

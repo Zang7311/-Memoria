@@ -2,6 +2,8 @@
 pub mod script;
 pub mod api;
 pub mod local;
+pub mod net;
+pub mod tool_net;
 // 难度路由：闲聊走便宜模型、任务走主力模型（默认关闭，见 model_router.rs）
 pub mod model_router;
 

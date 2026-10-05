@@ -72,7 +72,7 @@ async fn generate_and_emit(
         let verdict = if ai_enabled {
             match crate::engine::api::slot_api_credentials(&cfg, cheap) {
                 Ok((base_url, key)) => crate::engine::model_router::classify_with_ai(
-                    &reqwest::Client::new(), &base_url, key.as_deref().unwrap_or_default(),
+                    &crate::engine::net::build_client(&cfg)?, &base_url, key.as_deref().unwrap_or_default(),
                     cheap.map(|slot| slot.name.trim()).unwrap_or_default(), &classification_input,
                 ).await,
                 Err(error) if attachments.is_empty() => return Err(error),
@@ -106,7 +106,7 @@ async fn generate_and_emit(
             );
         }
         let verdict = if ai_enabled {
-            let client = reqwest::Client::new();
+            let client = crate::engine::net::build_client(&cfg)?;
             let result = crate::engine::model_router::classify_with_ai(
                 &client,
                 cfg.cheap_api_base_url

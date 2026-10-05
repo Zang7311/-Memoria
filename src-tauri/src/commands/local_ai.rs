@@ -13,10 +13,9 @@ pub struct DetectOllamaResponse {
 /// 检测 Ollama 服务是否可用，并列出已安装模型（GET /api/tags）
 #[tauri::command]
 pub async fn detect_ollama() -> Result<DetectOllamaResponse, AppError> {
-    let client = reqwest::Client::builder()
+    let client = crate::engine::net::finish_client(crate::engine::net::client_builder(&crate::config::store::get_config())
         .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| AppError::NetworkError(e.to_string()))?;
+    )?;
     let resp = match client.get("http://localhost:11434/api/tags").send().await {
         Ok(r) if r.status().is_success() => r,
         _ => {

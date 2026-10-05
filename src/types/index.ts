@@ -246,6 +246,8 @@ export interface ModelSlot {
 }
 
 export interface AppConfig {
+  proxy_enabled?: boolean
+  proxy_url?: string | null
   models?: ModelSlot[]
   config_version: number
   theme: 'light' | 'dark' | string

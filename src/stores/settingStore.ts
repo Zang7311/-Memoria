@@ -19,6 +19,8 @@ import {
 export const useSettingStore = defineStore('setting', () => {
   // —— 配置状态（与 AppConfig 对应，snake_case）——
   const loaded = ref(false)
+  const proxyEnabled = ref(false)
+  const proxyUrl = ref<string | null>(null)
   const models = ref<ModelSlot[]>([])
   const firstLaunch = ref(true)
   const theme = ref<'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass'>('dark')
@@ -91,6 +93,8 @@ export const useSettingStore = defineStore('setting', () => {
 
   // —— 从后端同步完整配置到本地 ——
   function applyConfig(c: AppConfig) {
+    proxyEnabled.value = c.proxy_enabled ?? false
+    proxyUrl.value = c.proxy_url ?? null
     models.value = (c.models ?? []).map((slot) => ({ ...slot, roles: [...slot.roles] }))
     firstLaunch.value = c.first_launch
     theme.value = (c.theme as 'light' | 'dark' | 'win10' | 'edge' | 'minimal' | 'ios-flat' | 'ios-glass') || 'dark'
@@ -291,6 +295,7 @@ export const useSettingStore = defineStore('setting', () => {
   }
 
   return {
+    proxyEnabled, proxyUrl,
     loaded, firstLaunch, models, saveSlotKey,
     theme, contextLength, longTermMemoryLimit, cheapModel, visionModel, aiRouter, selfCheckEnabled, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,

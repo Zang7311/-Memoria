@@ -186,6 +186,7 @@ pub fn run() {
             commands::agent_cancel::agent_cancel,
             commands::send_message::send_message,
             commands::test_connection::test_api_connection,
+            commands::network_diagnostic::network_diagnostic,
             // —— AI-4 记忆命令 ——
             commands::memory_get::get_memories,
             commands::memory_delete::delete_memory,

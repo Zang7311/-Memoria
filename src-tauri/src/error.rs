@@ -101,7 +101,10 @@ pub enum AppError {
 // 让 AppError 能直接作为 Tauri 命令的错误返回（实现 Into<String>）
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
-        AppError::NetworkError(e.to_string())
+        let cfg = crate::config::store::get_config();
+        AppError::NetworkError(crate::engine::net::connection_message(
+            &cfg, e.url().map(|url| url.as_str()).unwrap_or_default(), &e,
+        ))
     }
 }
 
