@@ -49,6 +49,7 @@ pub(super) struct TaskTrace {
     pub sources: Mutex<Vec<String>>,
     pub refused: Mutex<bool>,
     pub outcomes: Mutex<(usize, usize)>,
+    pub goal: Option<std::sync::Arc<Mutex<super::goals::GoalExecution>>>,
 }
 
 #[derive(Debug)]

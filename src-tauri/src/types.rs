@@ -1431,10 +1431,41 @@ impl Default for GoalBudget {
     }
 }
 
+fn default_goal_max_steps() -> u32 { 30 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GoalRunBudget {
+    #[serde(flatten)]
+    pub budget: GoalBudget,
+    #[serde(default = "default_goal_max_steps")]
+    pub max_steps_per_run: u32,
+}
+
+impl From<GoalBudget> for GoalRunBudget {
+    fn from(budget: GoalBudget) -> Self {
+        Self { budget, max_steps_per_run: default_goal_max_steps() }
+    }
+}
+
+impl Default for GoalRunBudget {
+    fn default() -> Self { GoalBudget::default().into() }
+}
+
+impl std::ops::Deref for GoalRunBudget {
+    type Target = GoalBudget;
+    fn deref(&self) -> &Self::Target { &self.budget }
+}
+
+impl std::ops::DerefMut for GoalRunBudget {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.budget }
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct GoalUsage {
     pub runs: u32,
     pub total_seconds: u32,
+    #[serde(default)]
+    pub calls: u32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1456,7 +1487,7 @@ pub struct AgentGoal {
     pub progress: String,
     pub next_action: Option<String>,
     pub blocked_reason: Option<String>,
-    pub budget: GoalBudget,
+    pub budget: GoalRunBudget,
     pub used: GoalUsage,
     pub checkpoints: Vec<Checkpoint>,
     pub created_at: i64,

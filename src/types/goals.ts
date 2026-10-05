@@ -1,5 +1,5 @@
 export interface GoalStep { text: string; status: 'pending' | 'doing' | 'done' | 'failed' }
-export interface GoalBudget { max_runs: number; max_seconds_per_run: number }
+export interface GoalBudget { max_runs: number; max_seconds_per_run: number; max_steps_per_run?: number }
 export interface AgentGoal {
   id: string
   title: string
@@ -10,7 +10,7 @@ export interface AgentGoal {
   next_action: string | null
   blocked_reason: string | null
   budget: GoalBudget
-  used: { runs: number; total_seconds: number }
+  used: { runs: number; total_seconds: number; calls?: number }
   checkpoints: { at: number; summary: string; outcome: 'ok' | 'partial' | 'failed' | 'blocked' }[]
   created_at: number
   updated_at: number
@@ -20,4 +20,3 @@ export interface AgentGoal {
 }
 export interface GoalSnapshot { goals: AgentGoal[]; running_id: string | null; automatic: boolean }
 export interface GoalReport { goal: AgentGoal; message: string }
-

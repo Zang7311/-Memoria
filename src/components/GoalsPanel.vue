@@ -8,6 +8,7 @@ const emit = defineEmits<{ close: [] }>()
 const title = ref('')
 const description = ref('')
 const maxRuns = ref(20)
+const maxSteps = ref(30)
 const maxSeconds = ref(600)
 const creating = ref(false)
 const submitting = ref(false)
@@ -18,7 +19,7 @@ function time(at: number) { return new Date(at * 1000).toLocaleString('zh-CN') }
 async function create() {
   submitting.value = true
   try {
-    await goals.create(title.value, description.value, { max_runs: maxRuns.value, max_seconds_per_run: maxSeconds.value })
+    await goals.create(title.value, description.value, { max_runs: maxRuns.value, max_seconds_per_run: maxSeconds.value, max_steps_per_run: maxSteps.value })
     if (!goals.error) { title.value = ''; description.value = ''; creating.value = false }
   } finally { submitting.value = false }
 }
@@ -32,6 +33,9 @@ function interval(goal: AgentGoal, event: Event) {
 }
 function budget(goal: AgentGoal, event: Event) {
   goals.settings(goal, goal.auto_advance, goal.auto_interval_secs, { ...goal.budget, max_runs: Number((event.target as HTMLInputElement).value) })
+}
+function stepBudget(goal: AgentGoal, event: Event) {
+  goals.settings(goal, goal.auto_advance, goal.auto_interval_secs, { ...goal.budget, max_steps_per_run: Number((event.target as HTMLInputElement).value) })
 }
 async function remove(goal: AgentGoal) {
   if (confirm('确定删除目标「' + goal.title + '」及其全部推进记录？此操作不可恢复。')) await goals.remove(goal.id)
@@ -48,6 +52,7 @@ async function remove(goal: AgentGoal) {
       <label>标题<input v-model="title" required maxlength="200" /></label>
       <label>详细说明<textarea v-model="description" required rows="3" /></label>
       <label>推进次数上限<input v-model.number="maxRuns" type="number" min="1" max="4294967295" required /></label>
+      <label>单次步数上限<input v-model.number="maxSteps" type="number" min="1" max="4294967295" required /></label>
       <label>单次超时（秒）<input v-model.number="maxSeconds" type="number" min="1" max="4294967295" required /></label>
       <button type="submit" :disabled="submitting">建立目标</button>
     </form>
@@ -56,12 +61,13 @@ async function remove(goal: AgentGoal) {
       <h3>{{ goal.title }} <span>{{ statusLabels[goal.status] }}</span></h3>
       <p>{{ goal.progress }}</p>
       <p>下一步：{{ goal.next_action || '无' }}</p>
-      <p class="hint">推进 {{ goal.used.runs }}/{{ goal.budget.max_runs }} 次 · 已用 {{ goal.used.total_seconds }} 秒 · 更新 {{ time(goal.updated_at) }}</p>
+      <p class="hint">推进 {{ goal.used.runs }}/{{ goal.budget.max_runs }} 次 · 已用 {{ goal.used.total_seconds }} 秒 · 模型调用 {{ goal.used.calls ?? 0 }} 次 · 更新 {{ time(goal.updated_at) }}</p>
       <p v-if="goal.blocked_reason" class="blocked" role="alert">需要你决定：{{ goal.blocked_reason }}</p>
       <p v-if="goals.runningId === goal.id" role="status">{{ goals.automatic ? '正在自动推进' : '正在推进' }}：{{ goal.title }}</p>
       <label class="auto-toggle"><input type="checkbox" :checked="goal.auto_advance" :disabled="goal.status !== 'active'" @change="toggle(goal, $event)" />自动推进（每 {{ goal.auto_interval_secs / 60 }} 分钟一次）</label>
       <label>间隔（分钟）<input type="number" :value="goal.auto_interval_secs / 60" min="0.0166666667" step="any" @change="interval(goal, $event)" /></label>
       <label>推进次数上限<input type="number" :value="goal.budget.max_runs" min="1" step="1" @change="budget(goal, $event)" /></label>
+      <label>单次步数上限<input type="number" :value="goal.budget.max_steps_per_run ?? 30" min="1" max="4294967295" step="1" @change="stepBudget(goal, $event)" /></label>
       <p v-if="goal.auto_advance" class="auto-state">自动推进中 · 每 {{ goal.auto_interval_secs / 60 }} 分钟 · 已自动推进 {{ goal.auto_runs }} 次</p>
       <div class="actions">
         <button :disabled="goal.status !== 'active' || !!goals.runningId" @click="goals.advance(goal.id)">推进一次</button>
