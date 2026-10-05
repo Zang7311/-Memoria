@@ -393,7 +393,11 @@ pub(super) async fn run_one_task(
     let _request_id = &request.request_id;
     // 5. 循环
     let mut steps = 0usize;
-    let max_steps = request.max_steps.min(HARD_MAX_STEPS);
+    let goal_execution = trace.and_then(|trace| trace.goal.as_ref());
+    let max_steps = if goal_execution.is_some() { request.max_steps } else { request.max_steps.min(HARD_MAX_STEPS) };
+    if let Some(record) = goal_execution {
+        record.lock().unwrap_or_else(|poison| poison.into_inner()).messages = messages.clone();
+    }
     // 本次任务实际调用过的工具（成功结束后沉淀成经验）
     let mut used_tools: Vec<String> = Vec::new();
     let mut goal_notices: Vec<String> = Vec::new();
@@ -430,6 +434,10 @@ pub(super) async fn run_one_task(
             })
             .collect();
         let t_plan = std::time::Instant::now();
+        if let Some(record) = goal_execution {
+            let mut record = record.lock().unwrap_or_else(|poison| poison.into_inner());
+            record.calls = record.calls.saturating_add(1);
+        }
         let subtasks = planner::plan_task(
             &client,
             &url,
@@ -466,6 +474,9 @@ pub(super) async fn run_one_task(
     }
 
     loop {
+        if let Some(record) = goal_execution {
+            record.lock().unwrap_or_else(|poison| poison.into_inner()).messages = messages.clone();
+        }
         steps += 1;
         // 取消检查点：每轮开头
         if cancel::is_cancelled(&_request_id) {
@@ -474,6 +485,13 @@ pub(super) async fn run_one_task(
         }
 
         if steps > max_steps {
+            if let Some(record) = goal_execution {
+                record.lock().unwrap_or_else(|poison| poison.into_inner()).exhausted = true;
+                return Ok(AgentRunResponse {
+                    success: false, final_reply: None, steps: max_steps,
+                    error: Some(format!("本轮达到步数上限（{max_steps} 轮）")), interrupted: false,
+                });
+            }
             // 超过步数：强制总结
             messages.push(json!({
                 "role": "user",
@@ -509,6 +527,10 @@ pub(super) async fn run_one_task(
 
         // 调用 LLM（带 tools）
         let t_llm = std::time::Instant::now();
+        if let Some(record) = goal_execution {
+            let mut record = record.lock().unwrap_or_else(|poison| poison.into_inner());
+            record.calls = record.calls.saturating_add(1);
+        }
         let response = call_llm(&client, &url, &key, &model, &messages, &tools, temperature, top_p)
             .await.map_err(|error| {
                 if !is_sub_agent && used_tools.iter().any(|name| name == "spawn_sub_agents") {
@@ -674,6 +696,9 @@ pub(super) async fn run_one_task(
                         "name": fn_name,
                         "content": content,
                     }));
+                    if let Some(record) = goal_execution {
+                        record.lock().unwrap_or_else(|poison| poison.into_inner()).messages = messages.clone();
+                    }
                 }
             }
             if !is_sub_agent && trace.is_some_and(|trace| *trace.refused.lock().unwrap_or_else(|poison| poison.into_inner())) {
@@ -689,7 +714,7 @@ pub(super) async fn run_one_task(
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        if content.is_empty() {
+        if content.is_empty() && goal_execution.is_none() {
             if !goal_notices.is_empty() { return Ok(goal_notice_response(emitter, steps, &goal_notices)); }
             return Err(AppError::InternalError("LLM 返回空回复".into()));
         }
@@ -699,6 +724,10 @@ pub(super) async fn run_one_task(
         // 只做一次，未通过就补一轮，补完无论结果如何都收尾 —— 绝不无限循环。
         if !is_sub_agent && cfg.self_check_enabled && !used_tools.is_empty() && !self_checked {
             self_checked = true;
+            if let Some(record) = goal_execution {
+                let mut record = record.lock().unwrap_or_else(|poison| poison.into_inner());
+                record.calls = record.calls.saturating_add(1);
+            }
             if let Some(v) =
                 evaluator::evaluate(&client, &url, &key, &model, &request.task, &action_log, &content)
                     .await
@@ -773,6 +802,9 @@ pub(super) async fn execute_task_tool(
                 return Err(error);
             }
         }
+    }
+    if let Some(record) = trace.and_then(|trace| trace.goal.as_ref()) {
+        record.lock().unwrap_or_else(|poison| poison.into_inner()).tools.push(name.to_string());
     }
     if !is_sub_agent && name == "forge_tool" {
         return crate::agent::forged_tools::forge_from_args(args, runtime.perms.allow_tool_forge, request_id).await;
@@ -881,7 +913,7 @@ async fn call_llm(
 }
 
 /// 调用 LLM（纯文本，无 tools），返回文本内容
-async fn call_llm_text(
+pub(super) async fn call_llm_text(
     client: &reqwest::Client,
     url: &str,
     key: &str,

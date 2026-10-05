@@ -188,3 +188,44 @@ test('failed automatic toggle rolls the visible checkbox back to persisted state
   assert.equal(input.checked, false)
   assert.match(fixtureValue.store.error, /未授权/)
 })
+
+function recoveryControls(store) {
+  const filename = fileURLToPath(new URL('src/components/GoalsPanel.vue', root))
+  const source = readFileSync(filename, 'utf8').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
+    .replace("const emit = defineEmits<{ close: [] }>()", 'const emit = () => {}')
+    + '\nexport { title, description, maxSteps, create, stepBudget };'
+  return evaluate(source, filename, { '../stores/goalStore': { useGoalStore: () => store }, vue: { ...vue } })
+}
+
+test('goal step budget defaults to thirty and is configurable at creation', async () => {
+  const fixtureValue = fixture([])
+  const controls = recoveryControls(fixtureValue.store)
+  assert.equal(controls.maxSteps.value, 30)
+  controls.title.value = '整理 README'
+  controls.description.value = '读取资料并整理文档'
+  controls.maxSteps.value = 45
+  await controls.create()
+  const request = fixtureValue.calls.find(call => call.command === 'create_goal')
+  assert.equal(request.payload.budget.max_steps_per_run, 45)
+  assert.equal(request.payload.budget.max_runs, 20)
+})
+
+test('editing per-run steps preserves the other goal settings', async () => {
+  const persisted = goal({ budget: { max_runs: 20, max_seconds_per_run: 600, max_steps_per_run: 30 } })
+  const fixtureValue = fixture([persisted])
+  const controls = recoveryControls(fixtureValue.store)
+  await controls.stepBudget(persisted, { target: { value: '40' } })
+  await new Promise(resolve => setImmediate(resolve))
+  const request = fixtureValue.calls.find(call => call.command === 'update_goal_settings')
+  assert.deepEqual(request.payload.budget, { max_runs: 20, max_seconds_per_run: 600, max_steps_per_run: 40 })
+  assert.equal(request.payload.autoAdvance, false)
+  assert.equal(request.payload.autoIntervalSecs, 300)
+})
+
+test('panel renders step budgets and call accounting with legacy defaults', async () => {
+  const fixtureValue = fixture([goal(), goal({ id: 'new', budget: { max_runs: 20, max_seconds_per_run: 600, max_steps_per_run: 45 }, used: { runs: 1, total_seconds: 2, calls: 2 } })])
+  await fixtureValue.store.refresh()
+  const html = await renderToString(vue.createSSRApp(panel(fixtureValue.store)))
+  for (const text of ['单次步数上限', 'value="30"', 'value="45"', '模型调用 0 次', '模型调用 2 次']) assert.ok(html.includes(text), text)
+  assert.ok(!html.includes('模型配置'))
+})

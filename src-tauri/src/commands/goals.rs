@@ -1,6 +1,6 @@
 use crate::agent::goals::{self, GoalReport, GoalSnapshot};
 use crate::error::AppError;
-use crate::types::{AgentGoal, GoalBudget, GoalStep};
+use crate::types::{AgentGoal, GoalRunBudget, GoalStep};
 use tauri::{AppHandle, Emitter};
 
 fn changed(app: &AppHandle) {
@@ -21,7 +21,7 @@ pub fn create_goal(
     title: String,
     description: String,
     steps: Option<Vec<GoalStep>>,
-    budget: Option<GoalBudget>,
+    budget: Option<GoalRunBudget>,
 ) -> Result<AgentGoal, AppError> {
     let goal = goals::store()?.create(
         title,
@@ -51,7 +51,7 @@ pub fn update_goal_settings(
     id: String,
     auto_advance: bool,
     auto_interval_secs: u32,
-    budget: GoalBudget,
+    budget: GoalRunBudget,
 ) -> Result<AgentGoal, AppError> {
     let goal = goals::store()?.settings(&id, auto_advance, auto_interval_secs, budget)?;
     changed(&app);
