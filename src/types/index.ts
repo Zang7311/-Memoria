@@ -15,6 +15,14 @@ export interface AttachmentMeta {
   name: string
 }
 
+export interface SubAgentEvent {
+  request_id: string
+  sub_id: string
+  goal: string
+  status: string
+  summary: string
+}
+
 export interface Attachment extends AttachmentMeta {
   mime: string
   data: string

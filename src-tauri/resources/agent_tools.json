@@ -1,5 +1,12 @@
 [
     {
+        "id": "spawn_sub_agents",
+        "name": "分派自包含的子任务并行处理并汇总（最多四个，默认只读）",
+        "icon": "",
+        "command": "",
+        "enabled": true
+    },
+    {
         "id":  "agent_disk_space",
         "name":  "磁盘空间查询（各盘剩余/已用）",
         "icon":  "",

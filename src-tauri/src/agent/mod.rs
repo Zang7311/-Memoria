@@ -18,5 +18,6 @@ pub mod planner;
 pub mod recovery;
 pub mod router;
 pub mod stream_progress;
+pub mod sub_agents;
 pub mod tools;
 pub mod vision;

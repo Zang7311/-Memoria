@@ -1,9 +1,10 @@
 {
   "name": "mem",
   "private": true,
-  "version": "0.7.0-beta.3",
+  "version": "0.7.0-beta.4",
   "type": "module",
   "scripts": {
+    "test:sub-agents": "node --test scripts/sub-agents.test.mjs",
     "test:network-robust": "node --test scripts/network-robust.test.mjs",
     "test:route-review": "node --test scripts/route-review.test.mjs",
     "test:model-slots": "node --test scripts/model-slots.test.mjs",

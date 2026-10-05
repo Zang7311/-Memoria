@@ -68,6 +68,9 @@ fn is_dangerous(id: &str) -> bool {
 ///
 /// 返回 None 表示该工具不应暴露给 Agent（危险工具 / 空命令纯前端工具）。
 fn toolbox_to_tool(item: &ToolboxItem, perms: &AgentPermissions) -> Option<Value> {
+    if item.id == "spawn_sub_agents" {
+        return item.enabled.then(crate::agent::sub_agents::tool_definition);
+    }
     // 跳过危险工具
     if is_dangerous(&item.id) {
         return None;

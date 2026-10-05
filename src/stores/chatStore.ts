@@ -3,7 +3,7 @@
 // 每个会话有独立的 messages 列表，切换/结束时自动保存到后端。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ChatRouteInfo, ChatUsage, Message, SessionMeta } from '../types'
+import type { ChatRouteInfo, ChatUsage, Message, SessionMeta, SubAgentEvent } from '../types'
 import {
   createSession as createSessionCmd,
   deleteSession as deleteSessionCmd,
@@ -12,12 +12,25 @@ import {
   saveSession as saveSessionCmd,
 } from '../utils/tauri'
 
+export function mergeSubAgentEvent(results: SubAgentEvent[], event: SubAgentEvent): SubAgentEvent[] {
+  const next = { ...event, goal: Array.from(event.goal).slice(0, 80).join(''), summary: Array.from(event.summary).slice(0, 800).join('') }
+  const index = results.findIndex((result) => result.sub_id === next.sub_id)
+  if (index < 0) return [...results, next]
+  if (results[index].status !== '处理中' && next.status === '处理中') return results
+  return results.map((result, position) => position === index ? next : result)
+}
+
 export const useChatStore = defineStore('chat', () => {
   // 会话列表 + 当前活跃会话
   const sessions = ref<SessionMeta[]>([])
   const activeSessionId = ref<string | null>(null)
   // 当前活跃会话的消息流
   const messages = ref<Message[]>([])
+  const subAgentResults = ref<Record<string, SubAgentEvent[]>>({})
+
+  function updateSubAgent(messageId: string, event: SubAgentEvent) {
+    subAgentResults.value[messageId] = mergeSubAgentEvent(subAgentResults.value[messageId] ?? [], event)
+  }
   // 是否正在加载（等待 AI 回复 / 流式接收中）
   const isLoading = ref(false)
   // 当前输入框内容
@@ -190,6 +203,8 @@ export const useChatStore = defineStore('chat', () => {
     sessions,
     activeSessionId,
     messages,
+    subAgentResults,
+    updateSubAgent,
     isLoading,
     inputText,
     streamingId,

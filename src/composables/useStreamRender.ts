@@ -11,8 +11,8 @@ import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute } from '../utils/tauri'
-import type { Attachment, ChatRouteInfo, ChatUsage, QuickCommand } from '../types'
+import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute, onSubAgentStarted, onSubAgentFinished } from '../utils/tauri'
+import type { Attachment, ChatRouteInfo, ChatUsage, QuickCommand, SubAgentEvent } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
@@ -80,6 +80,7 @@ export function useStreamRender() {
   let activeId: string | null = null
   // 当前 Agent 任务的 request_id（用于取消）
   let activeRequestId: string | null = null
+  let delegationActive = false
 
   // —— AI 工具箱意图检测：开启 ai_toolbox 且消息匹配工具意图时，直接执行工具箱工具 ——
   // AI 危险操作清单（不可逆/系统级，执行前需用户确认）
@@ -129,6 +130,7 @@ export function useStreamRender() {
 
   // —— 处理结束 ——
   function handleEnd() {
+    if (delegationActive && activeRequestId) return
     if (activeId) chat.finishStream(activeId)
     activeId = null
     activeRequestId = null
@@ -308,10 +310,26 @@ export function useStreamRender() {
     // 生成本次任务的唯一 request_id，供取消使用
     const requestId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     activeRequestId = requestId
+    delegationActive = false
     chat.beginStream(assistantId)
 
     if (!await waitForListeners()) return
+    const subListeners: UnlistenFn[] = []
+    function handleSubAgent(event: SubAgentEvent) {
+      if (event.request_id !== requestId) return
+      delegationActive = true
+      chat.updateSubAgent(assistantId, event)
+    }
     try {
+      if (onSubAgentStarted && onSubAgentFinished) {
+        const listeners = await Promise.allSettled([
+          onSubAgentStarted(handleSubAgent), onSubAgentFinished(handleSubAgent),
+        ])
+        subListeners.push(...listeners.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
+        if (listeners.some((result) => result.status === 'rejected')) {
+          throw new Error('子 Agent 事件监听器注册失败')
+        }
+      }
       const result = await agentRun(task, requestId)
       // interrupted=true 时后端已经推送了「已停下来了」的文本并发出 chat_end，
       // handleEnd 已经正常收尾；此处不需要额外操作。
@@ -320,6 +338,12 @@ export function useStreamRender() {
       console.warn('[agent_run] 调用失败：', e)
       handleChunk(`Agent 执行出错：${e}`)
       handleEnd()
+    } finally {
+      subListeners.forEach((unlisten) => unlisten())
+      if (delegationActive) {
+        delegationActive = false
+        handleEnd()
+      }
     }
   }
 

@@ -50,6 +50,27 @@ pub async fn dispatch_tool_call(
     }
 }
 
+pub(super) async fn dispatch_sub_agent_tool_call(
+    name: &str,
+    args: &HashMap<String, Value>,
+) -> ToolResult {
+    if name == "toolbox_agent_look" {
+        return dispatch_look(args).await;
+    }
+    let presets: Vec<crate::types::ToolboxItem> = serde_json::from_str(
+        include_str!("../../resources/agent_tools.json"),
+    ).map_err(|_| AppError::ToolboxError("子 Agent 工具预设不可用".into()))?;
+    let item = presets.iter().find(|item| name == format!("toolbox_{}", item.id))
+        .ok_or_else(|| AppError::ToolboxError("子 Agent 无权调用此工具，已拒绝".into()))?;
+    let input = args.get("input").and_then(Value::as_str).map(str::to_owned);
+    let response = crate::desktop::toolbox::execute(item, input).await?;
+    if response.success {
+        Ok(response.output.unwrap_or_else(|| "执行成功（无输出）".into()))
+    } else {
+        Ok(format!("执行失败：{}", response.error.unwrap_or_default()))
+    }
+}
+
 /// 路由到工具箱执行器
 ///
 /// 参数适配：LLM 传入的 `input` 字符串 → ExecuteToolboxRequest.input

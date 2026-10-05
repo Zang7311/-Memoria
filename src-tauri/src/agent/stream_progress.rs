@@ -15,9 +15,9 @@
 //   4. AgentRunResponse 仍然返回（作为最终确认 + steps 统计），
 //      但真正的内容已经通过事件推完了——两者不冲突，前端可二选一使用。
 //
-// 硬性约束：本文件只依赖 stream::sender，不修改 sender.rs，不改前端。
+// 普通 Agent 保持原有 chat_chunk/chat_end 协议；子 Agent 事件只携带脱敏摘要。
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::stream::sender::{send_chunk, send_end};
 
@@ -30,16 +30,61 @@ const CHUNK_MAX_CHARS: usize = 16;
 /// `progress_events` 为 false 时，只推送最终回复、不推进度提示
 /// （对应 AgentRunRequest.progress_events 字段，默认 true）。
 pub struct StreamEmitter {
-    app: AppHandle,
+    sink: Box<dyn StreamSink>,
     progress_events: bool,
+}
+
+pub(super) trait StreamSink: Send + Sync {
+    fn chunk(&self, text: &str);
+    fn end(&self);
+    fn sub_agent(&self, event: &str, payload: &crate::agent::sub_agents::SubAgentEvent);
+}
+
+struct AppStreamSink(AppHandle);
+
+impl StreamSink for AppStreamSink {
+    fn chunk(&self, text: &str) { let _ = send_chunk(&self.0, text); }
+    fn end(&self) { let _ = send_end(&self.0); }
+    fn sub_agent(&self, event: &str, payload: &crate::agent::sub_agents::SubAgentEvent) {
+        let _ = self.0.emit(event, payload);
+    }
+}
+
+struct SilentStreamSink;
+
+impl StreamSink for SilentStreamSink {
+    fn chunk(&self, _: &str) {}
+    fn end(&self) {}
+    fn sub_agent(&self, _: &str, _: &crate::agent::sub_agents::SubAgentEvent) {}
 }
 
 impl StreamEmitter {
     /// 构造发射器
     pub fn new(app: AppHandle, progress_events: bool) -> Self {
         Self {
-            app,
+            sink: Box::new(AppStreamSink(app)),
             progress_events,
+        }
+    }
+
+    pub(super) fn silent() -> Self {
+        Self { sink: Box::new(SilentStreamSink), progress_events: false }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_sink(sink: Box<dyn StreamSink>, progress_events: bool) -> Self {
+        Self { sink, progress_events }
+    }
+
+    pub(super) fn push_sub_agent(&self, event: &str, payload: &crate::agent::sub_agents::SubAgentEvent) {
+        if self.progress_events {
+            self.sink.sub_agent(event, payload);
+        }
+    }
+
+    pub(super) fn push_delegation_progress(&self, count: usize) {
+        if self.progress_events {
+            self.sink.chunk(&format!("\n\n派出 {count} 个子 Agent 并行处理…\n"));
         }
     }
 
@@ -53,8 +98,8 @@ impl StreamEmitter {
         }
         // 进度提示较短，整段推 + 换行分隔，便于前端区分过程与结果
         let payload = format!("\n\n🔧 {text}\n");
-        let _ = send_chunk(&self.app, &payload);
-        let _ = send_end(&self.app);
+        self.sink.chunk(&payload);
+        self.sink.end();
     }
 
     /// 推送最终回复（逐字切块流式 + chat_end 收尾）。
@@ -67,10 +112,10 @@ impl StreamEmitter {
         }
         // 逐块推送，模拟流式打字
         for chunk in split_chunks(reply, CHUNK_MAX_CHARS) {
-            let _ = send_chunk(&self.app, chunk);
+            self.sink.chunk(chunk);
         }
         // 收尾：前端据此停止 loading、结束本轮渲染
-        let _ = send_end(&self.app);
+        self.sink.end();
     }
 }
 
