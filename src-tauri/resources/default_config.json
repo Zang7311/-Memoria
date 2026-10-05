@@ -1,4 +1,6 @@
 {
+  "proxy_enabled": false,
+  "proxy_url": null,
   "config_version": 1,
   "theme": "dark",
   "context_length": 10,

@@ -633,6 +633,10 @@ export function getNetworkStatus(): Promise<GetNetworkStatusResponse> {
   return invoke('get_network_status')
 }
 
+export function networkDiagnostic(): Promise<string> {
+  return invoke('network_diagnostic')
+}
+
 /** 监听同步进度事件 */
 export function onSyncProgress(callback: (payload: SyncProgressEvent) => void): Promise<UnlistenFn> {
   return listen<SyncProgressEvent>('sync-progress', (event) => callback(event.payload))

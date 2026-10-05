@@ -347,7 +347,7 @@ pub async fn run_agent_loop(
     let mut action_log: Vec<String> = Vec::new();
     // 自评只做一次 —— 避免「未通过 → 补一轮 → 又未通过」无限循环
     let mut self_checked = false;
-    let client = reqwest::Client::new();
+    let client = crate::engine::net::build_client(&cfg)?;
     let url = format!("{}/chat/completions", crate::utils::normalize_v1_url(&base));
     let (temperature, top_p, _) = engine::apply_depth(depth);
 

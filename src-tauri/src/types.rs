@@ -542,6 +542,10 @@ pub struct MonitorTriggerEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
+    pub proxy_enabled: bool,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
+    #[serde(default)]
     pub models: Vec<ModelSlot>,
     /// 配置版本号（迁移用，当前 1）
     #[serde(default = "default_config_version")]
