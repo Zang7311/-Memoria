@@ -25,3 +25,5 @@ pub mod sub_agents;
 pub mod tools;
 pub mod taxonomy;
 pub mod vision;
+#[cfg(test)]
+mod audit_tests;

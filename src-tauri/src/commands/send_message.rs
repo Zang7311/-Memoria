@@ -35,7 +35,10 @@ pub async fn send_message(
     let busy = crate::agent::goals::ChatBusyGuard::new();
     tauri::async_runtime::spawn(async move {
         let _busy = busy;
-        if let Err(e) = generate_and_emit(&app, &input, depth, session_id.as_deref(), &request_id, &attachments).await {
+        let audit = crate::audit::AuditRun::new("chat", &input, Some(&request_id), session_id.as_deref(), None);
+        let result = audit.scope(generate_and_emit(&app, &input, depth, session_id.as_deref(), &request_id, &attachments)).await;
+        audit.finish(if result.is_ok() { "ok" } else { "failed" });
+        if let Err(e) = result {
             log::error!("对话生成失败：{e}");
             // 尽力推送错误事件
             let _ = stream::sender::send_error(&app, &e.to_string());

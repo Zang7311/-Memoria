@@ -1012,10 +1012,14 @@ async fn summarize_goal_task(goal: AgentGoal, execution: Arc<Mutex<GoalExecution
 }
 
 async fn advance_goal(store: &GoalStore, app: &AppHandle, id: &str, automatic: bool, at: i64) -> Result<GoalReport, AppError> {
+    let goal = store.get(id).ok();
+    let title = goal.as_ref().map(|goal| goal.title.as_str()).unwrap_or("目标推进");
+    let request_id = goal.as_ref().map(|goal| format!("goal_{}_{}", goal.id, goal.used.runs.saturating_add(1)));
+    let audit = crate::audit::AuditRun::new("goal", title, request_id.as_deref(), None, Some(id));
     let execution = Arc::new(Mutex::new(GoalExecution::default()));
     let run_record = execution.clone();
     let summary_record = execution.clone();
-    store
+    let result = audit.scope(store
         .advance_recovering(
             id,
             automatic,
@@ -1025,8 +1029,22 @@ async fn advance_goal(store: &GoalStore, app: &AppHandle, id: &str, automatic: b
             |goal| run_goal_task(app, goal, run_record),
             |goal| summarize_goal_task(goal, summary_record),
             || emit(app),
-        )
-        .await
+        )).await;
+    if let Ok(report) = &result {
+        let completed_before = goal.as_ref().map(|goal| goal.steps.iter().filter(|step| step.status == "done").count()).unwrap_or(0);
+        let completed_after = report.goal.steps.iter().filter(|step| step.status == "done").count();
+        audit.goal_progress(completed_before, completed_after, report.goal.steps.len());
+    }
+    audit.finish(match &result {
+        Ok(report) if report.message.starts_with("用户已") => "cancelled",
+        Ok(report) => match report.goal.status.as_str() {
+            "blocked" => "blocked", "cancelled" => "cancelled",
+            _ => report.goal.checkpoints.last().map(|checkpoint| checkpoint.outcome.as_str()).unwrap_or("ok"),
+        },
+        Err(AppError::PermissionDenied(_)) => "blocked",
+        Err(_) => "failed",
+    });
+    result
 }
 
 pub async fn advance(app: &AppHandle, id: &str) -> Result<GoalReport, AppError> {

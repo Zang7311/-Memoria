@@ -1,5 +1,6 @@
 // 《铃·记忆体》commands 模块
 pub mod send_message;
+pub mod audit;
 pub mod test_connection;
 pub mod network_diagnostic;
 // —— AI-10 Agent 命令 ——

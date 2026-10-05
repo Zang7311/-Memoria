@@ -1,5 +1,6 @@
 // 《铃·记忆体》Tauri 入口：注册所有命令与模块
 mod commands;
+mod audit;
 mod attachments;
 #[cfg(test)]
 mod attachment_tests;
@@ -184,6 +185,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::audit::list_audit,
+            commands::audit::export_audit,
+            commands::audit::clear_audit,
             greet,
             // —— AI-10 Agent 命令 ——
             commands::agent_run::agent_run,
