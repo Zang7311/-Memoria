@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Copyright(c) Live2D Inc. All rights reserved.
  *
  * Use of this source code is governed by the Live2D Open Software license
@@ -313,17 +313,35 @@ void CubismDirectXRenderer::EndFrame(CubismUserModel* userModel)
 }
 
 // 离屏渲染用：把后台缓冲抓成 RGBA8 像素（逐行紧密排列）
+// 每一步都写 capture_log.txt，用于定位卡死点（程序无控制台）
 bool CubismDirectXRenderer::CaptureFrame(std::vector<unsigned char>& outRGBA, unsigned int& outWidth, unsigned int& outHeight)
 {
-    if (!_swapChain || !_device || !_deviceContext) return false;
+    FILE* log = fopen("capture_log.txt", "a");
+#define CAPLOG(msg) do { if (log) { fprintf(log, "%s\n", msg); fflush(log); } } while (0)
 
+    CAPLOG("enter");
+    if (!_swapChain || !_device || !_deviceContext)
+    {
+        CAPLOG("null pointers");
+        if (log) fclose(log);
+        return false;
+    }
+
+    CAPLOG("GetBuffer...");
     ID3D11Texture2D* backBuffer = nullptr;
-    if (FAILED(_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBuffer)))) return false;
+    HRESULT hr = _swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBuffer));
+    if (FAILED(hr))
+    {
+        if (log) { fprintf(log, "GetBuffer fail hr=0x%08X\n", static_cast<unsigned int>(hr)); fclose(log); }
+        return false;
+    }
+    CAPLOG("got buffer");
 
     D3D11_TEXTURE2D_DESC desc = {};
     backBuffer->GetDesc(&desc);
     outWidth = desc.Width;
     outHeight = desc.Height;
+    if (log) { fprintf(log, "size=%ux%u format=%d usage=%d\n", outWidth, outHeight, static_cast<int>(desc.Format), static_cast<int>(desc.Usage)); }
 
     D3D11_TEXTURE2D_DESC stagingDesc = desc;
     stagingDesc.Usage = D3D11_USAGE_STAGING;
@@ -332,21 +350,30 @@ bool CubismDirectXRenderer::CaptureFrame(std::vector<unsigned char>& outRGBA, un
     stagingDesc.MiscFlags = 0;
     stagingDesc.SampleDesc.Count = 1;
 
+    CAPLOG("creating staging...");
     ID3D11Texture2D* staging = nullptr;
-    if (FAILED(_device->CreateTexture2D(&stagingDesc, nullptr, &staging)))
+    hr = _device->CreateTexture2D(&stagingDesc, nullptr, &staging);
+    if (FAILED(hr))
     {
+        if (log) { fprintf(log, "CreateTexture2D fail hr=0x%08X\n", static_cast<unsigned int>(hr)); fclose(log); }
         backBuffer->Release();
         return false;
     }
+    CAPLOG("staging ok");
 
     _deviceContext->CopyResource(staging, backBuffer);
+    CAPLOG("copied");
+
     D3D11_MAPPED_SUBRESOURCE mapped = {};
-    if (FAILED(_deviceContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped)))
+    hr = _deviceContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr))
     {
+        if (log) { fprintf(log, "Map fail hr=0x%08X\n", static_cast<unsigned int>(hr)); fclose(log); }
         staging->Release();
         backBuffer->Release();
         return false;
     }
+    CAPLOG("mapped");
 
     outRGBA.resize(static_cast<size_t>(outWidth) * outHeight * 4);
     for (unsigned int y = 0; y < outHeight; ++y)
@@ -356,6 +383,10 @@ bool CubismDirectXRenderer::CaptureFrame(std::vector<unsigned char>& outRGBA, un
     }
 
     _deviceContext->Unmap(staging, 0);
+    CAPLOG("unmapped/done");
+    if (log) fclose(log);
+#undef CAPLOG
+
     staging->Release();
     backBuffer->Release();
     return true;

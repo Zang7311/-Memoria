@@ -91,7 +91,19 @@ void CubismUserModelExtend::LoadAsset(const std::string & fiileName, const std::
     }
 
     // バッファの設定
-    buffer = LAppPal::LoadFileAsBytes(MakeAssetPath(fiileName).c_str(), &bufferSize);
+    const std::string fullPath = MakeAssetPath(fiileName);
+    buffer = LAppPal::LoadFileAsBytes(fullPath.c_str(), &bufferSize);
+
+    // 加载日志（定位卡死用）
+    {
+        FILE* f = fopen("asset_log.txt", "a");
+        if (f)
+        {
+            fprintf(f, "load %s -> %d bytes\n", fullPath.c_str(), static_cast<int>(bufferSize));
+            fflush(f);
+            fclose(f);
+        }
+    }
 
     // コールバック関数の呼び出し
     afterLoadCallback(buffer, bufferSize);
@@ -160,6 +172,7 @@ void CubismUserModelExtend::SetupModel(csmUint32 width, csmUint32 height)
 
     // Look
     {
+        FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "before Look\n"); fflush(f0); fclose(f0); }
         _look = CubismLook::Create();
 
         csmVector<CubismLook::LookParameterData> lookParameters;
@@ -178,15 +191,19 @@ void CubismUserModelExtend::SetupModel(csmUint32 width, csmUint32 height)
     }
 
     _updateScheduler.SortUpdatableList();
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after SortUpdatableList\n"); fflush(f0); fclose(f0); } }
 
     // Layout
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "before Layout\n"); fflush(f0); fclose(f0); } }
     csmMap<csmString, csmFloat32> layout;
     _modelJson->GetLayoutMap(layout);
     // レイアウト情報から位置を設定
     _modelMatrix->SetupFromLayout(layout);
 
     // パラメータを保存
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "before SaveParameters\n"); fflush(f0); fclose(f0); } }
     _model->SaveParameters();
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after SaveParameters\n"); fflush(f0); fclose(f0); } }
 
     // モーションデータの読み込み
     for (csmInt32 i = 0; i < _modelJson->GetMotionGroupCount(); i++)
@@ -197,12 +214,15 @@ void CubismUserModelExtend::SetupModel(csmUint32 width, csmUint32 height)
     }
 
     _motionManager->StopAllMotions();
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after motions\n"); fflush(f0); fclose(f0); } }
 
     // レンダラの作成
     CreateRenderer(width, height);
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after CreateRenderer\n"); fflush(f0); fclose(f0); } }
 
     // テクスチャのセットアップ
     SetupTextures();
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after SetupTextures\n"); fflush(f0); fclose(f0); } }
 
     _updating = false;
     _initialized = true;

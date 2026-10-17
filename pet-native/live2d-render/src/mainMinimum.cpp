@@ -324,17 +324,27 @@ void SetAssetDirectory(const std::string& path)
 */
 void LoadModel(const std::string modelDirectoryName)
 {
+    FILE* loadLog = fopen("load_log.txt", "w");
+    auto L = [loadLog](const char* s) { if (loadLog) { fprintf(loadLog, "%s\n", s); fflush(loadLog); } };
+
+    L("SetAssetDirectory");
     // モデルのディレクトリを指定
     SetAssetDirectory(LAppDefine::ResourcesPath + modelDirectoryName + "/");
 
+    L("new CubismUserModelExtend");
     // モデルデータの新規生成
     _userModel = new CubismUserModelExtend(modelDirectoryName, _currentModelDirectory);
 
+    L("SetupModel");
     // モデルデータの読み込み及び生成とセットアップを行う
     static_cast<CubismUserModelExtend*>(_userModel)->SetupModel(LAppDefine::RenderTargetWidth, LAppDefine::RenderTargetHeight);
 
+    L("SetUserModel");
     // ユーザーモデルをMouseActionManagerへ渡す
     MouseActionManager_Common::GetInstance()->SetUserModel(_userModel);
+
+    L("LoadModel done");
+    if (loadLog) fclose(loadLog);
 }
 
 void Run()
@@ -402,16 +412,26 @@ void Run()
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int)
 {
+    // 启动阶段日志（程序无控制台，卡死时靠它定位）
+    FILE* mainLog = fopen("main_log.txt", "w");
+    auto LOG = [mainLog](const char* s) { if (mainLog) { fprintf(mainLog, "%s\n", s); fflush(mainLog); } };
+
+    LOG("WinMain start");
     // 初期化
     InitializeSystem();
+    LOG("InitializeSystem done");
     // モデルの読み込み
     LoadModel(_modelDirectoryName);
+    LOG("LoadModel done");
 
     // メインループ
     Run();
+    LOG("Run done");
 
     // 解放処理
     Release();
+    LOG("Release done");
+    if (mainLog) fclose(mainLog);
 
     return 0;
 }
