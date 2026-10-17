@@ -35,7 +35,9 @@ pub fn default_config() -> AppConfig {
         depth: 2,
         language_mix_rate: 8,
         floating_ball_mode: "avatar".to_string(),
-        floating_ball_enabled: true,
+        // 桌宠默认关闭：150% 缩放等环境下透明小窗的 WebView 内容会偏移（已知技术债，
+        // 见 ROADMAP「桌宠渲染」），先别默认弹出来碍眼；设置页开启前会看到提示。
+        floating_ball_enabled: false,
         floating_ball_size: 200,
         floating_ball_opacity: 1.0,
         floating_ball_breathing: true,

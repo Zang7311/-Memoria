@@ -1175,7 +1175,10 @@ async function toggleAiToolbox() {
 
               <section class="card">
                 <div class="card-title">桌宠（悬浮球）</div>
-                <p class="hint">桌面上陪你工作的小铃：会自己动一动、偶尔说话，点一下有反应，摸头会长呼噜，拖动可以被拎起来、松手会掉到屏幕底。</p>
+                <p class="hint">桌面上陪你工作的小铃：会自己动一动、偶尔说话，点一下有反应，摸头会长呼噜，拖动可以被拎起来。</p>
+                <p class="hint">
+                  已知问题：在高缩放（如 150%）屏幕上，小铃的画面可能偏出窗口一角 —— 这是 Tauri 透明窗口 + WebView2 的渲染问题，正在处理。
+                </p>
                 <div class="field">
                   <label class="switch-wrap">
                     <span class="label">显示桌宠</span>
