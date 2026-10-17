@@ -20,6 +20,7 @@
 
 #include "CubismFramework.hpp"
 #include "CubismUserModelExtend.hpp"
+#include <chrono>
 #include "Motion/CubismBreathUpdater.hpp"
 #include "Motion/CubismLookUpdater.hpp"
 #include "Motion/CubismExpressionUpdater.hpp"
@@ -216,13 +217,17 @@ void CubismUserModelExtend::SetupModel(csmUint32 width, csmUint32 height)
     _motionManager->StopAllMotions();
     { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after motions\n"); fflush(f0); fclose(f0); } }
 
-    // レンダラの作成
+    // レンダラの作成（计时：定位加载慢的环节）
+    auto tCreate0 = std::chrono::steady_clock::now();
     CreateRenderer(width, height);
-    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after CreateRenderer\n"); fflush(f0); fclose(f0); } }
+    auto tCreate1 = std::chrono::steady_clock::now();
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "CreateRenderer took %.1f ms\n", std::chrono::duration<double, std::milli>(tCreate1 - tCreate0).count()); fflush(f0); fclose(f0); } }
 
-    // テクスチャのセットアップ
+    // テクスチャのセットアップ（计时）
+    auto tTex0 = std::chrono::steady_clock::now();
     SetupTextures();
-    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "after SetupTextures\n"); fflush(f0); fclose(f0); } }
+    auto tTex1 = std::chrono::steady_clock::now();
+    { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "SetupTextures took %.1f ms\n", std::chrono::duration<double, std::milli>(tTex1 - tTex0).count()); fflush(f0); fclose(f0); } }
 
     _updating = false;
     _initialized = true;
