@@ -10,7 +10,8 @@ import PluginStore from './PluginStore.vue'
 const store = usePluginStore()
 
 // 面板展开/收起
-const expanded = ref(true)
+// 面板显示/隐藏由父组件（顶部「插件」按钮）用 v-if 控制：关闭即整块消失
+const emit = defineEmits<{ close: [] }>()
 
 // 安装对话框
 const showInstall = ref(false)
@@ -193,13 +194,13 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 </script>
 
 <template>
-  <aside class="plugin-panel" :class="{ collapsed: !expanded }">
+  <aside class="plugin-panel">
     <div class="panel-header">
       <span class="panel-title"><span class="title-icon">🧩</span><span class="title-text">插件管理</span></span>
-      <button class="icon-btn" @click="expanded = !expanded">{{ expanded ? '❯' : '❮' }}</button>
+      <button class="icon-btn" title="关闭插件面板" @click="emit('close')">✕</button>
     </div>
 
-    <template v-if="expanded">
+    <template v-if="true">
       <!-- Tab 切换 -->
       <div class="tabs">
         <button :class="{ active: tab === 'plugins' }" @click="tab = 'plugins'">插件 ({{ normalPlugins.length }})</button>

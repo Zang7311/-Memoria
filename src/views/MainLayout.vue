@@ -227,8 +227,8 @@ async function onPersonaChange(e: Event) {
       <!-- 右侧记忆面板（AI-4）：由顶部「记忆」按钮控制显示，关闭时整块消失 -->
       <MemoryPanel v-if="showMemory" @close="showMemory = false" />
 
-      <!-- 插件管理面板（AI-5） -->
-      <PluginManager v-if="showPlugins" />
+      <!-- 插件管理面板（AI-5）：由顶部「插件」按钮开关，关闭时整块消失 -->
+      <PluginManager v-if="showPlugins" @close="showPlugins = false" />
 
       <!-- 工具箱悬浮面板（AI-6） -->
       <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
