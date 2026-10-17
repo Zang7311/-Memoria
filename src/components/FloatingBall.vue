@@ -818,7 +818,7 @@ async function loadLive2D() {
         <div v-if="bubbleOn" class="speech" :style="{ opacity: finalOpacity }">{{ bubble }}</div>
       </Transition>
 
-      <div class="pet-stage" :class="stageClass" :style="{ height: roleHeight + 'px', opacity: finalOpacity }">
+      <div class="pet-stage" :class="stageClass" :style="{ opacity: finalOpacity }">
         <div v-if="mode === 'live2d'" class="live2d-container">
           <!-- 底垫头像：Live2D 还没起来时至少有形象，不让桌面出现一个"隐形窗口" -->
           <img v-show="!live2dReady" :src="ballAvatar" class="pet-avatar l2d-backdrop" draggable="false" alt="铃" />
@@ -937,15 +937,15 @@ async function loadLive2D() {
 /* ===== 台词气泡（角色头顶，带小尾巴） ===== */
 .speech {
   position: absolute;
-  top: 4px;
-  left: 6px;
-  right: 6px;
-  padding: 7px 10px;
+  top: 1.5%;
+  left: 3%;
+  right: 3%;
+  padding: 2.5% 3%;
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-bar, rgba(34, 32, 36, 0.92)) 92%, transparent);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   color: var(--text-main, #eee6e7);
-  font-size: var(--fs-12, 12px);
+  font-size: clamp(10px, 4.4vmin, 16px);
   line-height: 1.45;
   text-align: center;
   word-break: break-word;
@@ -975,12 +975,14 @@ async function loadLive2D() {
   transform: translateY(6px);
 }
 
-/* ===== 角色区 ===== */
+/* ===== 角色区（用视口百分比布局：高 DPI 下 webview 视口按物理像素算，
+        写死 px 会跟窗口对不上，百分比/视口单位才能自适应） ===== */
 .pet-stage {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  height: 76%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -1009,7 +1011,7 @@ async function loadLive2D() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(v-bind(size) * 0.2px);
+  font-size: 24vmin;
   font-weight: 600;
   color: #fff;
   background: linear-gradient(135deg, var(--accent, #ff7a94), color-mix(in srgb, var(--accent, #ff7a94) 55%, #6db3ff));
