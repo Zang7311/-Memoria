@@ -73,6 +73,9 @@ struct Pet {
     last_active: Instant,
     click_through: bool,
     zzz_phase: f32,
+    /// 底边淡出当前值 / 目标值（0 = 硬切，1 = 下摆化掉）
+    fade: f32,
+    fade_target: f32,
 }
 
 static mut PET: Option<Box<Pet>> = None;
@@ -258,6 +261,51 @@ unsafe fn draw_avatar(buf: *mut u8, w: i32, h: i32, avatar: &[u8], role: i32, y_
     }
 }
 
+/// 打瞌睡的「z z z」：三个 z 在头顶气泡区里上下飘。
+/// v0.2 画的是个纯黑圆角框（框里从来没画过字，补 alpha 时连圆角外也补成黑的），
+/// 还压在角色脸上上下飘 —— 这里改成真的画字，位置挪到头顶。
+unsafe fn draw_sleep_z(p: &mut Pet, w: i32) {
+    let scale = p.scale;
+    let px = (16.0 * scale) as i32;
+    let font = CreateFontW(
+        -px, 0, 0, 0, FW_BOLD as i32, 0, 0, 0, DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH,
+        wide("Microsoft YaHei").as_ptr(),
+    );
+    let old = SelectObject(p.mem_dc, font as *mut _);
+    SetBkMode(p.mem_dc, TRANSPARENT as i32);
+    SetTextColor(p.mem_dc, RGB(214, 208, 226));
+    for i in 0..3 {
+        let t = (p.zzz_phase + i as f32 * 0.8).sin() * 0.5 + 0.5; // 0..1 上下飘
+        let x = (w as f32) * 0.14 + (i as f32 * 10.0 + t * 3.0) * scale;
+        let y = (p.bubble_phys_h as f32) * 0.16 + (i as f32 * 11.0 + t * 8.0) * scale;
+        let mut rect = RECT {
+            left: x as i32,
+            top: y as i32,
+            right: ((x as i32) + px * 2),
+            bottom: ((y as i32) + px * 2),
+        };
+        DrawTextW(p.mem_dc, wide("z").as_ptr(), -1, &mut rect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOCLIP);
+    }
+    SelectObject(p.mem_dc, old);
+    DeleteObject(font as *mut _);
+    // GDI 写字会把 alpha 写成 0：气泡区里「有颜色但还是透明」的像素补成不透明
+    //（气泡本体已经是不透明的，会被下面的判断跳过；圆角外的纯黑不会误伤）
+    let y1 = p.bubble_phys_h.min(p.phys_h);
+    for y in 0..y1 {
+        for x in 0..p.phys_w {
+            let i = ((y * p.phys_w + x) * 4) as usize;
+            if *p.bits.add(i + 3) != 0 {
+                continue;
+            }
+            let sum = *p.bits.add(i) as u32 + *p.bits.add(i + 1) as u32 + *p.bits.add(i + 2) as u32;
+            if sum > 0 {
+                *p.bits.add(i + 3) = 255;
+            }
+        }
+    }
+}
+
 unsafe fn draw_frame(p: &mut Pet) {
     let w = p.phys_w;
     let h = p.phys_h;
@@ -270,11 +318,17 @@ unsafe fn draw_frame(p: &mut Pet) {
 
     // 角色区在窗口底部
     let role_top = p.bubble_phys_h;
+    // 底边淡出强度：被拖起来时淡掉下摆（不然悬空时就是「齐腰切断」），落地后再淡回来
+    if (p.fade - p.fade_target).abs() < 0.01 {
+        p.fade = p.fade_target;
+    } else {
+        p.fade += (p.fade_target - p.fade) * 0.25;
+    }
     // 优先 Live2D：让 DLL 画一帧，裁剪缩放后直接写进 DIB（预乘 BGRA）
     let mut drew = false;
     if let Some(l2d) = p.l2d.as_mut() {
         if l2d.render() {
-            l2d.composite(p.bits, w, h, 0, role_top + float_off);
+            l2d.composite(p.bits, w, h, 0, role_top + float_off, p.fade);
             drew = true;
         }
     }
@@ -342,21 +396,10 @@ unsafe fn draw_frame(p: &mut Pet) {
         }
     }
 
-    // 打瞌睡的 zzz
+    // 打瞌睡：头顶飘 Zzz
     if p.state == State::Sleep {
-        p.zzz_phase += 0.15;
-        let zoff = (p.zzz_phase.sin() * 4.0 * p.scale) as i32;
-        let zx = w - (70.0 * p.scale) as i32;
-        let zy = role_top + (40.0 * p.scale) as i32 - zoff;
-        fill_round_rect(p.bits, w, zx, zy, (46.0 * p.scale) as i32, (26.0 * p.scale) as i32, (10.0 * p.scale) as i32, (34, 32, 36));
-        for y in zy..(zy + (26.0 * p.scale) as i32) {
-            for x in zx..(zx + (46.0 * p.scale) as i32) {
-                let i = ((y * w + x) * 4) as usize;
-                if *p.bits.add(i + 3) == 0 {
-                    *p.bits.add(i + 3) = 255;
-                }
-            }
-        }
+        p.zzz_phase += 0.12;
+        draw_sleep_z(p, w);
     }
 
     blit(p);
@@ -500,6 +543,8 @@ unsafe fn apply_size(p: &mut Pet, logic: i32) {
     p.phys_h = new_phys_h;
     p.role_phys = new_role;
     p.bubble_phys_h = new_phys_h - new_role;
+    p.fade = 0.0;
+    p.fade_target = 0.0;
     create_backbuffer(p);
     if let Some(l2d) = p.l2d.as_mut() {
         l2d.set_dest(new_role);
@@ -545,6 +590,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                 p.dragging = true;
                 p.moved = false;
                 p.long_press_fired = false;
+                // 有交互就不该算「长时间无操作」（v0.2 忘了刷新这个时间戳，
+                // 导致开满 5 分钟后每次点它都会立刻打瞌睡）
+                p.last_active = Instant::now();
+                if p.state == State::Sleep {
+                    p.state = State::Idle;
+                }
                 let mut pt = POINT { x: 0, y: 0 };
                 GetCursorPos(&mut pt);
                 let mut wr: RECT = std::mem::zeroed();
@@ -566,6 +617,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                     if !p.moved && (dx.abs() > 4 || dy.abs() > 4) {
                         p.moved = true;
                         KillTimer(hwnd, 2);
+                        // 一拖起来就先把下摆淡掉（这里只重画一次；拖动过程仍然只挪窗口不重画，
+                        // 所以直接把 fade 拉满，不能靠每帧插值）
+                        p.fade = 1.0;
+                        p.fade_target = 1.0;
+                        draw_frame(p);
                     }
                     if p.moved {
                         SetWindowPos(hwnd, HWND_TOPMOST, p.win_start.0 + dx, p.win_start.1 + dy, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
@@ -582,6 +638,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                     p.dragging = false;
                     if p.moved {
                         println!("[pet] 拖动结束");
+                        // 松手后把下摆淡回来（掉落途中不重画，落地后逐帧淡入）
+                        p.fade_target = 0.0;
                         start_fall();
                     } else if p.long_press_fired {
                         // 长按已在定时器里处理
@@ -661,6 +719,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
         }
         WM_RBUTTONUP => {
             if let Some(p) = &mut PET {
+                p.last_active = Instant::now();
                 let menu = CreatePopupMenu();
                 let ct_check = if p.click_through { MF_CHECKED } else { MF_UNCHECKED };
                 AppendMenuW(menu, MF_STRING | ct_check, 1, wide("鼠标穿透").as_ptr());
@@ -857,6 +916,8 @@ fn main() {
             last_active: Instant::now(),
             click_through: false,
             zzz_phase: 0.0,
+            fade: 0.0,
+            fade_target: 0.0,
         });
         create_backbuffer(&mut pet);
         PET = Some(pet);

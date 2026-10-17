@@ -25,6 +25,8 @@ pub const SRC_H: i32 = 540;
 const CROP_X: i32 = 240;
 const CROP_Y: i32 = 60;
 const CROP: i32 = 480;
+/// 底边淡出区占角色区高度的比例：桌宠被抬起来时，用这个高度把「齐腰切断」化掉
+const FADE_RATIO: f32 = 0.27;
 
 /// 模型名与资源目录（相对 <exe>/live2d，全 ASCII 以免 CRT 窄字符路径出问题）
 const MODEL_NAME: &[u8] = b"Haru\0";
@@ -177,14 +179,23 @@ impl Live2D {
 
     /// 把当前帧裁剪缩放后写进分层窗口的 DIB（预乘 BGRA）
     /// dx, dy = 角色区左上角在窗口内的位置
-    pub unsafe fn composite(&self, dst: *mut u8, win_w: i32, win_h: i32, dx: i32, dy: i32) {
+    /// fade   = 底边淡出强度 0..1（0 = 硬切；抬起时给 1，下摆柔和化掉）
+    pub unsafe fn composite(&self, dst: *mut u8, win_w: i32, win_h: i32, dx: i32, dy: i32, fade: f32) {
         let dest = self.dest;
         let src = self.frame.as_ptr();
         let stride = (SRC_W * 4) as usize;
+        let fade_h = (dest as f32 * FADE_RATIO) as i32;
+        let fade_start = dest - fade_h;
         for y in 0..dest {
             let ty = dy + y;
             if ty < 0 || ty >= win_h {
                 continue;
+            }
+            // 这一行的淡出系数（预乘 alpha 逐通道乘同一个 k 就对了）
+            let mut k = 1.0f32;
+            if fade > 0.001 && fade_h > 0 && y >= fade_start {
+                let t = (dest - y) as f32 / fade_h as f32; // 淡出区上沿 1 → 底边 0
+                k = 1.0 - fade * (1.0 - t.clamp(0.0, 1.0));
             }
             let (sy0, sy1, wy) = self.ys[y as usize];
             let row0 = sy0 as usize * stride;
@@ -208,12 +219,12 @@ impl Live2D {
                 let p01 = src.add(row1 + col0);
                 let p11 = src.add(row1 + col1);
                 let mut c = [0u8; 4];
-                for k in 0..4 {
-                    let v = *p00.add(k) as f32 * w00
-                        + *p10.add(k) as f32 * w10
-                        + *p01.add(k) as f32 * w01
-                        + *p11.add(k) as f32 * w11;
-                    c[k] = v.round().clamp(0.0, 255.0) as u8;
+                for kk in 0..4 {
+                    let v = *p00.add(kk) as f32 * w00
+                        + *p10.add(kk) as f32 * w10
+                        + *p01.add(kk) as f32 * w01
+                        + *p11.add(kk) as f32 * w11;
+                    c[kk] = (v * k).round().clamp(0.0, 255.0) as u8;
                 }
                 let di = ((ty * win_w + tx) * 4) as usize;
                 *dst.add(di) = c[2];
