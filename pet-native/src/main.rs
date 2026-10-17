@@ -61,6 +61,7 @@ struct Pet {
     falling: bool,
     fall_v: f32,
     bounce_count: u8,
+    bounce_enabled: bool,
     last_active: Instant,
     click_through: bool,
     zzz_phase: f32,
@@ -340,7 +341,7 @@ unsafe fn save_position(p: &Pet) {
     }
 }
 
-/// 尺寸配置：exe 同目录 pet-config.txt，内容 `size=150`
+/// 尺寸配置：exe 同目录 pet-config.txt，内容 `size=150` / `bounce=1`
 fn config_path() -> Option<std::path::PathBuf> {
     std::env::current_exe().ok().map(|e| e.with_file_name("pet-config.txt"))
 }
@@ -358,10 +359,21 @@ fn load_config_size() -> i32 {
     ROLE
 }
 
-fn save_config_size(size: i32) {
+fn load_config_bounce() -> bool {
+    let Some(path) = config_path() else { return true };
+    let Ok(text) = std::fs::read_to_string(path) else { return true };
+    for line in text.lines() {
+        if let Some(v) = line.trim().strip_prefix("bounce=") {
+            return v.trim() != "0";
+        }
+    }
+    true
+}
+
+fn save_config(size: i32, bounce: bool) {
     if let Some(path) = config_path() {
-        let _ = std::fs::write(path, format!("size={size}\n"));
-        println!("[pet] 尺寸配置已保存: {size}");
+        let _ = std::fs::write(path, format!("size={size}\nbounce={}\n", if bounce { 1 } else { 0 }));
+        println!("[pet] 配置已保存: size={size} bounce={bounce}");
     }
 }
 
@@ -393,7 +405,7 @@ unsafe fn apply_size(p: &mut Pet, logic: i32) {
     let new_top = bottom - new_phys_h;
     SetWindowPos(p.hwnd, HWND_TOPMOST, left, new_top, new_role, new_phys_h, SWP_NOACTIVATE);
     draw_frame(p);
-    save_config_size(logic);
+    save_config(logic, p.bounce_enabled);
     println!("[pet] 尺寸切换为逻辑 {logic}（物理 {new_role}x{new_phys_h}）");
 }
 
@@ -504,8 +516,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                         let floor = (screen_h - p.phys_h) as f32;
                         if y >= floor {
                             y = floor;
-                            // 最多弹两下：第一下大、第二下小，然后停稳
-                            if p.bounce_count < 2 && p.fall_v > 8.0 {
+                            // 弹跳开关打开时最多弹两下：第一下大、第二下小；关掉就直接落地
+                            if p.bounce_enabled && p.bounce_count < 2 && p.fall_v > 8.0 {
                                 p.bounce_count += 1;
                                 p.fall_v = -p.fall_v * 0.38;
                                 println!("[pet] 触地反弹 #{} v={:.1}", p.bounce_count, p.fall_v);
@@ -546,6 +558,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                 let ct_check = if p.click_through { MF_CHECKED } else { MF_UNCHECKED };
                 AppendMenuW(menu, MF_STRING | ct_check, 1, wide("鼠标穿透").as_ptr());
                 AppendMenuW(menu, MF_STRING, 2, wide("重置位置").as_ptr());
+                let bounce_check = if p.bounce_enabled { MF_CHECKED } else { MF_UNCHECKED };
+                AppendMenuW(menu, MF_STRING | bounce_check, 7, wide("掉落时弹跳").as_ptr());
                 AppendMenuW(menu, MF_SEPARATOR, 0, null_mut());
                 let s125 = if p.logic_size == 100 { MF_CHECKED } else { MF_UNCHECKED };
                 let s150 = if p.logic_size == 150 { MF_CHECKED } else { MF_UNCHECKED };
@@ -583,6 +597,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                     3 => apply_size(p, 100),
                     4 => apply_size(p, 150),
                     5 => apply_size(p, 200),
+                    7 => {
+                        p.bounce_enabled = !p.bounce_enabled;
+                        save_config(p.logic_size, p.bounce_enabled);
+                        println!("[pet] 弹跳 = {}", p.bounce_enabled);
+                    }
                     6 => {
                         save_position(p);
                         PostQuitMessage(0);
@@ -607,6 +626,7 @@ fn main() {
         let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         let scale = dpi as f32 / 96.0;
         let logic_size = load_config_size();
+        let bounce_enabled_init = load_config_bounce();
         let phys_w = (logic_size as f32 * scale).round() as i32;
         let phys_h = ((logic_size + BUBBLE_H) as f32 * scale).round() as i32;
         let role_phys = phys_w;
@@ -700,6 +720,7 @@ fn main() {
             falling: false,
             fall_v: 0.0,
             bounce_count: 0,
+            bounce_enabled: bounce_enabled_init,
             last_active: Instant::now(),
             click_through: false,
             zzz_phase: 0.0,
