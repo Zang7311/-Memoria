@@ -89,11 +89,20 @@ unsafe fn enable_dpi_awareness() -> bool {
     SetProcessDPIAware() != 0
 }
 
-/// 载入头像：缩放 + **圆形裁剪**（去掉方形图的黑边）+ 预乘 alpha（BGRA）
+/// 载入头像：缩放 + 近黑背景透明化 + 圆形裁剪 + 预乘 alpha（BGRA）
 fn load_avatar(path: &str, size: i32) -> Vec<u8> {
     match image::open(path) {
         Ok(img) => {
             let mut rgba = img.resize_exact(size as u32, size as u32, FilterType::Lanczos3).to_rgba8().into_raw();
+            // 原图四角是纯黑不透明背景（实测 RGB(1,0,0)、(0,0,0)），
+            // 圆形裁剪后会在圆边露出黑底 —— 先把近黑像素透明化。
+            // 铃的头发/衣服是紫色调（125,126,203 等），阈值压在 24 以内不会误伤。
+            for i in (0..rgba.len()).step_by(4) {
+                let sum = rgba[i] as u32 + rgba[i + 1] as u32 + rgba[i + 2] as u32;
+                if sum < 24 {
+                    rgba[i + 3] = 0;
+                }
+            }
             // 圆形遮罩：圆外直接透明，圆边缘 1.5px 过渡；保留原图自身的 alpha
             let c = size as f32 / 2.0;
             let r = c - 1.0;
@@ -123,6 +132,28 @@ fn load_avatar(path: &str, size: i32) -> Vec<u8> {
             vec![0u8; (size * size * 4) as usize]
         }
     }
+}
+
+/// 点是否在圆角矩形内（与 fill_round_rect 同一套判定，用来补 alpha 时避让圆角外）
+fn inside_rounded(x: i32, y: i32, x0: i32, y0: i32, rw: i32, rh: i32, radius: i32) -> bool {
+    if x < x0 || x >= x0 + rw || y < y0 || y >= y0 + rh {
+        return false;
+    }
+    let dx = if x < x0 + radius {
+        x0 + radius - x
+    } else if x > x0 + rw - radius {
+        x - (x0 + rw - radius)
+    } else {
+        0
+    };
+    let dy = if y < y0 + radius {
+        y0 + radius - y
+    } else if y > y0 + rh - radius {
+        y - (y0 + rh - radius)
+    } else {
+        0
+    };
+    dx * dx + dy * dy <= radius * radius
 }
 
 unsafe fn create_backbuffer(p: &mut Pet) {
@@ -272,9 +303,14 @@ unsafe fn draw_frame(p: &mut Pet) {
         DrawTextW(p.mem_dc, wide(&p.bubble).as_ptr(), -1, &mut rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         SelectObject(p.mem_dc, old);
         DeleteObject(font as *mut _);
-        // GDI 写字会把 alpha 写 0：气泡矩形内 alpha=0 的像素补成 255
+        // GDI 写字会把 alpha 写 0：只把「圆角矩形内部」的 alpha 补成 255；
+        // 圆角外保持透明，否则四角会变成一块黑色（这就是之前语音框的黑边）
+        let radius = (14.0 * p.scale) as i32;
         for y in by..(by + bh) {
             for x in bx..(bx + bw) {
+                if !inside_rounded(x, y, bx, by, bw, bh, radius) {
+                    continue;
+                }
                 let i = ((y * w + x) * 4) as usize;
                 if *p.bits.add(i + 3) == 0 {
                     *p.bits.add(i + 3) = 255;
