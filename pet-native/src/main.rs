@@ -47,6 +47,8 @@ struct Pet {
     role_phys: i32,
     bubble_phys_h: i32,
     scale: f32,
+    logic_size: i32,
+    avatar_path: std::path::PathBuf,
     avatar: Vec<u8>, // 预乘 BGRA，尺寸 role_phys x role_phys
     state: State,
     bubble: String,
@@ -149,26 +151,9 @@ unsafe fn blit(p: &Pet) {
     GetWindowRect(p.hwnd, &mut wr);
     pos.x = wr.left;
     pos.y = wr.top;
-
-    // 与已验证的探针程序相同的贴图方式：每帧新建 DIB 再 UpdateLayeredWindow。
-    // （常驻 DIB 的那版实测屏幕上看不到，虽然内存里数据是好的。）
-    let mut bi: BITMAPINFO = std::mem::zeroed();
-    bi.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
-    bi.bmiHeader.biWidth = p.phys_w;
-    bi.bmiHeader.biHeight = -p.phys_h;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-    let mut bits: *mut winapi::ctypes::c_void = null_mut();
-    let bmp = CreateDIBSection(p.mem_dc, &bi, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
-    if bmp.is_null() {
-        println!("[pet] CreateDIBSection 失败");
-        return;
-    }
-    let len = (p.phys_w * p.phys_h * 4) as usize;
-    std::ptr::copy_nonoverlapping(p.bits, bits as *mut u8, len);
-    let old = SelectObject(p.mem_dc, bmp as *mut _);
-
+    // 常驻 DIB（draw_frame 直接写 p.bits，mem_dc 一直选中它）：
+    // 每帧只做 UpdateLayeredWindow，不再重建位图 —— 之前每帧 CreateDIBSection
+    // 是掉落动画掉帧的主因。
     let ok = UpdateLayeredWindow(
         p.hwnd,
         p.hdc_screen,
@@ -181,11 +166,12 @@ unsafe fn blit(p: &Pet) {
         ULW_ALPHA,
     );
     if ok == 0 {
-        println!("[pet] UpdateLayeredWindow FAILED err={}", GetLastError());
+        static mut FAIL_LOGGED: bool = false;
+        if !FAIL_LOGGED {
+            FAIL_LOGGED = true;
+            println!("[pet] UpdateLayeredWindow FAILED err={}", GetLastError());
+        }
     }
-
-    SelectObject(p.mem_dc, old);
-    DeleteObject(bmp as *mut _);
 }
 
 unsafe fn clear(buf: *mut u8, len: usize) {
@@ -353,6 +339,63 @@ unsafe fn save_position(p: &Pet) {
     }
 }
 
+/// 尺寸配置：exe 同目录 pet-config.txt，内容 `size=150`
+fn config_path() -> Option<std::path::PathBuf> {
+    std::env::current_exe().ok().map(|e| e.with_file_name("pet-config.txt"))
+}
+
+fn load_config_size() -> i32 {
+    let Some(path) = config_path() else { return ROLE };
+    let Ok(text) = std::fs::read_to_string(path) else { return ROLE };
+    for line in text.lines() {
+        if let Some(v) = line.trim().strip_prefix("size=") {
+            if let Ok(n) = v.trim().parse::<i32>() {
+                return n.clamp(80, 320);
+            }
+        }
+    }
+    ROLE
+}
+
+fn save_config_size(size: i32) {
+    if let Some(path) = config_path() {
+        let _ = std::fs::write(path, format!("size={size}\n"));
+        println!("[pet] 尺寸配置已保存: {size}");
+    }
+}
+
+/// 换个尺寸：重载头像、重建位图、调整窗口（保持底边位置不变）
+unsafe fn apply_size(p: &mut Pet, logic: i32) {
+    if logic == p.logic_size {
+        return;
+    }
+    let scale = p.scale;
+    let new_role = (logic as f32 * scale).round() as i32;
+    let new_phys_h = ((logic + BUBBLE_H) as f32 * scale).round() as i32;
+
+    let mut wr: RECT = std::mem::zeroed();
+    GetWindowRect(p.hwnd, &mut wr);
+    let bottom = wr.bottom;
+    let left = wr.left;
+
+    p.avatar = load_avatar(p.avatar_path.to_str().unwrap_or("assets/avatar.png"), new_role);
+    if !p.bitmap.is_null() {
+        DeleteObject(p.bitmap as *mut _);
+    }
+    p.logic_size = logic;
+    p.phys_w = new_role;
+    p.phys_h = new_phys_h;
+    p.role_phys = new_role;
+    p.bubble_phys_h = new_phys_h - new_role;
+    create_backbuffer(p);
+
+    let new_top = bottom - new_phys_h;
+    SetWindowPos(p.hwnd, HWND_TOPMOST, left, new_top, new_role, new_phys_h, SWP_NOACTIVATE);
+    draw_frame(p);
+    save_config_size(logic);
+    println!("[pet] 尺寸切换为逻辑 {logic}（物理 {new_role}x{new_phys_h}）");
+}
+
 unsafe fn load_position() -> Option<(i32, i32)> {
     let path = std::env::current_exe().ok()?.with_file_name("pet-position.txt");
     let text = std::fs::read_to_string(path).ok()?;
@@ -444,9 +487,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
             }
             if wparam == 1 {
                 if let Some(p) = &mut PET {
-                    // 拖动中不重绘：SetWindowPos 与 UpdateLayeredWindow 同时改窗口位置
-                    // 会互相打架，表现为拖动时明显颤动
-                    if p.dragging {
+                    // 拖动/掉落中不重绘：位置在动，重绘整窗会拖慢动画（掉帧）
+                    if p.dragging || p.falling {
                         return 0;
                     }
                     // 气泡超时
@@ -494,19 +536,29 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
         WM_RBUTTONUP => {
             if let Some(p) = &mut PET {
                 let menu = CreatePopupMenu();
-                let mut checked = if p.click_through { MF_CHECKED } else { MF_UNCHECKED };
-                AppendMenuW(menu, MF_STRING | checked, 1, wide("鼠标穿透").as_ptr());
-                checked = MF_UNCHECKED;
-                AppendMenuW(menu, MF_STRING | checked, 2, wide("重置位置").as_ptr());
+                let ct_check = if p.click_through { MF_CHECKED } else { MF_UNCHECKED };
+                AppendMenuW(menu, MF_STRING | ct_check, 1, wide("鼠标穿透").as_ptr());
+                AppendMenuW(menu, MF_STRING, 2, wide("重置位置").as_ptr());
                 AppendMenuW(menu, MF_SEPARATOR, 0, null_mut());
-                AppendMenuW(menu, MF_STRING, 3, wide("退出").as_ptr());
+                let s125 = if p.logic_size == 100 { MF_CHECKED } else { MF_UNCHECKED };
+                let s150 = if p.logic_size == 150 { MF_CHECKED } else { MF_UNCHECKED };
+                let s200 = if p.logic_size == 200 { MF_CHECKED } else { MF_UNCHECKED };
+                AppendMenuW(menu, MF_STRING | s125, 3, wide("大小：小 100").as_ptr());
+                AppendMenuW(menu, MF_STRING | s150, 4, wide("大小：中 150").as_ptr());
+                AppendMenuW(menu, MF_STRING | s200, 5, wide("大小：大 200").as_ptr());
+                AppendMenuW(menu, MF_SEPARATOR, 0, null_mut());
+                AppendMenuW(menu, MF_STRING, 6, wide("退出").as_ptr());
                 let mut pt = POINT { x: 0, y: 0 };
                 GetCursorPos(&mut pt);
-                // 菜单要显示在桌宠"上面"：临时取消置顶 + 设前台，弹完再恢复
-                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                // 菜单弹出期间把桌宠移到屏幕外，否则 topmost 的它会盖住菜单
+                let mut wr: RECT = std::mem::zeroed();
+                GetWindowRect(hwnd, &mut wr);
+                let saved = (wr.left, wr.top);
+                let off_x = GetSystemMetrics(SM_CXSCREEN) + 200;
+                SetWindowPos(hwnd, HWND_TOPMOST, off_x, saved.1, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                 SetForegroundWindow(hwnd);
                 let cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, null_mut());
-                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                SetWindowPos(hwnd, HWND_TOPMOST, saved.0, saved.1, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                 DestroyMenu(menu);
                 match cmd {
                     1 => {
@@ -521,7 +573,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                         SetWindowPos(hwnd, HWND_TOPMOST, sw - p.phys_w - (24.0 * p.scale) as i32, sh - p.phys_h - (48.0 * p.scale) as i32, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                         save_position(p);
                     }
-                    3 => {
+                    3 => apply_size(p, 100),
+                    4 => apply_size(p, 150),
+                    5 => apply_size(p, 200),
+                    6 => {
                         save_position(p);
                         PostQuitMessage(0);
                     }
@@ -544,8 +599,9 @@ fn main() {
         let hdc = GetDC(null_mut());
         let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         let scale = dpi as f32 / 96.0;
-        let phys_w = (ROLE as f32 * scale).round() as i32;
-        let phys_h = (WIN_LOGIC_H as f32 * scale).round() as i32;
+        let logic_size = load_config_size();
+        let phys_w = (logic_size as f32 * scale).round() as i32;
+        let phys_h = ((logic_size + BUBBLE_H) as f32 * scale).round() as i32;
         let role_phys = phys_w;
         let bubble_phys_h = phys_h - role_phys;
         println!("[pet] dpi aware v2 = {aware}, dpi = {dpi}, scale = {scale:.2}");
@@ -623,6 +679,8 @@ fn main() {
             role_phys,
             bubble_phys_h,
             scale,
+            logic_size,
+            avatar_path: avatar_path.clone(),
             avatar,
             state: State::Idle,
             bubble: String::new(),
