@@ -1,11 +1,16 @@
-// 铃·桌宠 原生实现 v0.2（Win32 分层窗口，不经过 WebView2）
+// 铃·桌宠 原生实现 v0.3（Win32 分层窗口，不经过 WebView2）
 //
 // 已验证：150% 缩放下窗口定位、DPI 换算、透明、鼠标交互全部正确。
-// 本版本加入：真实头像 PNG、待机浮动、单击说话气泡、长按摸头、拖动、
-//            松手掉落（带弹跳）、右键菜单（穿透/重置位置/退出）、位置记忆。
+// v0.2：真实头像 PNG、待机浮动、单击说话气泡、长按摸头、拖动、
+//      松手掉落（带弹跳）、右键菜单（穿透/重置位置/退出）、位置记忆。
+// v0.3：接上 Live2D —— 每帧问 PetL2D.dll 要一帧 RGBA，裁剪缩放后贴进角色区，
+//      替掉 PNG 头像；窗口/拖动/掉落/弹跳/气泡/菜单全部不变。
+//      DLL 缺失或出帧失败时自动退回 PNG 头像，不会白屏。
 //
-// 素材：assets/avatar.png（从项目 src/assets/ball_avatar.png 复制）
+// 素材：assets/avatar.png（PNG 兜底）、live2d/（PetL2D.dll + 着色器缓存 + Haru 模型）
 // 运行：cargo run（控制台会打印诊断；右键菜单退出）
+
+mod live2d;
 
 use std::mem::size_of;
 use std::ptr::null_mut;
@@ -23,7 +28,6 @@ use winapi::um::winuser::*;
 const ROLE: i32 = 150;
 /// 顶部气泡区逻辑高度（物理 67.5 → 67）
 const BUBBLE_H: i32 = 45;
-const WIN_LOGIC_H: i32 = ROLE + BUBBLE_H;
 
 const FALL_GRAVITY: f32 = 2.5;
 const SLEEP_AFTER_SECS: u64 = 300;
@@ -50,6 +54,10 @@ struct Pet {
     logic_size: i32,
     avatar_path: std::path::PathBuf,
     avatar: Vec<u8>, // 预乘 BGRA，尺寸 role_phys x role_phys
+    /// Live2D 渲染器；None = 用 PNG 头像
+    l2d: Option<live2d::Live2D>,
+    /// 配置里是否要求用 Live2D（false 时即使 DLL 在也用 PNG）
+    l2d_wanted: bool,
     state: State,
     bubble: String,
     bubble_until: Option<Instant>,
@@ -262,27 +270,42 @@ unsafe fn draw_frame(p: &mut Pet) {
 
     // 角色区在窗口底部
     let role_top = p.bubble_phys_h;
-    let avatar = &p.avatar;
-    let mut tmp = vec![0u8; (w * h * 4) as usize];
-    // 角色绘制在 (0, role_top + float_off)，宽度 = role_phys
-    for y in 0..p.role_phys {
-        let dy = role_top + y + float_off;
-        if dy < 0 || dy >= h {
-            continue;
-        }
-        for x in 0..p.role_phys.min(w) {
-            let si = ((y * p.role_phys + x) * 4) as usize;
-            let di = ((dy * w + x) * 4) as usize;
-            if si + 3 >= avatar.len() || di + 3 >= tmp.len() {
-                continue;
-            }
-            tmp[di] = avatar[si];
-            tmp[di + 1] = avatar[si + 1];
-            tmp[di + 2] = avatar[si + 2];
-            tmp[di + 3] = avatar[si + 3];
+    // 优先 Live2D：让 DLL 画一帧，裁剪缩放后直接写进 DIB（预乘 BGRA）
+    let mut drew = false;
+    if let Some(l2d) = p.l2d.as_mut() {
+        if l2d.render() {
+            l2d.composite(p.bits, w, h, 0, role_top + float_off);
+            drew = true;
         }
     }
-    std::ptr::copy_nonoverlapping(tmp.as_ptr(), p.bits, tmp.len());
+    if p.l2d.as_ref().map_or(false, |l| l.broken()) {
+        println!("[pet] Live2D 连续出帧失败，改回 PNG 头像");
+        p.l2d = None;
+    }
+    // PNG 头像兜底（DLL 缺失 / 刚失败时走这条路）
+    if !drew {
+        let avatar = &p.avatar;
+        let mut tmp = vec![0u8; (w * h * 4) as usize];
+        // 角色绘制在 (0, role_top + float_off)，宽度 = role_phys
+        for y in 0..p.role_phys {
+            let dy = role_top + y + float_off;
+            if dy < 0 || dy >= h {
+                continue;
+            }
+            for x in 0..p.role_phys.min(w) {
+                let si = ((y * p.role_phys + x) * 4) as usize;
+                let di = ((dy * w + x) * 4) as usize;
+                if si + 3 >= avatar.len() || di + 3 >= tmp.len() {
+                    continue;
+                }
+                tmp[di] = avatar[si];
+                tmp[di + 1] = avatar[si + 1];
+                tmp[di + 2] = avatar[si + 2];
+                tmp[di + 3] = avatar[si + 3];
+            }
+        }
+        std::ptr::copy_nonoverlapping(tmp.as_ptr(), p.bits, tmp.len());
+    }
 
     // 气泡
     if !p.bubble.is_empty() {
@@ -382,9 +405,16 @@ fn config_path() -> Option<std::path::PathBuf> {
     std::env::current_exe().ok().map(|e| e.with_file_name("pet-config.txt"))
 }
 
+/// 读配置文本并去掉 UTF-8 BOM（用记事本/PowerShell 存的文件常带 BOM，
+/// 带 BOM 时第一行 "size=..." 会匹配不上，之前就是这么静默失效的）
+fn config_text() -> Option<String> {
+    let path = config_path()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    Some(text.trim_start_matches('\u{feff}').to_string())
+}
+
 fn load_config_size() -> i32 {
-    let Some(path) = config_path() else { return ROLE };
-    let Ok(text) = std::fs::read_to_string(path) else { return ROLE };
+    let Some(text) = config_text() else { return ROLE };
     for line in text.lines() {
         if let Some(v) = line.trim().strip_prefix("size=") {
             if let Ok(n) = v.trim().parse::<i32>() {
@@ -396,8 +426,7 @@ fn load_config_size() -> i32 {
 }
 
 fn load_config_bounce() -> bool {
-    let Some(path) = config_path() else { return true };
-    let Ok(text) = std::fs::read_to_string(path) else { return true };
+    let Some(text) = config_text() else { return true };
     for line in text.lines() {
         if let Some(v) = line.trim().strip_prefix("bounce=") {
             return v.trim() != "0";
@@ -406,10 +435,45 @@ fn load_config_bounce() -> bool {
     true
 }
 
-fn save_config(size: i32, bounce: bool) {
+/// Live2D 开关：pet-config.txt 里 `live2d=0` 时强制用 PNG 头像（默认开）
+fn load_config_live2d() -> bool {
+    let Some(text) = config_text() else { return true };
+    for line in text.lines() {
+        if let Some(v) = line.trim().strip_prefix("live2d=") {
+            return v.trim() != "0";
+        }
+    }
+    true
+}
+
+/// 是否留着控制台黑框：只有 pet-config.txt 写了 `console=1` 才留（默认藏起来，桌宠不该带个黑窗口）
+fn keep_console() -> bool {
+    let Some(text) = config_text() else { return false };
+    for line in text.lines() {
+        if let Some(v) = line.trim().strip_prefix("console=") {
+            return v.trim() == "1";
+        }
+    }
+    false
+}
+
+fn save_config(p: &Pet) {
+    let console = keep_console();
     if let Some(path) = config_path() {
-        let _ = std::fs::write(path, format!("size={size}\nbounce={}\n", if bounce { 1 } else { 0 }));
-        println!("[pet] 配置已保存: size={size} bounce={bounce}");
+        let _ = std::fs::write(
+            path,
+            format!(
+                "size={}\nbounce={}\nlive2d={}\nconsole={}\n",
+                p.logic_size,
+                if p.bounce_enabled { 1 } else { 0 },
+                if p.l2d_wanted { 1 } else { 0 },
+                if console { 1 } else { 0 }
+            ),
+        );
+        println!(
+            "[pet] 配置已保存: size={} bounce={} live2d={} console={}",
+            p.logic_size, p.bounce_enabled, p.l2d_wanted, console
+        );
     }
 }
 
@@ -437,11 +501,18 @@ unsafe fn apply_size(p: &mut Pet, logic: i32) {
     p.role_phys = new_role;
     p.bubble_phys_h = new_phys_h - new_role;
     create_backbuffer(p);
+    if let Some(l2d) = p.l2d.as_mut() {
+        l2d.set_dest(new_role);
+    }
 
     let new_top = bottom - new_phys_h;
-    SetWindowPos(p.hwnd, HWND_TOPMOST, left, new_top, new_role, new_phys_h, SWP_NOACTIVATE);
+    // 换大尺寸后别跑到屏幕外（keep 住底边，右边/上边超了就拉回来）
+    let (sw, sh) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+    let new_left = if left + new_role > sw { (sw - new_role).max(0) } else { left };
+    let new_top = new_top.max(0).min((sh - new_phys_h).max(0));
+    SetWindowPos(p.hwnd, HWND_TOPMOST, new_left, new_top, new_role, new_phys_h, SWP_NOACTIVATE);
     draw_frame(p);
-    save_config(logic, p.bounce_enabled);
+    save_config(p);
     println!("[pet] 尺寸切换为逻辑 {logic}（物理 {new_role}x{new_phys_h}）");
 }
 
@@ -635,7 +706,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                     5 => apply_size(p, 200),
                     7 => {
                         p.bounce_enabled = !p.bounce_enabled;
-                        save_config(p.logic_size, p.bounce_enabled);
+                        save_config(p);
                         println!("[pet] 弹跳 = {}", p.bounce_enabled);
                     }
                     6 => {
@@ -645,6 +716,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                     _ => {}
                 }
             }
+            0
+        }
+        WM_CLOSE => {
+            // Alt+F4 / 任务栏关闭：窗口销毁前先把位置存下来
+            if let Some(p) = &PET {
+                save_position(p);
+            }
+            DestroyWindow(hwnd);
             0
         }
         WM_DESTROY => {
@@ -657,6 +736,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
 
 fn main() {
     unsafe {
+        // 桌宠是双击启动的，别把黑色控制台窗口摆在桌面上（要排查就 console=1）
+        if !keep_console() {
+            let cw = winapi::um::wincon::GetConsoleWindow();
+            if !cw.is_null() {
+                ShowWindow(cw, SW_HIDE);
+            }
+        }
         let aware = enable_dpi_awareness();
         let hdc = GetDC(null_mut());
         let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
@@ -668,7 +754,7 @@ fn main() {
         let role_phys = phys_w;
         let bubble_phys_h = phys_h - role_phys;
         println!("[pet] dpi aware v2 = {aware}, dpi = {dpi}, scale = {scale:.2}");
-        println!("[pet] 窗口物理 {phys_w}x{phys_h}（逻辑 {ROLE}x{WIN_LOGIC_H}）");
+        println!("[pet] 窗口物理 {phys_w}x{phys_h}（逻辑 {logic_size}x{}）", logic_size + BUBBLE_H);
 
         let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
         let avatar_path = exe_dir
@@ -680,6 +766,15 @@ fn main() {
         let avatar = load_avatar(avatar_path.to_str().unwrap_or("assets/avatar.png"), role_phys);
         let opaque = avatar.chunks(4).filter(|c| c[3] > 0).count();
         println!("[pet] 头像: {} ({} 字节, 非透明像素 {})", avatar_path.display(), avatar.len(), opaque);
+
+        // Live2D：DLL 缺失/加载失败就静默退回 PNG
+        let l2d_wanted = load_config_live2d();
+        let l2d = if l2d_wanted {
+            live2d::Live2D::init(exe_dir.as_deref().unwrap_or(std::path::Path::new(".")), role_phys)
+        } else {
+            println!("[pet] 配置里关了 Live2D（live2d=0），用 PNG 头像");
+            None
+        };
 
         let mut x = (100.0 * scale) as i32;
         let mut y = (100.0 * scale) as i32;
@@ -745,6 +840,8 @@ fn main() {
             logic_size,
             avatar_path: avatar_path.clone(),
             avatar,
+            l2d,
+            l2d_wanted,
             state: State::Idle,
             bubble: String::new(),
             bubble_until: None,
@@ -768,7 +865,8 @@ fn main() {
             draw_frame(p);
         }
         SetTimer(hwnd, 1, 33, None);
-        println!("[pet] 就绪：单击说话，长按摸头，拖动后松手会掉到屏幕底，右键菜单");
+        let mode = if PET.as_ref().and_then(|p| p.l2d.as_ref()).is_some() { "Live2D" } else { "PNG 头像" };
+        println!("[pet] 就绪（{mode}）：单击说话，长按摸头，拖动后松手会掉到屏幕底，右键菜单");
 
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
@@ -776,7 +874,13 @@ fn main() {
             DispatchMessageW(&msg);
         }
         if let Some(p) = &PET {
-            save_position(p);
+            // 窗口还活着才存位置（WM_CLOSE 那条路已经在销毁前存过了）
+            if IsWindow(p.hwnd) != 0 {
+                save_position(p);
+            }
+            if let Some(l2d) = p.l2d.as_ref() {
+                l2d.shutdown();
+            }
         }
         println!("[pet] 退出");
     }
