@@ -280,7 +280,9 @@ void CubismDirectXRenderer::StartFrame() const
     }
 
     // バックバッファのクリア
-    float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    // 桌宠用：清成全透明（alpha=0），模型以预乘 alpha 画上去，
+    // 抓帧得到的 RGBA 直接就是「透明背景 + 角色」，可以交给分层窗口贴图。
+    float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     _deviceContext->OMSetRenderTargets(1, &_renderTargetView, _depthStencilView);
     _deviceContext->ClearRenderTargetView(_renderTargetView, clearColor);
     _deviceContext->ClearDepthStencilView(_depthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
