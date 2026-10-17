@@ -25,7 +25,7 @@ const ROLE: i32 = 150;
 const BUBBLE_H: i32 = 45;
 const WIN_LOGIC_H: i32 = ROLE + BUBBLE_H;
 
-const FALL_GRAVITY: f32 = 34.0;
+const FALL_GRAVITY: f32 = 2.5;
 const SLEEP_AFTER_SECS: u64 = 300;
 const LONG_PRESS_MS: u32 = 700;
 
@@ -60,6 +60,7 @@ struct Pet {
     win_start: (i32, i32),
     falling: bool,
     fall_v: f32,
+    bounce_count: u8,
     last_active: Instant,
     click_through: bool,
     zzz_phase: f32,
@@ -413,6 +414,7 @@ unsafe fn start_fall() {
         if screen_h - wr.bottom > 30 {
             p.falling = true;
             p.fall_v = 0.0;
+            p.bounce_count = 0;
         }
     }
 }
@@ -487,19 +489,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
             }
             if wparam == 1 {
                 if let Some(p) = &mut PET {
-                    // 拖动/掉落中不重绘：位置在动，重绘整窗会拖慢动画（掉帧）
-                    if p.dragging || p.falling {
+                    // 拖动中：位置由鼠标驱动，不重绘（重绘会与移动打架，表现为颤动）
+                    if p.dragging {
                         return 0;
                     }
-                    // 气泡超时
-                    if let Some(until) = p.bubble_until {
-                        if Instant::now() >= until {
-                            p.bubble.clear();
-                            p.bubble_until = None;
-                            p.state = State::Idle;
-                        }
-                    }
-                    // 掉落
+                    // 掉落中：只动位置、不重绘（重绘整窗是掉帧主因），弹跳到停稳为止
                     if p.falling {
                         let mut wr: RECT = std::mem::zeroed();
                         GetWindowRect(hwnd, &mut wr);
@@ -510,15 +504,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                         let floor = (screen_h - p.phys_h) as f32;
                         if y >= floor {
                             y = floor;
-                            if p.fall_v > 6.0 {
-                                p.fall_v = -p.fall_v * 0.42;
+                            // 最多弹两下：第一下大、第二下小，然后停稳
+                            if p.bounce_count < 2 && p.fall_v > 8.0 {
+                                p.bounce_count += 1;
+                                p.fall_v = -p.fall_v * 0.38;
+                                println!("[pet] 触地反弹 #{} v={:.1}", p.bounce_count, p.fall_v);
                             } else {
                                 p.falling = false;
                                 p.fall_v = 0.0;
                                 save_position(p);
+                                println!("[pet] 落地停稳");
                             }
                         }
                         SetWindowPos(hwnd, HWND_TOPMOST, wr.left, y as i32, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+                        return 0;
+                    }
+                    // 气泡超时
+                    if let Some(until) = p.bubble_until {
+                        if Instant::now() >= until {
+                            p.bubble.clear();
+                            p.bubble_until = None;
+                            p.state = State::Idle;
+                        }
                     }
                     // 长时间无操作 → 睡
                     if p.state == State::Idle && Instant::now().duration_since(p.last_active).as_secs() > SLEEP_AFTER_SECS {
@@ -692,6 +699,7 @@ fn main() {
             win_start: (0, 0),
             falling: false,
             fall_v: 0.0,
+            bounce_count: 0,
             last_active: Instant::now(),
             click_through: false,
             zzz_phase: 0.0,
