@@ -14,6 +14,7 @@ use std::time::Instant;
 use image::imageops::FilterType;
 use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HBITMAP, HDC, HWND, POINT, RECT, SIZE};
+use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::libloaderapi::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use winapi::um::wingdi::*;
 use winapi::um::winuser::*;
@@ -135,7 +136,43 @@ unsafe fn blit(p: &Pet) {
     GetWindowRect(p.hwnd, &mut wr);
     pos.x = wr.left;
     pos.y = wr.top;
-    UpdateLayeredWindow(p.hwnd, p.hdc_screen, &mut pos, &mut size, p.mem_dc, &mut src, 0, &mut blend, ULW_ALPHA);
+
+    // 与已验证的探针程序相同的贴图方式：每帧新建 DIB 再 UpdateLayeredWindow。
+    // （常驻 DIB 的那版实测屏幕上看不到，虽然内存里数据是好的。）
+    let mut bi: BITMAPINFO = std::mem::zeroed();
+    bi.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
+    bi.bmiHeader.biWidth = p.phys_w;
+    bi.bmiHeader.biHeight = -p.phys_h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    let mut bits: *mut winapi::ctypes::c_void = null_mut();
+    let bmp = CreateDIBSection(p.mem_dc, &bi, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+    if bmp.is_null() {
+        println!("[pet] CreateDIBSection 失败");
+        return;
+    }
+    let len = (p.phys_w * p.phys_h * 4) as usize;
+    std::ptr::copy_nonoverlapping(p.bits, bits as *mut u8, len);
+    let old = SelectObject(p.mem_dc, bmp as *mut _);
+
+    let ok = UpdateLayeredWindow(
+        p.hwnd,
+        p.hdc_screen,
+        &mut pos,
+        &mut size,
+        p.mem_dc,
+        &mut src,
+        0,
+        &mut blend,
+        ULW_ALPHA,
+    );
+    if ok == 0 {
+        println!("[pet] UpdateLayeredWindow FAILED err={}", GetLastError());
+    }
+
+    SelectObject(p.mem_dc, old);
+    DeleteObject(bmp as *mut _);
 }
 
 unsafe fn clear(buf: *mut u8, len: usize) {
@@ -263,6 +300,23 @@ unsafe fn draw_frame(p: &mut Pet) {
     }
 
     blit(p);
+
+    // 首帧诊断：确认位图里真的有东西、窗口是可见的
+    static mut FRAME_LOGGED: bool = false;
+    if !FRAME_LOGGED {
+        FRAME_LOGGED = true;
+        let mut nonzero = 0usize;
+        for i in (0..(w * h * 4) as usize).step_by(4) {
+            if *p.bits.add(i + 3) > 0 {
+                nonzero += 1;
+            }
+        }
+        println!(
+            "[pet] 首帧位图非透明像素={nonzero} 窗口visible={} hwnd={:?}",
+            IsWindowVisible(p.hwnd),
+            p.hwnd
+        );
+    }
 }
 
 unsafe fn say(text: &str, secs: f32) {
@@ -483,7 +537,8 @@ fn main() {
             .or_else(|| Some(std::path::PathBuf::from("assets/avatar.png")))
             .unwrap();
         let avatar = load_avatar(avatar_path.to_str().unwrap_or("assets/avatar.png"), role_phys);
-        println!("[pet] 头像: {} ({} 字节)", avatar_path.display(), avatar.len());
+        let opaque = avatar.chunks(4).filter(|c| c[3] > 0).count();
+        println!("[pet] 头像: {} ({} 字节, 非透明像素 {})", avatar_path.display(), avatar.len(), opaque);
 
         let mut x = (100.0 * scale) as i32;
         let mut y = (100.0 * scale) as i32;

@@ -29,3 +29,6 @@ scripts_tmp/
 
 # 模型文件（体积大，不入 git 仓库；完整版经安装包分发，见 README 嵌入模型声明）
 src-tauri/resources/models/
+
+# Live2D Cubism Editor 安装目录（用户本地素材，411 MB，绝不入库）
+Live2D Cubism 5.3/
