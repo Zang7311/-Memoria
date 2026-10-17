@@ -278,7 +278,9 @@ unsafe fn draw_sleep_z(p: &mut Pet, w: i32) {
     for i in 0..3 {
         let t = (p.zzz_phase + i as f32 * 0.8).sin() * 0.5 + 0.5; // 0..1 上下飘
         let x = (w as f32) * 0.14 + (i as f32 * 10.0 + t * 3.0) * scale;
-        let y = (p.bubble_phys_h as f32) * 0.16 + (i as f32 * 11.0 + t * 8.0) * scale;
+        // 竖直方向要保证三个 z 都留在气泡区里（字号 px，第三个不能压到角色头发上）
+        let y = (p.bubble_phys_h as f32) * 0.06
+            + (i as f32 * 9.0 + t * 5.0) * scale;
         let mut rect = RECT {
             left: x as i32,
             top: y as i32,
@@ -289,9 +291,9 @@ unsafe fn draw_sleep_z(p: &mut Pet, w: i32) {
     }
     SelectObject(p.mem_dc, old);
     DeleteObject(font as *mut _);
-    // GDI 写字会把 alpha 写成 0：气泡区里「有颜色但还是透明」的像素补成不透明
-    //（气泡本体已经是不透明的，会被下面的判断跳过；圆角外的纯黑不会误伤）
-    let y1 = p.bubble_phys_h.min(p.phys_h);
+    // GDI 写字会把 alpha 写成 0：气泡区（含一点点溢出）里「有颜色但还是透明」的像素补成不透明
+    //（气泡本体已经是不透明的，会被下面的判断跳过；角色像素 alpha 非 0，也不会被误伤）
+    let y1 = (p.bubble_phys_h + px * 2).min(p.phys_h);
     for y in 0..y1 {
         for x in 0..p.phys_w {
             let i = ((y * p.phys_w + x) * 4) as usize;
@@ -701,10 +703,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                         if Instant::now() >= until {
                             p.bubble.clear();
                             p.bubble_until = None;
-                            p.state = State::Idle;
+                            // 气泡消失了要回到「该有的状态」：还是长时间没交互就继续睡。
+                            // v0.2 这里一律设成 Idle，结果睡着之后每 2.5 秒又被判定
+                            // 「长时间无操作」→ 反复说「有点困了…」+ 反复画瞌睡框。
+                            p.state = if Instant::now().duration_since(p.last_active).as_secs() > SLEEP_AFTER_SECS {
+                                State::Sleep
+                            } else {
+                                State::Idle
+                            };
                         }
                     }
-                    // 长时间无操作 → 睡
+                    // 长时间无操作 → 睡（只有从 Idle 进来才说一次话，睡着之后不再重复）
                     if p.state == State::Idle && Instant::now().duration_since(p.last_active).as_secs() > SLEEP_AFTER_SECS {
                         p.state = State::Sleep;
                         say("有点困了…", 2.5);
