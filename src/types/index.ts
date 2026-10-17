@@ -23,6 +23,22 @@ export interface SubAgentEvent {
   summary: string
 }
 
+/** 计划卡里的一步（后端规划器拆出的子任务） */
+export interface PlanStep {
+  step: number
+  goal: string
+  tool_hint?: string | null
+}
+
+/** 后端推送的「计划待确认」请求（4️⃣ 先规划后执行） */
+export interface AgentPlanRequest {
+  request_id: string
+  plan_id: string
+  steps: PlanStep[]
+  /** 等待用户回应的秒数，超时后后端按原计划继续 */
+  wait_seconds: number
+}
+
 export interface Attachment extends AttachmentMeta {
   mime: string
   data: string
@@ -284,6 +300,8 @@ export interface AppConfig {
   ai_router?: boolean
   /** Agent 任务完成后自检（只对「调用过工具」的任务生效，纯聊天零开销） */
   self_check_enabled: boolean
+  /** 多步任务先给你看计划、可改再执行（只对 2 步以上的任务生效） */
+  agent_plan_confirm?: boolean
   api_base_url?: string | null
   cheap_api_base_url?: string | null
   has_cheap_api_key?: boolean

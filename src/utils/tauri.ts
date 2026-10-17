@@ -3,7 +3,7 @@
 // 后端命令与事件由 AI-3 实现；此处仅做前端封装，不写 Rust。
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { Attachment, ForgedTool, SubAgentEvent } from '../types'
+import type { AgentPlanRequest, Attachment, ForgedTool, SubAgentEvent } from '../types'
 
 export function onSubAgentStarted(callback: (event: SubAgentEvent) => void): Promise<UnlistenFn> {
   return listen<SubAgentEvent>('sub_agent_started', (event) => callback(event.payload))
@@ -55,6 +55,22 @@ export function onChatUsage(callback: (usage: ChatUsage) => void): Promise<Unlis
  */
 export function onChatRoute(callback: (info: ChatRouteInfo) => void): Promise<UnlistenFn> {
   return listen<ChatRouteInfo>('chat_route', (event) => callback(event.payload))
+}
+
+/**
+ * 监听「计划待确认」事件（4️⃣ 先规划后执行）。
+ * 多步任务规划完成后由后端推送，前端弹出可编辑的计划卡。
+ */
+export function onAgentPlanRequest(callback: (plan: AgentPlanRequest) => void): Promise<UnlistenFn> {
+  return listen<AgentPlanRequest>('agent-plan-request', (event) => callback(event.payload))
+}
+
+/**
+ * 计划卡回应：approve=true 按（可编辑后的）步骤执行；false 取消整次任务。
+ * 返回是否真的有一个在等确认的任务（超时后为 false）。
+ */
+export function agentPlanRespond(planId: string, approve: boolean, steps?: string[]): Promise<boolean> {
+  return invoke<boolean>('agent_plan_respond', { planId, approve, steps: steps ?? null })
 }
 
 // 兼容旧环境的 greet（保留，供测试通道使用）

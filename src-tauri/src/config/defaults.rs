@@ -23,6 +23,8 @@ pub fn default_config() -> AppConfig {
         ai_router: false,
         // 任务完成自检：默认开启，但只对「调用过工具」的任务生效
         self_check_enabled: true,
+        // 多步任务先给你看计划再执行：默认开启（只对 2 步以上的任务生效）
+        agent_plan_confirm: true,
         api_base_url: None,
         api_key_encrypted: None,
         api_key_plain: None,

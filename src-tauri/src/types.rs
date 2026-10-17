@@ -591,6 +591,10 @@ pub struct AppConfig {
     /// 开启后由独立一次模型调用核对任务是否真的完成，未完成则再补一轮，减少「假装完成」。
     #[serde(default = "default_true")]
     pub self_check_enabled: bool,
+    /// 多步任务先给你看计划、可改再执行（默认开启）。
+    /// 只对规划出 2 步以上的任务生效；等待 120 秒未回应则按原计划继续。
+    #[serde(default = "default_true")]
+    pub agent_plan_confirm: bool,
     /// "script" | "api" | "local"
     pub model_mode: String,
     /// 思考深度 1|2|3|4

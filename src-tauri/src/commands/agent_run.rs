@@ -64,3 +64,22 @@ pub async fn agent_run(
 ) -> Result<AgentRunResponse, AppError> {
     run_agent_loop(&app, request).await
 }
+
+/// 计划卡回应（Tauri 命令）
+///
+/// approve = true：按步骤执行（`steps` 为空或缺失时用原计划）。
+/// approve = false：取消整次任务。
+/// 返回是否真的有一个在等确认的任务（超时后为 false）。
+#[tauri::command]
+pub fn agent_plan_respond(
+    plan_id: String,
+    approve: bool,
+    steps: Option<Vec<String>>,
+) -> Result<bool, AppError> {
+    let reply = if approve {
+        crate::agent::plan_gate::PlanReply::Approve(steps.unwrap_or_default())
+    } else {
+        crate::agent::plan_gate::PlanReply::Cancel
+    };
+    Ok(crate::agent::plan_gate::settle(&plan_id, reply))
+}

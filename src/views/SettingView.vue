@@ -793,6 +793,15 @@ async function toggleAiToolbox() {
           <p class="hint" style="margin-left:48px">
             铃动手做完事后，额外让模型核对一遍「是不是真的做成了」；没做成会自动再补一轮。只对动手的任务生效，纯聊天不额外花钱。
           </p>
+          <!-- 先规划后执行：把拆好的步骤先摆出来，主人可改再跑 -->
+          <label class="switch-wrap" style="margin-top:8px">
+            <input type="checkbox" :checked="setting.agentPlanConfirm" class="switch"
+              @change="setting.agentPlanConfirm = !setting.agentPlanConfirm; setting.update({ agent_plan_confirm: setting.agentPlanConfirm })" />
+            <span class="label">执行前先给我看计划</span>
+          </label>
+          <p class="hint" style="margin-left:48px">
+            多步任务拆完后先弹一张计划卡：步骤可以改、可以删、可以加，确认后铃再动手；不操作 120 秒后自动按原计划开始。只对 2 步以上的任务生效。
+          </p>
           <label class="switch-wrap" style="margin-top:8px">
             <input type="checkbox" :checked="setting.agentAllowSoftware" class="switch"
               @change="setting.agentAllowSoftware = !setting.agentAllowSoftware; setting.update({ agent_allow_software: setting.agentAllowSoftware })" />

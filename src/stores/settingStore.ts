@@ -55,6 +55,8 @@ export const useSettingStore = defineStore('setting', () => {
   const aiRouter = ref(false)
   /** Agent 任务完成后自检（只对调用过工具的任务生效，默认开） */
   const selfCheckEnabled = ref(true)
+  /** 多步任务先给主人看计划、可改再执行（默认开） */
+  const agentPlanConfirm = ref(true)
   const apiBaseUrl = ref<string | null>(null)
   const cheapApiBaseUrl = ref<string | null>(null)
   const hasCheapApiKey = ref(false)
@@ -124,6 +126,7 @@ export const useSettingStore = defineStore('setting', () => {
     visionModel.value = c.vision_model ?? null
     aiRouter.value = c.ai_router ?? false
     selfCheckEnabled.value = c.self_check_enabled ?? true
+    agentPlanConfirm.value = c.agent_plan_confirm ?? true
     apiBaseUrl.value = c.api_base_url ?? null
     cheapApiBaseUrl.value = c.cheap_api_base_url ?? null
     hasCheapApiKey.value = !!c.has_cheap_api_key
@@ -299,7 +302,7 @@ export const useSettingStore = defineStore('setting', () => {
   return {
     proxyEnabled, proxyUrl,
     loaded, firstLaunch, models, saveSlotKey,
-    theme, contextLength, longTermMemoryLimit, cheapModel, visionModel, aiRouter, selfCheckEnabled, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
+    theme, contextLength, longTermMemoryLimit, cheapModel, visionModel, aiRouter, selfCheckEnabled, agentPlanConfirm, apiBaseUrl, cheapApiBaseUrl, hasCheapApiKey, hasApiKey, hasPlainKey, apiModel, modelMode, depth,
     accentColor, dangerColor, bgColor, bgImage, avatarSuzu, avatarUser, uiRadius,
     bubbleUserColor, bubbleSuzuColor, uiThemes,
     runAsAdmin,

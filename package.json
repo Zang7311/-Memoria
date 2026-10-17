@@ -11,6 +11,7 @@
     "test:route-review": "node --test scripts/route-review.test.mjs",
     "test:model-slots": "node --test scripts/model-slots.test.mjs",
     "test:attachments": "node --test scripts/attachments.test.mjs",
+    "test:plan-confirm": "node --test scripts/plan-confirm.test.mjs",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",

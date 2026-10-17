@@ -17,6 +17,7 @@ pub mod forged_tools;
 pub mod goals;
 pub mod loop_;
 pub mod open;
+pub mod plan_gate;
 pub mod planner;
 pub mod recovery;
 pub mod router;

@@ -3,7 +3,7 @@
 // 每个会话有独立的 messages 列表，切换/结束时自动保存到后端。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ChatRouteInfo, ChatUsage, Message, SessionMeta, SubAgentEvent } from '../types'
+import type { AgentPlanRequest, ChatRouteInfo, ChatUsage, Message, SessionMeta, SubAgentEvent } from '../types'
 import {
   createSession as createSessionCmd,
   deleteSession as deleteSessionCmd,
@@ -27,6 +27,16 @@ export const useChatStore = defineStore('chat', () => {
   // 当前活跃会话的消息流
   const messages = ref<Message[]>([])
   const subAgentResults = ref<Record<string, SubAgentEvent[]>>({})
+  // 待用户确认的计划（4️⃣ 先规划后执行；null = 当前没有待确认计划）
+  const pendingPlan = ref<AgentPlanRequest | null>(null)
+
+  function setPlan(plan: AgentPlanRequest) {
+    pendingPlan.value = plan
+  }
+
+  function clearPlan() {
+    pendingPlan.value = null
+  }
 
   function updateSubAgent(messageId: string, event: SubAgentEvent) {
     subAgentResults.value[messageId] = mergeSubAgentEvent(subAgentResults.value[messageId] ?? [], event)
@@ -48,6 +58,8 @@ export const useChatStore = defineStore('chat', () => {
   function clearRoute() {
     lastRoute.value = null
     routeRequestId = null
+    // 换了请求/会话后，旧的任务计划不该还挂在界面上
+    pendingPlan.value = null
   }
   // saveCurrentSession 并发锁（防止并发写入同一会话）
   let _saveLock: Promise<void> | null = null
@@ -204,6 +216,9 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId,
     messages,
     subAgentResults,
+    pendingPlan,
+    setPlan,
+    clearPlan,
     updateSubAgent,
     isLoading,
     inputText,

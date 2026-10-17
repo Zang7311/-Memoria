@@ -19,11 +19,12 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::agent::cancel;
 use crate::agent::evaluator;
 use crate::agent::experience;
+use crate::agent::plan_gate::{self, PlanReply};
 use crate::agent::planner;
 use crate::agent::recovery;
 use crate::agent::router::{dispatch_tool_call, ToolResult};
@@ -388,6 +389,70 @@ pub(super) struct TaskRuntime {
     pub dispatch: ToolDispatcher,
 }
 
+/// 把规划结果推给前端计划卡，并等待用户确认/修改。
+///
+/// 三种结局：
+///   - 用户确认（可能改过步骤）→ `Approve(goals)`
+///   - 用户取消 / 点了停止   → `Cancel`（`agent_cancel` 会把等待中的计划一并叫醒）
+///   - 120 秒没回应          → 按原计划继续，绝不把任务卡死
+async fn confirm_plan(
+    app: &AppHandle,
+    request_id: &str,
+    steps: &[planner::SubTask],
+    emitter: &StreamEmitter,
+) -> PlanReply {
+    let original: Vec<String> = steps.iter().map(|s| s.goal.clone()).collect();
+    let plan_steps: Vec<plan_gate::PlanStep> = steps
+        .iter()
+        .map(|s| plan_gate::PlanStep {
+            step: s.step,
+            goal: s.goal.clone(),
+            tool_hint: s.tool_hint.clone(),
+        })
+        .collect();
+    let payload = json!({
+        "request_id": request_id,
+        "plan_id": request_id,
+        "steps": plan_steps,
+        "wait_seconds": plan_gate::WAIT_SECS,
+    });
+    if let Err(error) = app.emit("agent-plan-request", payload) {
+        log::warn!("[agent] 计划确认事件推送失败，按原计划继续：{error}");
+        return PlanReply::Approve(original);
+    }
+    emitter.push_progress("计划拆好了，等你确认或改一下～");
+    let rx = plan_gate::register(request_id);
+    let reply = tokio::select! {
+        got = rx => got.ok(),
+        _ = tokio::time::sleep(Duration::from_secs(plan_gate::WAIT_SECS)) => None,
+    };
+    match reply {
+        Some(PlanReply::Approve(goals)) => PlanReply::Approve(goals),
+        Some(PlanReply::Cancel) => PlanReply::Cancel,
+        None => {
+            plan_gate::discard(request_id);
+            emitter.push_progress("没等到确认，先按原计划继续");
+            PlanReply::Approve(original)
+        }
+    }
+}
+
+/// 用户在计划卡上点了「取消」：整次任务作废，给出明确收尾语
+fn plan_cancelled_response(emitter: &StreamEmitter, notices: &[String]) -> AgentRunResponse {
+    let mut message = "好，计划已经取消了，这次就不动手了。想再来一次的话，把任务重新发给我就好～".to_string();
+    for notice in notices {
+        message.push_str(&format!("\n{notice}"));
+    }
+    emitter.push_final_reply(&message);
+    AgentRunResponse {
+        success: true,
+        final_reply: Some(message),
+        steps: 0,
+        error: None,
+        interrupted: true,
+    }
+}
+
 pub(super) async fn run_one_task(
     app: Option<&AppHandle>,
     request: AgentRunRequest,
@@ -465,14 +530,45 @@ pub(super) async fn run_one_task(
             t_plan.elapsed().as_millis()
         );
         if subtasks.len() > 1 {
+            // 4️⃣ 先规划后执行：把计划先交给用户过目/修改，确认后再跑（设置里可关）
+            let original: Vec<String> = subtasks.iter().map(|s| s.goal.clone()).collect();
+            let goals = if !is_sub_agent && cfg.agent_plan_confirm {
+                match app {
+                    Some(app) => {
+                        // 用户可能在这之前就点了停止
+                        if cancel::is_cancelled(_request_id) {
+                            return Ok(interrupted_response(&emitter, 0, &goal_notices));
+                        }
+                        match confirm_plan(app, _request_id, &subtasks, &emitter).await {
+                            PlanReply::Cancel => {
+                                return Ok(plan_cancelled_response(&emitter, &goal_notices));
+                            }
+                            PlanReply::Approve(goals) if !goals.is_empty() => goals,
+                            PlanReply::Approve(_) => original.clone(),
+                        }
+                    }
+                    None => original.clone(),
+                }
+            } else {
+                original.clone()
+            };
             // 把子任务列表拼成文字，作为额外 user 上下文注入，帮助 LLM 按步骤执行
-            let plan_text = subtasks
+            let edited = goals.len() != subtasks.len()
+                || goals.iter().zip(subtasks.iter()).any(|(goal, task)| goal != &task.goal);
+            let plan_text = goals
                 .iter()
-                .map(|s| {
-                    if let Some(hint) = &s.tool_hint {
-                        format!("{}. {}（建议工具：{}）", s.step, s.goal, hint)
+                .enumerate()
+                .map(|(i, goal)| {
+                    // 用户没改过步骤时，保留规划器给出的工具建议
+                    let hint = if edited {
+                        None
                     } else {
-                        format!("{}. {}", s.step, s.goal)
+                        subtasks.get(i).and_then(|s| s.tool_hint.as_ref())
+                    };
+                    if let Some(hint) = hint {
+                        format!("{}. {}（建议工具：{}）", i + 1, goal, hint)
+                    } else {
+                        format!("{}. {}", i + 1, goal)
                     }
                 })
                 .collect::<Vec<_>>()

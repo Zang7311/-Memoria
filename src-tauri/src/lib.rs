@@ -191,6 +191,7 @@ pub fn run() {
             greet,
             // —— AI-10 Agent 命令 ——
             commands::agent_run::agent_run,
+            commands::agent_run::agent_plan_respond,
             commands::agent_cancel::agent_cancel,
             commands::goals::list_goals,
             commands::goals::create_goal,

@@ -11,8 +11,8 @@ import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute, onSubAgentStarted, onSubAgentFinished } from '../utils/tauri'
-import type { Attachment, ChatRouteInfo, ChatUsage, QuickCommand, SubAgentEvent } from '../types'
+import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute, onSubAgentStarted, onSubAgentFinished, onAgentPlanRequest } from '../utils/tauri'
+import type { AgentPlanRequest, Attachment, ChatRouteInfo, ChatUsage, QuickCommand, SubAgentEvent } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
@@ -81,6 +81,8 @@ export function useStreamRender() {
   // 当前 Agent 任务的 request_id（用于取消）
   let activeRequestId: string | null = null
   let delegationActive = false
+  // 计划确认事件监听器
+  let planUnlisten: UnlistenFn | null = null
 
   // —— AI 工具箱意图检测：开启 ai_toolbox 且消息匹配工具意图时，直接执行工具箱工具 ——
   // AI 危险操作清单（不可逆/系统级，执行前需用户确认）
@@ -131,6 +133,8 @@ export function useStreamRender() {
   // —— 处理结束 ——
   function handleEnd() {
     if (delegationActive && activeRequestId) return
+    // 兼容旧 mock：计划卡状态是可选的，没有 store 方法时不能把收尾流程弄崩
+    chat.clearPlan?.()
     if (activeId) chat.finishStream(activeId)
     activeId = null
     activeRequestId = null
@@ -153,6 +157,13 @@ export function useStreamRender() {
 
   function handleRoute(r: ChatRouteInfo) {
     chat.setRoute(r)
+  }
+
+  // —— 4️⃣ 计划确认：后端把拆好的计划推上来，交给 PlanCard 展示/编辑 ——
+  // 只认当前这次 Agent 任务；后台/旧任务的计划不弹卡片，免得串台。
+  function handlePlan(plan: AgentPlanRequest) {
+    if (activeRequestId && plan.request_id !== activeRequestId) return
+    chat.setPlan(plan)
   }
 
   // 发送一条消息：追加用户消息 -> 创建空的铃回复 -> 触发后端/ mock 流式
@@ -360,10 +371,22 @@ export function useStreamRender() {
 
   onMounted(() => {
     ensureListenersReady().catch(() => {})
+    // 计划确认事件单独注册：它不是发送链路的一部分，注册失败也不该挡住聊天
+    if (onAgentPlanRequest) {
+      onAgentPlanRequest(handlePlan).then((unlisten) => {
+        if (disposed && activeId === null) {
+          unlisten()
+          return
+        }
+        planUnlisten = unlisten
+      }).catch(() => {})
+    }
   })
 
   onUnmounted(() => {
     disposed = true
+    planUnlisten?.()
+    planUnlisten = null
     // 若正在流式输出，保留监听器，避免 chat_end 无人处理导致 isLoading 卡死
     if (activeId !== null) return
     unlisteners.value.forEach((fn) => fn())

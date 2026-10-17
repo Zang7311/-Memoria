@@ -6,6 +6,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import StatusIndicator from '../components/StatusIndicator.vue'
 import ChatList from '../components/ChatList.vue'
 import ChatInput from '../components/ChatInput.vue'
+import PlanCard from '../components/PlanCard.vue'
 import MemoryPanel from '../components/MemoryPanel.vue'
 import PluginManager from '../components/PluginManager.vue'
 import ToolboxPanel from '../components/ToolboxPanel.vue'
@@ -190,6 +191,9 @@ async function onPersonaChange(e: Event) {
         <p v-if="goals.reminder" class="goal-system-message" role="status">{{ goals.reminder }}</p>
         <p v-if="goals.runningId && goals.automatic" class="goal-global-status" role="status">正在自动推进：{{ goals.runningTitle }}</p>
         <ChatList />
+
+        <!-- 4️⃣ 先规划后执行：多步任务的计划先给主人过目、可改再跑 -->
+        <PlanCard />
 
         <!-- 底部输入栏 -->
         <ChatInput />
