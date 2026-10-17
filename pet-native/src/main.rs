@@ -19,10 +19,10 @@ use winapi::um::libloaderapi::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use winapi::um::wingdi::*;
 use winapi::um::winuser::*;
 
-/// 角色区逻辑尺寸（150% 下物理 300）
-const ROLE: i32 = 200;
-/// 顶部气泡区逻辑高度（物理 90）
-const BUBBLE_H: i32 = 60;
+/// 角色区逻辑尺寸（150% 下物理 225）
+const ROLE: i32 = 150;
+/// 顶部气泡区逻辑高度（物理 67.5 → 67）
+const BUBBLE_H: i32 = 45;
 const WIN_LOGIC_H: i32 = ROLE + BUBBLE_H;
 
 const FALL_GRAVITY: f32 = 34.0;
@@ -85,19 +85,32 @@ unsafe fn enable_dpi_awareness() -> bool {
     SetProcessDPIAware() != 0
 }
 
-/// 载入头像：缩放 + 预乘 alpha（BGRA）
+/// 载入头像：缩放 + **圆形裁剪**（去掉方形图的黑边）+ 预乘 alpha（BGRA）
 fn load_avatar(path: &str, size: i32) -> Vec<u8> {
     match image::open(path) {
         Ok(img) => {
-            let rgba = img.resize_exact(size as u32, size as u32, FilterType::Lanczos3).to_rgba8();
-            let src = rgba.as_raw();
-            let mut out = vec![0u8; src.len()];
-            for i in (0..src.len()).step_by(4) {
-                let a = src[i + 3] as u32;
-                out[i] = (src[i + 2] as u32 * a / 255) as u8;
-                out[i + 1] = (src[i + 1] as u32 * a / 255) as u8;
-                out[i + 2] = (src[i] as u32 * a / 255) as u8;
-                out[i + 3] = src[i + 3];
+            let mut rgba = img.resize_exact(size as u32, size as u32, FilterType::Lanczos3).to_rgba8().into_raw();
+            // 圆形遮罩：圆外直接透明，圆边缘 1.5px 过渡；保留原图自身的 alpha
+            let c = size as f32 / 2.0;
+            let r = c - 1.0;
+            for y in 0..size {
+                for x in 0..size {
+                    let dx = x as f32 + 0.5 - c;
+                    let dy = y as f32 + 0.5 - c;
+                    let d = (dx * dx + dy * dy).sqrt();
+                    let mask = ((r - d) / 1.5).clamp(0.0, 1.0);
+                    let i = ((y * size + x) * 4) as usize;
+                    let orig = rgba[i + 3] as f32 / 255.0;
+                    rgba[i + 3] = (mask * orig * 255.0) as u8;
+                }
+            }
+            let mut out = vec![0u8; rgba.len()];
+            for i in (0..rgba.len()).step_by(4) {
+                let a = rgba[i + 3] as u32;
+                out[i] = (rgba[i + 2] as u32 * a / 255) as u8;
+                out[i + 1] = (rgba[i + 1] as u32 * a / 255) as u8;
+                out[i + 2] = (rgba[i] as u32 * a / 255) as u8;
+                out[i + 3] = rgba[i + 3];
             }
             out
         }
@@ -431,6 +444,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
             }
             if wparam == 1 {
                 if let Some(p) = &mut PET {
+                    // 拖动中不重绘：SetWindowPos 与 UpdateLayeredWindow 同时改窗口位置
+                    // 会互相打架，表现为拖动时明显颤动
+                    if p.dragging {
+                        return 0;
+                    }
                     // 气泡超时
                     if let Some(until) = p.bubble_until {
                         if Instant::now() >= until {
@@ -484,7 +502,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                 AppendMenuW(menu, MF_STRING, 3, wide("退出").as_ptr());
                 let mut pt = POINT { x: 0, y: 0 };
                 GetCursorPos(&mut pt);
+                // 菜单要显示在桌宠"上面"：临时取消置顶 + 设前台，弹完再恢复
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                SetForegroundWindow(hwnd);
                 let cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, null_mut());
+                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                 DestroyMenu(menu);
                 match cmd {
                     1 => {
