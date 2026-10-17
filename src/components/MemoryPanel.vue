@@ -9,8 +9,10 @@ import type { Memory } from '../types'
 const store = useMemoryStore()
 const milestone = useMilestoneStore()
 
-// 面板展开/收起
-const expanded = ref(true)
+// 面板展开/收起：由父组件（MainLayout 顶部「记忆」按钮）控制，与插件面板行为一致
+const props = withDefaults(defineProps<{ expanded?: boolean }>(), { expanded: false })
+const emit = defineEmits<{ toggle: [] }>()
+const expanded = computed(() => props.expanded)
 
 // 新建记忆集输入框
 const showCreateInput = ref(false)
@@ -148,7 +150,7 @@ onMounted(() => {
 <template>
   <aside class="memory-panel" :class="{ expanded }">
     <!-- 面板头部 -->
-    <div class="panel-header" @click="expanded = !expanded">
+    <div class="panel-header" @click="emit('toggle')">
       <span v-if="expanded" class="panel-title">记忆</span>
       <span v-else class="collapsed-icon" title="展开记忆面板">📒</span>
       <span class="toggle-btn">{{ expanded ? '❯' : '❮' }}</span>
@@ -342,8 +344,25 @@ onMounted(() => {
   user-select: none;
 }
 .toggle-btn {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  opacity: 0.7;
+  font-size: var(--fs-11);
+  line-height: 1;
+  opacity: 0.75;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.toggle-btn:hover {
+  background: var(--border, rgba(128, 128, 128, 0.2));
+  color: var(--text-main);
+  opacity: 1;
 }
 .memory-panel:not(.expanded) .toggle-btn {
   font-size: var(--fs-10);

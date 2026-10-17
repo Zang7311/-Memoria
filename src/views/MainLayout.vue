@@ -30,6 +30,7 @@ const chat = useChatStore()
 const goals = useGoalStore()
 const showGoals = ref(false)
 const showAudit = ref(false)
+const showMemory = ref(false)
 watch(() => chat.activeSessionId, id => { if (id) goals.remind() })
 onUnmounted(() => goals.dispose())
 
@@ -163,6 +164,12 @@ async function onPersonaChange(e: Event) {
             <button class="gear goal-button" :class="{ active: showGoals }" @click="showGoals = !showGoals">目标{{ goals.attentionCount ? ' (' + goals.attentionCount + ')' : '' }}</button>
             <span
               class="gear"
+              :class="{ active: showMemory }"
+              title="记忆（AI-4）"
+              @click="showMemory = !showMemory"
+            ><TheIcon name="memory" :size="18" /></span>
+            <span
+              class="gear"
               :class="{ active: showPlugins }"
               title="插件管理（AI-5）"
               @click="showPlugins = !showPlugins"
@@ -217,8 +224,8 @@ async function onPersonaChange(e: Event) {
         </div>
       </div>
 
-      <!-- 右侧记忆面板（AI-4） -->
-      <MemoryPanel />
+      <!-- 右侧记忆面板（AI-4）：由顶部「记忆」按钮控制，和插件面板行为一致 -->
+      <MemoryPanel :expanded="showMemory" @toggle="showMemory = !showMemory" />
 
       <!-- 插件管理面板（AI-5） -->
       <PluginManager v-if="showPlugins" />

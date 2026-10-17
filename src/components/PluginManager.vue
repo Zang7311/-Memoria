@@ -195,8 +195,8 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
 <template>
   <aside class="plugin-panel" :class="{ collapsed: !expanded }">
     <div class="panel-header">
-      <span class="panel-title">🧩 插件管理</span>
-      <button class="icon-btn" @click="expanded = !expanded">{{ expanded ? '▶' : '◀' }}</button>
+      <span class="panel-title"><span class="title-icon">🧩</span><span class="title-text">插件管理</span></span>
+      <button class="icon-btn" @click="expanded = !expanded">{{ expanded ? '❯' : '❮' }}</button>
     </div>
 
     <template v-if="expanded">
@@ -381,11 +381,39 @@ const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)
   font-size: var(--fs-14);
 }
 .icon-btn {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
+  border-radius: 5px;
   background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: var(--fs-12);
-  opacity: 0.7;
+  font-size: var(--fs-11);
+  line-height: 1;
+  opacity: 0.75;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.icon-btn:hover {
+  background: var(--border, rgba(128, 128, 128, 0.2));
+  color: var(--text-main);
+  opacity: 1;
+}
+/* 收起态与记忆面板对齐：竖排窄条，只留图标和折叠按钮，标题文字隐藏 */
+.plugin-panel.collapsed .panel-header {
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+  min-height: 64px;
+}
+.plugin-panel.collapsed .title-text {
+  display: none;
+}
+.plugin-panel.collapsed .panel-title {
+  font-size: var(--fs-16);
+  line-height: 1;
 }
 .tabs {
   display: flex;
