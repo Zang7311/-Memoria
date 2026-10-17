@@ -117,6 +117,10 @@ public:
 
     CubismTextureManager* _textureManager;         ///< テクスチャマネージャー
 
+    ID3D11Texture2D*        _captureStaging;    ///< 抓帧复用 staging 纹理（每帧新建会一直分配 2MB 显存）
+    UINT                    _captureWidth;      ///< staging 宽
+    UINT                    _captureHeight;     ///< staging 高
+
 private:
     /**
     * @brief   デストラクタ

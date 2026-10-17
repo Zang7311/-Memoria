@@ -40,6 +40,9 @@ CubismDirectXRenderer::CubismDirectXRenderer()
     , _depthTexture(nullptr)
     , _depthStencilView(nullptr)
     , _depthState(nullptr)
+    , _captureStaging(nullptr)
+    , _captureWidth(0)
+    , _captureHeight(0)
 {
 }
 
@@ -50,6 +53,13 @@ CubismDirectXRenderer::~CubismDirectXRenderer()
 
 void CubismDirectXRenderer::Release()
 {
+    if (_captureStaging)
+    {
+        _captureStaging->Release();
+        _captureStaging = nullptr;
+        _captureWidth = 0;
+        _captureHeight = 0;
+    }
     if (_renderTargetView)
     {
         _renderTargetView->Release();
@@ -315,67 +325,64 @@ void CubismDirectXRenderer::EndFrame(CubismUserModel* userModel)
 }
 
 // 离屏渲染用：把后台缓冲抓成 RGBA8 像素（逐行紧密排列）
-// 每一步都写 capture_log.txt，用于定位卡死点（程序无控制台）
+// 注意：这个函数每秒被调用 30 次，里面绝对不能写文件 ——
+// 排查卡死时留下的 capture_log.txt 会变成桌宠 7x24 运行的磁盘写入源（已删）。
+// staging 纹理复用，避免每帧新建 2MB 显存。
 bool CubismDirectXRenderer::CaptureFrame(std::vector<unsigned char>& outRGBA, unsigned int& outWidth, unsigned int& outHeight)
 {
-    FILE* log = fopen("capture_log.txt", "a");
-#define CAPLOG(msg) do { if (log) { fprintf(log, "%s\n", msg); fflush(log); } } while (0)
-
-    CAPLOG("enter");
     if (!_swapChain || !_device || !_deviceContext)
     {
-        CAPLOG("null pointers");
-        if (log) fclose(log);
         return false;
     }
 
-    CAPLOG("GetBuffer...");
     ID3D11Texture2D* backBuffer = nullptr;
     HRESULT hr = _swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBuffer));
     if (FAILED(hr))
     {
-        if (log) { fprintf(log, "GetBuffer fail hr=0x%08X\n", static_cast<unsigned int>(hr)); fclose(log); }
         return false;
     }
-    CAPLOG("got buffer");
 
     D3D11_TEXTURE2D_DESC desc = {};
     backBuffer->GetDesc(&desc);
     outWidth = desc.Width;
     outHeight = desc.Height;
-    if (log) { fprintf(log, "size=%ux%u format=%d usage=%d\n", outWidth, outHeight, static_cast<int>(desc.Format), static_cast<int>(desc.Usage)); }
 
-    D3D11_TEXTURE2D_DESC stagingDesc = desc;
-    stagingDesc.Usage = D3D11_USAGE_STAGING;
-    stagingDesc.BindFlags = 0;
-    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    stagingDesc.MiscFlags = 0;
-    stagingDesc.SampleDesc.Count = 1;
-
-    CAPLOG("creating staging...");
-    ID3D11Texture2D* staging = nullptr;
-    hr = _device->CreateTexture2D(&stagingDesc, nullptr, &staging);
-    if (FAILED(hr))
+    // staging 纹理：尺寸没变就复用
+    if (_captureStaging == nullptr || _captureWidth != desc.Width || _captureHeight != desc.Height)
     {
-        if (log) { fprintf(log, "CreateTexture2D fail hr=0x%08X\n", static_cast<unsigned int>(hr)); fclose(log); }
-        backBuffer->Release();
-        return false;
-    }
-    CAPLOG("staging ok");
+        if (_captureStaging)
+        {
+            _captureStaging->Release();
+            _captureStaging = nullptr;
+        }
 
-    _deviceContext->CopyResource(staging, backBuffer);
-    CAPLOG("copied");
+        D3D11_TEXTURE2D_DESC stagingDesc = desc;
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.BindFlags = 0;
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        stagingDesc.MiscFlags = 0;
+        stagingDesc.SampleDesc.Count = 1;
+        stagingDesc.SampleDesc.Quality = 0;
+
+        hr = _device->CreateTexture2D(&stagingDesc, nullptr, &_captureStaging);
+        if (FAILED(hr))
+        {
+            backBuffer->Release();
+            return false;
+        }
+        _captureWidth = desc.Width;
+        _captureHeight = desc.Height;
+    }
+
+    _deviceContext->CopyResource(_captureStaging, backBuffer);
+    backBuffer->Release();
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
-    hr = _deviceContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped);
+    hr = _deviceContext->Map(_captureStaging, 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr))
     {
-        if (log) { fprintf(log, "Map fail hr=0x%08X\n", static_cast<unsigned int>(hr)); fclose(log); }
-        staging->Release();
-        backBuffer->Release();
         return false;
     }
-    CAPLOG("mapped");
 
     outRGBA.resize(static_cast<size_t>(outWidth) * outHeight * 4);
     for (unsigned int y = 0; y < outHeight; ++y)
@@ -384,12 +391,6 @@ bool CubismDirectXRenderer::CaptureFrame(std::vector<unsigned char>& outRGBA, un
         memcpy(outRGBA.data() + static_cast<size_t>(y) * outWidth * 4, src, static_cast<size_t>(outWidth) * 4);
     }
 
-    _deviceContext->Unmap(staging, 0);
-    CAPLOG("unmapped/done");
-    if (log) fclose(log);
-#undef CAPLOG
-
-    staging->Release();
-    backBuffer->Release();
+    _deviceContext->Unmap(_captureStaging, 0);
     return true;
 }
