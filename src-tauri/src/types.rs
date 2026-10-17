@@ -618,6 +618,9 @@ pub struct AppConfig {
     /// 是否开启消息闪烁（默认 true）
     #[serde(default = "default_true")]
     pub floating_ball_flash: bool,
+    /// 桌宠是否偶尔自言自语（默认 true；关掉后只剩动作，不冒气泡）
+    #[serde(default = "default_true")]
+    pub floating_ball_chatter: bool,
     /// 悬浮球位置 (x, y)
     #[serde(default)]
     pub floating_ball_position: (u32, u32),

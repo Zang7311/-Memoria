@@ -1,8 +1,11 @@
-<!-- 《铃·记忆体》悬浮球 v7（v0.6 重构）
-     交互：10px 拖动阈值 + 边缘磁吸动画 + 单击唤起主窗 / 双击快速提问 / 长按蹭蹭动画
-     右键：灵动展开面板（模式切换/穿透/监测/设置，全主题化样式）
-     反馈：消息角标闪烁 + 穿透状态胶囊 + 配置实时同步 + 鼠标穿透（托盘可恢复）
-     修复：悬浮球设置项此前永不生效（独立窗口未加载配置）→ 挂载即 loadConfig + 监听 config-updated -->
+<!-- 《铃·记忆体》桌宠 v8（悬浮球功能打回重做）
+     定位：桌面宠物，而不是一个圆球。
+       - 形象：完整角色（Live2D 模型），头像/纯文字是轻量模式
+       - 生命感：待机小动作、偶尔自言自语、5 分钟没人理会趴下打瞌睡
+       - 互动：单击戳一下、长按摸摸头、拖动拎起来、松手会掉到屏幕底、双击快速提问
+       - 右键：控制台（打开主窗口 / 换形象 / 穿透 / 监测 / 设置 / 退出）
+       - 反馈：头顶台词气泡（点击、摸头、自言自语、屏幕监测提醒）
+     窗口：透明置顶小窗（lib.rs 创建）；位置记忆、尺寸自愈、鼠标穿透保留。 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
@@ -28,6 +31,14 @@ import {
   toggleMonitoring,
 } from '../utils/tauri'
 import { useSettingStore } from '../stores/settingStore'
+import {
+  BUBBLE_MS,
+  SLEEP_AFTER_MS,
+  fallTargetY,
+  nextChatterDelay,
+  nextIdleDelay,
+  pickPetLine,
+} from '../utils/pet'
 import ballAvatar from '../assets/ball_avatar.png'
 
 const win = getCurrentWindow()
@@ -38,155 +49,173 @@ const enabled = computed(() => setting.floatingBallEnabled)
 const size = computed(() => setting.floatingBallSize)
 const opacity = computed(() => setting.floatingBallOpacity)
 const breathing = computed(() => setting.floatingBallBreathing)
-const flash = computed(() => setting.floatingBallFlash)
 
-const hasMessage = ref(false)
+// ==================== 桌宠状态 ====================
+type PetState = 'idle' | 'sleep' | 'poke' | 'pat' | 'drag' | 'fall' | 'hop'
+const petState = ref<PetState>('idle')
+const zzz = ref(false)
+const bubble = ref('')
+const bubbleOn = ref(false)
 const clickThrough = ref(false)
 const monitorOn = ref(true)
-let flashTimer: number | undefined
-let unlistenTrigger: (() => void) | undefined
-let unlistenCfg: (() => void) | undefined
-let unlistenCt: (() => void) | undefined
-let unlistenFocus: (() => void) | undefined
-let unlistenToggle: (() => void) | undefined
-let unlistenAskHotkey: (() => void) | undefined
-let sizeGuard: number | undefined
+const hasMessage = ref(false)
+
+// 窗口尺寸：角色区 + 顶部台词气泡区
+const BUBBLE_H = 64
+const roleHeight = computed(() => (mode.value === 'live2d' ? 400 : size.value))
+const winW = computed(() => (mode.value === 'live2d' ? 300 : size.value))
+const winH = computed(() => roleHeight.value + BUBBLE_H)
+
+const stageClass = computed(() => [`state-${petState.value}`, { breathing: breathing.value && petState.value === 'idle', dim: petState.value === 'sleep' }])
 
 // ==================== 常量 ====================
-const DRAG_THRESHOLD = 10 // 拖动判定阈值（px，防误触）
+const DRAG_THRESHOLD = 10 // 拖动判定阈值（px）
 const CLICK_WINDOW = 280 // 双击判定间隔（ms）
-const LONG_PRESS_MS = 600 // 长按触发时长
-const SNAP_DIST = 26 // 边缘磁吸距离（px）
-const SNAP_FRAMES = 14 // 磁吸动画帧数
-const PANEL_W = 232 // 展开面板宽
-const PANEL_H = 344 // 展开面板高
+const PAT_HOLD_MS = 700 // 长按摸头时长
+const PANEL_W = 232 // 控制台宽
+const PANEL_H = 344 // 控制台高
 const ASK_W = 300 // 快速提问卡宽
-const ASK_H = 320 // 快速提问卡高（含对话区）
+const ASK_H = 320 // 快速提问卡高
 
-// ==================== 拖拽（v7.1：系统级拖动 startDragging，OS 接管，跟手/防丢） ====================
+// ==================== 拖拽（系统级拖动，OS 接管） ====================
 let dragging = false
 let moved = false
-let osDragging = false // 系统拖动进行中（OS 接管，松手由系统回调）
+let osDragging = false
 let pressX = 0
 let pressY = 0
-let snapRaf: number | null = null
 let longTimer: number | undefined
-let cuddleTimer: number | undefined
 let clickTimer: number | undefined
 let lastClickAt = 0
+let bubbleTimer: number | undefined
 
-// —— 位置持久化（v8：v7 曾误存物理像素，@150% 缩放下重启即漂移；v8 起统一存逻辑坐标）——
-const POS_KEY = 'floating-ball-pos-v8'
+// —— 位置持久化（逻辑坐标，避免高 DPI 缩放漂移）——
+const POS_KEY = 'floating-ball-pos-v9'
 
-/** 屏幕缩放（物理/逻辑 比值） */
 async function dpiScale(): Promise<number> {
   try {
     const mon = (await currentMonitor()) || (await primaryMonitor())
     return mon?.scaleFactor || 1
-  } catch { return 1 }
+  } catch {
+    return 1
+  }
 }
 
-/** 当前窗口位置（逻辑坐标）——outerPosition 返回物理像素，必须 ÷scale 统一为逻辑 */
 async function winLogicalPos(): Promise<{ x: number; y: number }> {
   const p = await win.outerPosition()
   const s = await dpiScale()
   return { x: Math.round(p.x / s), y: Math.round(p.y / s) }
 }
 
-/** 当前模式的窗口尺寸 */
-function currentWinSize(): number {
-  return mode.value === 'live2d' ? 300 : size.value
-}
-
-/** 逻辑坐标约束在屏幕内（w/h 为逻辑宽高） */
-async function clampRect(x: number, y: number, w: number, h: number): Promise<[number, number]> {
+async function screenLogicalSize(): Promise<{ w: number; h: number }> {
   try {
     const monitor = (await currentMonitor()) || (await primaryMonitor())
-    if (monitor) {
-      const scale = monitor.scaleFactor || 1
-      const lw = Math.round(monitor.size.width / scale)
-      const lh = Math.round(monitor.size.height / scale)
-      return [
-        Math.min(Math.max(0, x), Math.max(0, lw - w)),
-        Math.min(Math.max(0, y), Math.max(0, lh - h)),
-      ]
+    const scale = monitor?.scaleFactor || 1
+    return {
+      w: Math.round((monitor?.size.width ?? 0) / scale),
+      h: Math.round((monitor?.size.height ?? 0) / scale),
     }
-  } catch { /* 忽略 */ }
-  return [x, y]
+  } catch {
+    return { w: 1920, h: 1080 }
+  }
 }
 
 async function clampToScreen(x: number, y: number): Promise<[number, number]> {
-  const s = currentWinSize()
-  return await clampRect(x, y, s, mode.value === 'live2d' ? 400 : s)
+  const { w, h } = await screenLogicalSize()
+  return [Math.min(Math.max(0, x), Math.max(0, w - winW.value)), Math.min(Math.max(0, y), Math.max(0, h - winH.value))]
+}
+
+function savePos() {
+  winLogicalPos().then((p) => {
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify(p))
+    } catch {
+      /* 忽略 */
+    }
+  }).catch(() => {})
 }
 
 // ==================== 鼠标事件 ====================
+let lastActive = Date.now()
+
+function touch() {
+  lastActive = Date.now()
+  if (zzz.value) {
+    zzz.value = false
+    petState.value = 'idle'
+    say(pickPetLine('wake'))
+  }
+}
+
 function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
-  // 展开面板状态不启动拖拽
-  if (panelOpen.value) return
+  // 展开态里所有点击都归卡片自己处理（否则输入框会被 preventDefault 抢掉焦点）
+  if (panelOpen.value || askOpen.value) return
+  touch()
   e.preventDefault()
   dragging = true
   moved = false
   osDragging = false
   pressX = e.screenX
   pressY = e.screenY
-  // 上一次磁吸动画若未结束，立即取消（防止与本次拖动抢位置 → 瞬移）
-  if (snapRaf !== null) { cancelAnimationFrame(snapRaf); snapRaf = null }
-  // 长按计时：600ms 未拖动未弹起 → 蹭蹭动画
   if (longTimer) clearTimeout(longTimer)
   longTimer = window.setTimeout(() => {
-    if (dragging && !moved && !osDragging && !panelOpen.value) {
-      playCuddle()
-    }
-  }, LONG_PRESS_MS)
+    if (dragging && !moved && !osDragging && !panelOpen.value) playPat()
+  }, PAT_HOLD_MS)
 }
 
 function onMouseMove(e: MouseEvent) {
   if (!dragging || osDragging || moved) return
-  // 位移超过 10px 阈值 → 判定为拖动，交给系统级拖动（OS 接管，跟手且不出窗丢失）
   const dx = e.screenX - pressX
   const dy = e.screenY - pressY
   if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
   moved = true
-  if (longTimer) { clearTimeout(longTimer); longTimer = undefined }
-  startOsDrag()
+  if (longTimer) {
+    clearTimeout(longTimer)
+    longTimer = undefined
+  }
+  void startOsDrag()
 }
 
-/** 系统级拖动：阻塞至松手，结束后磁吸 + 保存位置 */
 async function startOsDrag() {
   if (osDragging) return
   osDragging = true
+  petState.value = 'drag'
+  say(pickPetLine('drag'))
   try {
     await win.startDragging()
-  } catch { /* 忽略（如非左键拖动被系统拒绝） */ }
+  } catch {
+    /* 忽略 */
+  }
   osDragging = false
   dragging = false
-  if (longTimer) { clearTimeout(longTimer); longTimer = undefined }
-  // 松手：边缘磁吸 + 持久化位置（逻辑坐标）
-  winLogicalPos().then((p) => snapAndSave(p.x, p.y)).catch(() => {})
+  if (longTimer) {
+    clearTimeout(longTimer)
+    longTimer = undefined
+  }
+  await dropAfterDrag()
 }
 
 function onMouseUp() {
-  // 系统拖动期间松手由 OS 处理，这里不重复判定
   if (osDragging) return
   if (!dragging) return
   dragging = false
-  if (longTimer) { clearTimeout(longTimer); longTimer = undefined }
-  // 纯点击（未达到拖动阈值，窗口从未被移动）：仅做单击/双击判定
-  if (!moved) {
-    handleClick()
+  if (longTimer) {
+    clearTimeout(longTimer)
+    longTimer = undefined
   }
+  if (!moved) handleClick()
 }
 
-/** 单击/双击判定：双击(280ms 内二次点击)→快速提问；单击→轻交互（主窗可见则聚焦） */
+/** 单击戳一下 / 双击快速提问 */
 function handleClick() {
   const now = Date.now()
   if (now - lastClickAt < CLICK_WINDOW) {
-    // 双击
-    if (clickTimer) { clearTimeout(clickTimer); clickTimer = undefined }
+    if (clickTimer) {
+      clearTimeout(clickTimer)
+      clickTimer = undefined
+    }
     lastClickAt = 0
-    quickAsk()
+    void quickAsk()
     return
   }
   lastClickAt = now
@@ -194,214 +223,144 @@ function handleClick() {
   clickTimer = window.setTimeout(() => {
     clickTimer = undefined
     lastClickAt = 0
-    focusMain()
-    playPop()
-  }, CLICK_WINDOW + 20) // 300ms，确保双击判定窗口(280ms)先完成，避免 251~280ms 的第二次点击被误判为单击
+    playPoke()
+  }, CLICK_WINDOW + 20)
 }
 
-// ==================== 边缘磁吸动画（ease-out 平滑滑向边缘） ====================
-async function snapAndSave(x: number, y: number) {
-  const s = currentWinSize()
-  const h = mode.value === 'live2d' ? 400 : s
-  const [cx, cy] = await clampRect(x, y, s, h)
-  let tx = cx
-  let ty = cy
-  try {
-    const monitor = (await currentMonitor()) || (await primaryMonitor())
-    if (monitor) {
-      const scale = monitor.scaleFactor || 1
-      const lw = Math.round(monitor.size.width / scale)
-      const lh = Math.round(monitor.size.height / scale)
-      // 四条边独立判定（不互斥），角落可同时吸附两轴，避免残留偏移
-      if (x < SNAP_DIST) tx = 0
-      if (lw - s - x < SNAP_DIST) tx = lw - s
-      if (y < SNAP_DIST) ty = 0
-      if (lh - h - y < SNAP_DIST) ty = lh - h
-    }
-  } catch { /* 忽略 */ }
-  await animateTo(tx, ty, SNAP_FRAMES)
-  // 保存逻辑坐标
-  winLogicalPos().then((p) => {
-    try {
-      localStorage.setItem(POS_KEY, JSON.stringify({ x: p.x, y: p.y }))
-    } catch { /* 忽略 */ }
-  }).catch(() => {})
+// ==================== 桌宠动作 ====================
+let actionTimer: number | undefined
+
+function backToIdle(delay: number) {
+  if (actionTimer) clearTimeout(actionTimer)
+  actionTimer = window.setTimeout(() => {
+    if (petState.value !== 'drag' && petState.value !== 'fall') petState.value = 'idle'
+  }, delay)
 }
 
-/** 逐帧平移动画（ease-out；起点取逻辑坐标） */
-function animateTo(x: number, y: number, frames: number): Promise<void> {
+function playPoke() {
+  if (zzz.value) return
+  petState.value = 'poke'
+  say(pickPetLine('poke'))
+  backToIdle(420)
+}
+
+function playPat() {
+  if (zzz.value) {
+    touch()
+    return
+  }
+  petState.value = 'pat'
+  say(pickPetLine('pat'))
+  backToIdle(950)
+}
+
+function playHop() {
+  if (petState.value !== 'idle' || panelOpen.value || askOpen.value || clickThrough.value || zzz.value) return
+  petState.value = 'hop'
+  backToIdle(700)
+}
+
+function say(text: string) {
+  if (!text) return
+  bubble.value = text
+  bubbleOn.value = true
+  if (bubbleTimer) clearTimeout(bubbleTimer)
+  bubbleTimer = window.setTimeout(() => {
+    bubbleOn.value = false
+  }, BUBBLE_MS)
+}
+
+// ==================== 掉落（松手后掉到屏幕底，带弹跳） ====================
+async function dropAfterDrag() {
+  const pos = await winLogicalPos()
+  const { h } = await screenLogicalSize()
+  const target = fallTargetY(h, winH.value)
+  if (target - pos.y > 60) {
+    petState.value = 'fall'
+    await animateFall(pos.x, pos.y, target)
+    petState.value = 'idle'
+    say(pickPetLine('drop'))
+  } else {
+    petState.value = 'idle'
+  }
+  savePos()
+}
+
+function animateFall(x: number, fromY: number, toY: number): Promise<void> {
   return new Promise((resolve) => {
-    if (snapRaf !== null) { cancelAnimationFrame(snapRaf); snapRaf = null }
-    winLogicalPos().then((p0) => {
-      const sx = p0.x
-      const sy = p0.y
-      const dx = x - sx
-      const dy = y - sy
-      let step = 1
-      const tick = () => {
-        const t = step / frames
-        const ease = 1 - Math.pow(1 - t, 3)
-        win.setPosition(new LogicalPosition(Math.round(sx + dx * ease), Math.round(sy + dy * ease))).catch(() => {})
-        if (step >= frames) { snapRaf = null; resolve(); return }
-        step += 1
-        snapRaf = window.requestAnimationFrame(tick)
+    let y = fromY
+    let velocity = 0
+    let bounces = 0
+    let last = performance.now()
+    const gravity = 3200 // 逻辑像素 / 秒²
+    const step = (now: number) => {
+      const dt = Math.min(0.033, (now - last) / 1000)
+      last = now
+      velocity += gravity * dt
+      y += velocity * dt
+      if (y >= toY) {
+        y = toY
+        if (bounces < 2) {
+          bounces += 1
+          velocity = -velocity * 0.38
+          if (Math.abs(velocity) < 160) velocity = 0
+        } else {
+          velocity = 0
+        }
       }
-      tick()
-    }).catch(() => resolve())
+      win.setPosition(new LogicalPosition(Math.round(x), Math.round(y))).catch(() => {})
+      if (velocity === 0 && y >= toY) {
+        resolve()
+        return
+      }
+      requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
   })
 }
 
-/** 唤起主窗口（主窗被关则重建；最小化则还原；弹出后悬浮球重新置顶防被盖） */
-async function showMain() {
-  // 注意：ensure_main_window 重建主窗口会导致白屏（v0.5.3 起存在的问题），
-  // 暂时改为：仅当主窗口已存在时才显示/聚焦，不重建。
-  // 用户如需打开主窗口，请使用系统托盘图标。
-  try {
-    const main = await WebviewWindow.getByLabel('main').catch(() => null)
-    if (main) {
-      await main.show().catch(() => {})
-      await main.unminimize().catch(() => {})
-      await main.setFocus().catch(() => {})
-    } else {
-      showNotice('请通过系统托盘图标打开主窗口')
-    }
-  } catch {
-    showNotice('打开主窗口失败')
-  }
-}
-
-/** 调试：把当前窗口位置（逻辑）/尺寸（物理原始+逻辑换算）上报到 Rust 日志（v0.6 开发期用） */
-async function diag(tag: string) {
-  try {
-    const p = await winLogicalPos()
-    const sz = await win.outerSize()
-    const s = await dpiScale()
-    emit('ball-diag', `${tag} pos=${p.x},${p.y} sizePhys=${sz.width}x${sz.height} sizeLog=${Math.round(sz.width / s)}x${Math.round(sz.height / s)} scale=${s}`).catch(() => {})
-  } catch { /* 忽略 */ }
-}
-
-/** 单击轻交互：主窗口已显示则聚焦；未显示则不弹窗（避免大窗盖住球造成"球消失"），只做引导提示 */
-async function focusMain() {
-  try {
-    const main = await WebviewWindow.getByLabel('main')
-    if (main) {
-      const vis = await main.isVisible().catch(() => false)
-      if (vis) {
-        await main.setFocus()
-        return
-      }
-      showHint()
-    }
-  } catch { /* 忽略 */ }
-}
-
-/** 引导提示（带冷却，防每次单击刷屏） */
-let hintAt = 0
-function showHint() {
-  const now = Date.now()
-  if (now - hintAt < 4000) return
-  hintAt = now
-  showNotice('双击快速提问 · 右键更多操作')
-}
-
-/** 向主窗口持续补发事件（主窗被关重建/冷启动时会错过早期事件，多档间隔兜底） */
-let fireToMainTimers: number[] = []
-function fireToMain(eventName: string) {
-  // 先清上一批，防止快速开关面板累积悬置定时器
-  fireToMainTimers.forEach(clearTimeout)
-  fireToMainTimers = []
-  const delays = [120, 450, 850, 1300, 1900]
-  for (const d of delays) {
-    fireToMainTimers.push(
-      window.setTimeout(() => { emit(eventName).catch(() => {}) }, d)
-    )
-  }
-}
-
-/** 双击：快速提问（球边弹迷你输入卡，不唤起主窗口） */
-function quickAsk() {
-  openAsk()
-}
-
-/** 菜单/面板：打开主窗口设置页（事件多档补发防错过） */
-async function openSettings() {
-  await showMain()
-  fireToMain('floating-open-settings')
-}
-
-// ==================== 长按蹭蹭动画 ====================
-const cuddling = ref(false)
-function playCuddle() {
-  cuddling.value = true
-  if (cuddleTimer) clearTimeout(cuddleTimer)
-  cuddleTimer = window.setTimeout(() => (cuddling.value = false), 1200)
-}
-
-// ==================== 点击弹跳反馈 ====================
-const popping = ref(false)
-let popTimer: number | undefined
-function playPop() {
-  popping.value = true
-  if (popTimer) clearTimeout(popTimer)
-  popTimer = window.setTimeout(() => (popping.value = false), 320)
-}
-
-// ==================== 右键灵动面板（悬浮球展开为控制面板） ====================
+// ==================== 右键控制台 ====================
 const panelOpen = ref(false)
-const askOpen = ref(false) // 快速提问迷你卡（与 panel 互斥）
-const panelPage = ref<'main' | 'tools'>('main') // 面板内页：主菜单 / 小工具
+const askOpen = ref(false)
+const panelPage = ref<'main' | 'tools'>('main')
 const askText = ref('')
 const askInput = ref<HTMLInputElement | null>(null)
-// —— 迷你对话：在提问卡内直接展示铃的回复（不依赖主窗口）——
 const askMsgs = ref<{ role: 'user' | 'suzu'; text: string }[]>([])
 const askStreaming = ref('')
 const askBusy = ref(false)
-const askComposing = ref(false) // 输入法组合中标记（防 IME 回车误触发发送）
+const askComposing = ref(false)
 let askUnlisten: (() => void)[] = []
 let panelPrevPos = { x: 0, y: 0 }
 
-/** 展开态通用：以球为中心展开到 w×h（互斥关闭另一展开态；记录球位置用于恢复） */
 async function expandTo(w: number, h: number, kind: 'panel' | 'ask') {
-  // 互斥：先把另一展开态标记清掉（窗口形态随后统一 resize，不重复走各自恢复）
   if (kind === 'ask' && panelOpen.value) panelOpen.value = false
   if (kind === 'panel' && askOpen.value) askOpen.value = false
   if (kind === 'ask') askOpen.value = true
   if (kind === 'panel') panelOpen.value = true
-  // live2d：先卸模型，避免盖住时残留渲染
   if (mode.value === 'live2d' && live2dCleanup) live2dCleanup()
-  await diag(`expand-${kind}-before`)
   try {
     const pos = await winLogicalPos()
     panelPrevPos = { x: pos.x, y: pos.y }
-    await diag(`expand-${kind}-pos(${pos.x},${pos.y})`)
-    // 中心对齐展开：面板左上 = 球左上 + (球尺寸-目标尺寸)/2，再 clamp 到屏内
-    const s = currentWinSize()
-    const sh = mode.value === 'live2d' ? 400 : s
-    const [cx, cy] = await clampRect(
-      pos.x + Math.round((s - w) / 2),
-      pos.y + Math.round((sh - h) / 2),
-      w,
-      h,
-    )
-    // 双保险：先归位 → 放大 → 再归位（吞掉 Windows setSize 缩放锚偏移）
+    const { w: sw, h: sh } = await screenLogicalSize()
+    const cx = Math.min(Math.max(0, pos.x + Math.round((winW.value - w) / 2)), Math.max(0, sw - w))
+    const cy = Math.min(Math.max(0, pos.y + Math.round((winH.value - h) / 2)), Math.max(0, sh - h))
     await win.setPosition(new LogicalPosition(cx, cy))
     await win.setSize(new LogicalSize(w, h))
     await win.setPosition(new LogicalPosition(cx, cy))
-  } catch { /* 忽略 */ }
-  await diag(`expand-${kind}-after`)
+  } catch {
+    /* 忽略 */
+  }
 }
 
-/** 收起展开态：恢复球尺寸 + 回到球原位置 */
 async function restoreBall() {
   try {
-    const s = currentWinSize()
     const [cx, cy] = await clampToScreen(panelPrevPos.x, panelPrevPos.y)
-    // 双保险归位：先归位 → 收缩尺寸 → 再归位一次
     await win.setPosition(new LogicalPosition(cx, cy))
-    await win.setSize(new LogicalSize(s, mode.value === 'live2d' ? 400 : s))
+    await win.setSize(new LogicalSize(winW.value, winH.value))
     await win.setPosition(new LogicalPosition(cx, cy))
-  } catch { /* 忽略 */ }
-  await diag('restoreBall-after')
+  } catch {
+    /* 忽略 */
+  }
   if (mode.value === 'live2d') {
     nextTick(() => loadLive2D())
   }
@@ -411,11 +370,12 @@ async function openPanel() {
   if (panelOpen.value) return
   panelPage.value = 'main'
   await expandTo(PANEL_W, PANEL_H, 'panel')
-  // 刷新监测状态显示
   try {
     const res = await getMonitorRules()
     monitorOn.value = res.enabled
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 }
 
 async function closePanel() {
@@ -424,12 +384,11 @@ async function closePanel() {
   await restoreBall()
 }
 
-// —— 快速提问迷你对话卡：双击 / 面板「快速提问」/ 全局热键 Ctrl+Alt+Q ——
+// ==================== 快速提问卡 ====================
 async function openAsk() {
   if (askOpen.value) return
   askText.value = ''
   await expandTo(ASK_W, ASK_H, 'ask')
-  // 注册回复流式监听（仅提问卡打开期间；回复经 chat_chunk/chat_end 全局广播）
   try {
     askUnlisten = [
       await onChatChunk((chunk) => {
@@ -452,8 +411,9 @@ async function openAsk() {
         scrollAskToBottom()
       }),
     ]
-  } catch { /* 忽略 */ }
-  // 聚焦输入框（等窗口形态稳定后）
+  } catch {
+    /* 忽略 */
+  }
   setTimeout(() => askInput.value?.focus(), 180)
 }
 
@@ -462,7 +422,13 @@ async function closeAsk() {
   askOpen.value = false
   askBusy.value = false
   askStreaming.value = ''
-  askUnlisten.forEach((fn) => { try { fn() } catch { /* 忽略 */ } })
+  askUnlisten.forEach((fn) => {
+    try {
+      fn()
+    } catch {
+      /* 忽略 */
+    }
+  })
   askUnlisten = []
   await restoreBall()
 }
@@ -474,11 +440,10 @@ function scrollAskToBottom() {
   }, 30)
 }
 
-/** 发送快速提问：消息与回复都在提问卡内对话展示（同时存档最近会话） */
 const MAX_ASK_INPUT = 4000
 function onAskEnter() {
-  if (askComposing.value) return // 输入法组合中按回车（确认候选词）不发送
-  submitAsk()
+  if (askComposing.value) return
+  void submitAsk()
 }
 async function submitAsk() {
   const text = askText.value.trim()
@@ -496,7 +461,9 @@ async function submitAsk() {
   try {
     const sessions = await listSessions()
     if (sessions && sessions.length > 0) sid = sessions[0].id
-  } catch { /* 无会话则走默认 */ }
+  } catch {
+    /* 默认会话 */
+  }
   try {
     await sendMessage(text, setting.depth || 2, sid)
   } catch {
@@ -506,61 +473,132 @@ async function submitAsk() {
   }
 }
 
-// —— 展开态窗口失焦（点到窗口外）→ 自动收起，防尺寸残留 ——
+// ==================== 主窗口 / 设置 ====================
+let fireToMainTimers: number[] = []
+function fireToMain(eventName: string) {
+  fireToMainTimers.forEach(clearTimeout)
+  fireToMainTimers = []
+  for (const d of [120, 450, 850, 1300, 1900]) {
+    fireToMainTimers.push(window.setTimeout(() => { emit(eventName).catch(() => {}) }, d))
+  }
+}
+
+async function showMain() {
+  try {
+    const main = await WebviewWindow.getByLabel('main').catch(() => null)
+    if (main) {
+      await main.show().catch(() => {})
+      await main.unminimize().catch(() => {})
+      await main.setFocus().catch(() => {})
+    } else {
+      showNotice('请通过系统托盘图标打开主窗口')
+    }
+  } catch {
+    showNotice('打开主窗口失败')
+  }
+}
+
+async function openSettings() {
+  await showMain()
+  fireToMain('floating-open-settings')
+}
+
+// ==================== 提示条 ====================
+const notice = ref('')
+let noticeTimer: number | undefined
+function showNotice(text: string) {
+  notice.value = text
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = window.setTimeout(() => (notice.value = ''), 2600)
+}
+
+// ==================== 定时行为 ====================
+let idleTimer: number | undefined
+let chatterTimer: number | undefined
+let watchdog: number | undefined
+
+function scheduleIdleAction() {
+  idleTimer = window.setTimeout(() => {
+    playHop()
+    scheduleIdleAction()
+  }, nextIdleDelay())
+}
+
+function scheduleChatter() {
+  chatterTimer = window.setTimeout(() => {
+    maybeChatter()
+    scheduleChatter()
+  }, nextChatterDelay())
+}
+
+function maybeChatter() {
+  if (!setting.floatingBallChatter) return
+  if (petState.value !== 'idle' || panelOpen.value || askOpen.value || clickThrough.value || zzz.value) return
+  say(pickPetLine('chatter'))
+}
+
+function maybeSleep() {
+  if (petState.value !== 'idle' || panelOpen.value || askOpen.value || zzz.value) return
+  if (Date.now() - lastActive < SLEEP_AFTER_MS) return
+  zzz.value = true
+  petState.value = 'sleep'
+  say(pickPetLine('sleep'))
+}
+
+// ==================== 窗口事件 ====================
+let unlistenTrigger: (() => void) | undefined
+let unlistenCfg: (() => void) | undefined
+let unlistenCt: (() => void) | undefined
+let unlistenFocus: (() => void) | undefined
+let unlistenToggle: (() => void) | undefined
+let unlistenAskHotkey: (() => void) | undefined
+let sizeGuard: number | undefined
+
 async function onWinFocus(focused: boolean) {
   if (!focused && !dragging) {
-    // 走各自关闭函数，确保 askUnlisten 等监听器被正确清理（原实现只 reset 状态，泄漏监听器）
     if (askOpen.value) await closeAsk()
     if (panelOpen.value) await closePanel()
   }
 }
 
-// —— 尺寸自愈守卫：每 5s 校验一次窗口尺寸，防止意外变形残留（球被拉成椭圆）——
 async function guardSize() {
   if (panelOpen.value || askOpen.value || dragging) return
   try {
     const outer = await win.outerSize()
-    const monitor = (await currentMonitor()) || (await primaryMonitor())
-    const scale = monitor?.scaleFactor || 1
+    const scale = await dpiScale()
     const w = Math.round(outer.width / scale)
     const h = Math.round(outer.height / scale)
-    const expW = currentWinSize()
-    const expH = mode.value === 'live2d' ? 400 : expW
-    if (w !== expW || h !== expH) {
-      await win.setSize(new LogicalSize(expW, expH))
+    if (w !== winW.value || h !== winH.value) {
+      await win.setSize(new LogicalSize(winW.value, winH.value))
     }
-  } catch { /* 忽略 */ }
-}
-
-async function onContextMenu(e: MouseEvent) {
-  e.preventDefault()
-  if (!panelOpen.value) {
-    openPanel()
+  } catch {
+    /* 忽略 */
   }
 }
 
-/** 面板项动作后统一收起 */
-async function afterAction() {
+const finalOpacity = computed(() => (clickThrough.value ? Math.min(opacity.value, 0.4) : opacity.value))
+
+// ==================== 菜单动作 ====================
+async function menuShowMain() {
   await closePanel()
+  await showMain()
 }
-
-async function menuShowMain() { await afterAction(); await showMain() }
-/** 面板「快速提问」：直接切到迷你提问卡（不先收起再展开，避免闪烁） */
 async function menuQuickAsk() {
-  await afterAction()
-  quickAsk()
+  await closePanel()
+  void quickAsk()
+}
+async function quickAsk() {
+  await openAsk()
 }
 
-// —— 小工具页：动态加载全部工具箱条目（预设 + 用户自定义 + 组合工具），悬浮球内不做编辑 ——
 const toolsList = ref<{ id: string; label: string; steps: number }[]>([])
 async function goTools() {
   panelPage.value = 'tools'
-  // 打开时刷新（用户可能在设置页增删了工具）
   try {
     const res = await listToolboxItems()
     toolsList.value = res.items
       .filter((i) => i.enabled !== false)
-      .map((i) => ({ id: i.id, label: i.name || i.id, steps: (i.steps?.length) || 0 }))
+      .map((i) => ({ id: i.id, label: i.name || i.id, steps: i.steps?.length || 0 }))
   } catch {
     toolsList.value = []
   }
@@ -574,12 +612,13 @@ async function runTool(id: string) {
   }
 }
 
-/** 切换显示模式（面板开着时仅存配置；窗口形态等收起后由 closePanel 统一处理） */
 async function switchMode(m: 'avatar' | 'simple' | 'live2d') {
   if (mode.value === m) return
   try {
     await setting.update({ floating_ball_mode: m })
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 }
 
 async function menuToggleMonitor() {
@@ -587,60 +626,55 @@ async function menuToggleMonitor() {
   monitorOn.value = next
   try {
     await toggleMonitoring(next)
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 }
 
 async function menuToggleClickThrough() {
   const next = !clickThrough.value
   try {
-    const st = await setFloatingBallClickThrough(next)
-    clickThrough.value = st
-  } catch { /* 忽略 */ }
-  // 只收起一次，避免 afterAction 双重调用导致窗口位置二次跳变
-  await afterAction()
-  if (clickThrough.value) {
-    showNotice('鼠标穿透已开启，点系统托盘图标可关闭')
+    clickThrough.value = await setFloatingBallClickThrough(next)
+  } catch {
+    /* 忽略 */
   }
+  await closePanel()
+  if (clickThrough.value) showNotice('鼠标穿透已开启，点系统托盘图标可关闭')
 }
 
 async function menuExit() {
   await quitApp()
 }
 
-// ==================== 小提示条（穿透/消息等临时提示，显示于球上方） ====================
-const notice = ref('')
-let noticeTimer: number | undefined
-function showNotice(text: string) {
-  notice.value = text
-  if (noticeTimer) clearTimeout(noticeTimer)
-  noticeTimer = window.setTimeout(() => (notice.value = ''), 2600)
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  if (!panelOpen.value) void openPanel()
 }
 
-// ==================== 窗口事件监听 ====================
+// ==================== 生命周期 ====================
 onMounted(async () => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
 
-  // 关键修复：悬浮球独立窗口此前从不加载配置 → 设置全部不生效。挂载即同步
   try {
     if (!setting.loaded) await setting.loadConfig()
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 
   unlistenCfg = await onConfigUpdated(async () => {
     try {
       await setting.loadConfig()
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
   })
-
   unlistenCt = await onBallClickThroughChanged((st) => {
     clickThrough.value = st
   })
+  unlistenFocus = await win.onFocusChanged(({ payload: focused }) => void onWinFocus(focused))
+  sizeGuard = window.setInterval(() => void guardSize(), 5000)
 
-  // 面板展开时失焦自动收起 + 尺寸自愈定时器
-  unlistenFocus = await win.onFocusChanged(({ payload: focused }) => onWinFocus(focused))
-  sizeGuard = window.setInterval(() => guardSize(), 5000)
-
-  // 托盘切换悬浮球显示/隐藏时：若被隐藏且面板还开着 → 收起面板复位（防"控制台残留"）
   unlistenToggle = await listen('floating-ball-toggled', async () => {
     try {
       const vis = await win.isVisible()
@@ -649,30 +683,36 @@ onMounted(async () => {
         panelOpen.value = false
         askOpen.value = false
       }
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
   })
 
-  // 全局热键 Ctrl+Alt+Q：Rust 已显示悬浮球，这里打开快速提问卡
   unlistenAskHotkey = await listen('ball-hotkey-ask', () => {
     if (clickThrough.value) return
-    openAsk()
+    void openAsk()
   })
 
-  unlistenTrigger = await onMonitorTrigger(() => {
-    if (!flash.value) return
+  unlistenTrigger = await onMonitorTrigger((payload) => {
+    // 屏幕监测提醒：直接冒气泡说一句，比闪烁更有桌宠的感觉
     hasMessage.value = true
-    if (flashTimer) clearTimeout(flashTimer)
-    flashTimer = window.setTimeout(() => (hasMessage.value = false), 3000)
+    window.setTimeout(() => (hasMessage.value = false), 3000)
+    const text = payload?.reply?.trim()
+    say(text ? `（${payload.app_name || '屏幕'}）${text}` : '需要我帮忙吗？')
   })
 
-  // 初始穿透状态 + 监测状态
-  try { clickThrough.value = await getFloatingBallClickThrough() } catch { /* 忽略 */ }
+  try {
+    clickThrough.value = await getFloatingBallClickThrough()
+  } catch {
+    /* 忽略 */
+  }
   try {
     const res = await getMonitorRules()
     monitorOn.value = res.enabled
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 
-  // 初始：恢复位置 + 窗口大小
   try {
     const saved = localStorage.getItem(POS_KEY)
     if (saved) {
@@ -680,63 +720,79 @@ onMounted(async () => {
       const [cx, cy] = await clampToScreen(x, y)
       await win.setPosition(new LogicalPosition(cx, cy))
     }
-    const s = currentWinSize()
-    await win.setSize(new LogicalSize(s, mode.value === 'live2d' ? 400 : s))
+    await win.setSize(new LogicalSize(winW.value, winH.value))
     if (mode.value === 'live2d') {
       await nextTick()
       await loadLive2D()
     }
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
+
+  lastActive = Date.now()
+  scheduleIdleAction()
+  scheduleChatter()
+  watchdog = window.setInterval(maybeSleep, 20_000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
-  if (flashTimer) clearTimeout(flashTimer)
   if (longTimer) clearTimeout(longTimer)
-  if (cuddleTimer) clearTimeout(cuddleTimer)
   if (clickTimer) clearTimeout(clickTimer)
-  if (popTimer) clearTimeout(popTimer)
+  if (bubbleTimer) clearTimeout(bubbleTimer)
   if (noticeTimer) clearTimeout(noticeTimer)
+  if (actionTimer) clearTimeout(actionTimer)
+  if (idleTimer) clearTimeout(idleTimer)
+  if (chatterTimer) clearTimeout(chatterTimer)
+  if (watchdog) clearInterval(watchdog)
   if (sizeGuard) clearInterval(sizeGuard)
   fireToMainTimers.forEach(clearTimeout)
   fireToMainTimers = []
-  if (snapRaf !== null) cancelAnimationFrame(snapRaf)
   unlistenTrigger?.()
   unlistenCfg?.()
   unlistenCt?.()
   unlistenFocus?.()
   unlistenToggle?.()
   unlistenAskHotkey?.()
-  askUnlisten.forEach((fn) => { try { fn() } catch { /* 忽略 */ } })
+  askUnlisten.forEach((fn) => {
+    try {
+      fn()
+    } catch {
+      /* 忽略 */
+    }
+  })
   askUnlisten = []
   if (live2dCleanup) live2dCleanup()
 })
 
-// —— 模式变化：调整窗口大小 + 加载 Live2D ——
-watch(mode, async (newMode) => {
+// ==================== 模式/尺寸变化 ====================
+watch(mode, async (m) => {
+  if (panelOpen.value || askOpen.value) return
   try {
-    if (panelOpen.value) return // 面板展开中由 switchMode 处理
-    if (newMode === 'live2d') {
-      await win.setSize(new LogicalSize(300, 400))
+    if (m !== 'live2d' && live2dCleanup) {
+      live2dCleanup()
+      live2dCleanup = null
+    }
+    await win.setSize(new LogicalSize(winW.value, winH.value))
+    if (m === 'live2d') {
       await nextTick()
       await loadLive2D()
-    } else {
-      const s = size.value
-      await win.setSize(new LogicalSize(s, s))
     }
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 })
 
-// —— 大小变化：头像/文字模式同步窗口 ——
-watch(size, async (newSize) => {
+watch(size, async () => {
   if (mode.value === 'live2d' || panelOpen.value) return
   try {
-    await win.setSize(new LogicalSize(newSize, newSize))
-  } catch { /* 忽略 */ }
+    await win.setSize(new LogicalSize(winW.value, winH.value))
+  } catch {
+    /* 忽略 */
+  }
 })
 
-// —— 开关变化：显示/隐藏 ——
 watch(enabled, async (val) => {
   try {
     if (val) {
@@ -750,44 +806,38 @@ watch(enabled, async (val) => {
     } else {
       await win.hide()
     }
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 })
 
-// —— 外观：穿透时球体半透明化（不打扰画面），退出恢复 ——
-const finalOpacity = computed(() => {
-  if (clickThrough.value) return Math.min(opacity.value, 0.4)
-  return opacity.value
-})
-
-// ==================== Live2D：本地加载内置模型（无需联网） ====================
+// ==================== Live2D ====================
 const live2dMount = ref<HTMLDivElement | null>(null)
 let live2dCleanup: (() => void) | null = null
 
 async function loadLive2D() {
   if (mode.value !== 'live2d' || panelOpen.value || !live2dMount.value) return
-  if (live2dCleanup) { live2dCleanup(); live2dCleanup = null }
+  if (live2dCleanup) {
+    live2dCleanup()
+    live2dCleanup = null
+  }
   live2dMount.value.innerHTML = ''
   try {
     const { loadOml2d } = await import('oh-my-live2d')
     if (!live2dMount.value) return
     const container = live2dMount.value
-
-    // 内置模型：开发/打包路径统一为 live2d/haru（相对资源目录）
     const dir = await resourceDir()
-    const modelPath = `${dir}live2d/haru/haru_greeter_t03.model3.json`
-    const modelUrl = convertFileSrc(modelPath)
+    const modelUrl = convertFileSrc(`${dir}live2d/haru/haru_greeter_t03.model3.json`)
 
     let oml2d: { onLoad: (fn: (s: string) => void) => void; destroy?: () => void } | null = null
     try {
       oml2d = loadOml2d({
         parentElement: container,
-        // 纯模型展示：隐藏 oml2d 自带的菜单（书签按钮）与状态条（"看板娘休息中"等）
         statusBar: { disable: true },
         menus: { disable: true },
         models: [{ path: modelUrl, scale: 0.12 }],
       })
     } catch {
-      // 初始化异常（老显卡 WebGL 兼容问题）→ 回退头像模式，避免渲染循环卡死
       showNotice('Live2D 不可用，已切换头像模式')
       setting.update({ floating_ball_mode: 'avatar' }).catch(() => {})
       return
@@ -796,86 +846,61 @@ async function loadLive2D() {
       if (status === 'fail') {
         showNotice('Live2D 加载失败，已切换头像模式')
         setting.update({ floating_ball_mode: 'avatar' }).catch(() => {})
-        try { oml2d?.destroy?.() } catch { /* 忽略 */ }
+        try {
+          oml2d?.destroy?.()
+        } catch {
+          /* 忽略 */
+        }
       }
     })
     live2dCleanup = () => {
-      // 优先调用 oml2d 自毁（释放 pixi 渲染循环），失败则清 DOM 兜底
-      try { oml2d?.destroy?.() } catch { /* 忽略 */ }
+      try {
+        oml2d?.destroy?.()
+      } catch {
+        /* 忽略 */
+      }
       if (live2dMount.value) live2dMount.value.innerHTML = ''
     }
   } catch {
-    if (live2dMount.value) {
-      live2dMount.value.innerHTML = '<div class="l2d-fail">Live2D 加载失败</div>'
-    }
+    if (live2dMount.value) live2dMount.value.innerHTML = '<div class="l2d-fail">Live2D 加载失败</div>'
   }
 }
 </script>
 
 <template>
-  <div
-    class="shell"
-    :class="{ 'ct-on': clickThrough }"
-    @mousedown="onMouseDown"
-    @contextmenu="onContextMenu"
-  >
-    <!-- ====== 收起态：三种显示模式 ====== -->
+  <div class="pet-shell" @mousedown="onMouseDown" @contextmenu="onContextMenu">
+    <!-- ====== 收起态：台词气泡 + 角色 ====== -->
     <template v-if="!panelOpen && !askOpen">
-      <!-- 头像模式 -->
-      <div
-        v-if="mode === 'avatar'"
-        class="ball avatar"
-        :class="{ breathing: breathing && !hasMessage && !cuddling, flashing: flash && hasMessage, cuddling, popping }"
-        :style="{ opacity: finalOpacity }"
-      >
-        <img :src="ballAvatar" class="avatar-img" draggable="false" alt="铃" />
+      <Transition name="speech">
+        <div v-if="bubbleOn" class="speech" :style="{ opacity: finalOpacity }">{{ bubble }}</div>
+      </Transition>
+
+      <div class="pet-stage" :class="stageClass" :style="{ height: roleHeight + 'px', opacity: finalOpacity }">
+        <div v-if="mode === 'live2d'" ref="live2dMount" class="live2d-container"></div>
+        <img v-else-if="mode === 'avatar'" :src="ballAvatar" class="pet-avatar" draggable="false" alt="铃" />
+        <div v-else class="pet-text">{{ setting.selfName || '铃' }}</div>
       </div>
 
-      <!-- 纯文字模式 -->
-      <div
-        v-else-if="mode === 'simple'"
-        class="ball avatar"
-        :class="{ breathing: breathing && !hasMessage && !cuddling, flashing: flash && hasMessage, cuddling, popping }"
-        :style="{ opacity: finalOpacity }"
-      >
-        <span class="avatar-text">{{ setting.selfName || '铃' }}</span>
-      </div>
-
-      <!-- Live2D 模式 -->
-      <div
-        v-else-if="mode === 'live2d'"
-        class="live2d-wrap"
-        :class="{ flashing: flash && hasMessage }"
-        :style="{ opacity: finalOpacity }"
-      >
-        <div ref="live2dMount" class="live2d-container"></div>
-      </div>
-
-      <!-- 消息角标（monitor 触发时右上角脉冲） -->
+      <div v-if="zzz" class="zzz">z<span>z</span><span>z</span></div>
       <div v-if="hasMessage" class="msg-badge"></div>
-
-      <!-- 穿透状态胶囊 -->
       <div v-if="clickThrough" class="ct-badge">穿透中 · 点托盘关闭</div>
-
-      <!-- 临时提示条 -->
       <Transition name="fade">
         <div v-if="notice" class="notice-tip">{{ notice }}</div>
       </Transition>
     </template>
 
-    <!-- ====== 展开态一：灵动控制面板（主菜单 / 小工具页） ====== -->
+    <!-- ====== 展开态一：右键控制台 ====== -->
     <div v-else-if="panelOpen" class="panel">
       <div class="panel-head">
         <span class="mini-ball">
           <img v-if="mode === 'avatar'" :src="ballAvatar" class="avatar-img" draggable="false" />
-          <span v-else-if="mode === 'simple'" class="mini-text">{{ setting.selfName || '铃' }}</span>
+          <span v-else class="mini-text">{{ setting.selfName || '铃' }}</span>
         </span>
-        <span class="panel-title">{{ panelPage === 'tools' ? '小工具' : '铃 · 控制台' }}</span>
+        <span class="panel-title">{{ panelPage === 'tools' ? '小工具' : setting.selfName || '铃' }}</span>
         <span class="panel-dot" :class="monitorOn ? 'on' : 'off'" :title="monitorOn ? '屏幕监测中' : '监测已暂停'"></span>
       </div>
 
       <div class="panel-body">
-        <!-- 主菜单页 -->
         <template v-if="panelPage === 'main'">
           <div class="p-item" @click="menuShowMain">打开主窗口</div>
           <div class="p-item" @click="menuQuickAsk">快速提问</div>
@@ -883,11 +908,11 @@ async function loadLive2D() {
 
           <div class="p-sep"></div>
 
-          <div class="p-seg-title">显示模式</div>
+          <div class="p-seg-title">形象</div>
           <div class="p-seg">
+            <div class="seg-btn" :class="{ active: mode === 'live2d' }" @click="switchMode('live2d')">Live2D</div>
             <div class="seg-btn" :class="{ active: mode === 'avatar' }" @click="switchMode('avatar')">头像</div>
             <div class="seg-btn" :class="{ active: mode === 'simple' }" @click="switchMode('simple')">文字</div>
-            <div class="seg-btn" :class="{ active: mode === 'live2d' }" @click="switchMode('live2d')">Live2D</div>
           </div>
 
           <div class="p-sep"></div>
@@ -907,9 +932,8 @@ async function loadLive2D() {
           <div class="p-item danger" @click="menuExit">退出</div>
         </template>
 
-        <!-- 小工具页 -->
         <template v-else>
-          <div class="p-item" @click="panelPage = 'main'"><span class="back-arrow">‹</span> 返回主菜单</div>
+          <div class="p-item" @click="panelPage = 'main'"><span class="back-arrow">‹</span> 返回</div>
           <div class="p-sep"></div>
           <div class="tools-grid">
             <div v-for="t in toolsList" :key="t.id" class="tool-btn" @click="runTool(t.id)">
@@ -928,15 +952,9 @@ async function loadLive2D() {
         <span class="ask-title">{{ setting.selfName || '铃' }} · 快速提问</span>
         <span class="ask-close" @click="closeAsk">×</span>
       </div>
-      <!-- 对话记录 -->
       <div ref="askBodyRef" class="ask-body">
         <div v-if="askMsgs.length === 0 && !askStreaming" class="ask-empty">在这里直接和铃对话，回复实时显示～</div>
-        <div
-          v-for="(m, i) in askMsgs"
-          :key="i"
-          class="msg-line"
-          :class="m.role === 'user' ? 'from-user' : 'from-suzu'"
-        >{{ m.text }}</div>
+        <div v-for="(m, i) in askMsgs" :key="i" class="msg-line" :class="m.role === 'user' ? 'from-user' : 'from-suzu'">{{ m.text }}</div>
         <div v-if="askStreaming" class="msg-line from-suzu streaming">{{ askStreaming }}<span class="caret"></span></div>
         <div v-if="askBusy && !askStreaming" class="msg-line from-suzu typing">铃正在思考…</div>
       </div>
@@ -959,95 +977,102 @@ async function loadLive2D() {
 </template>
 
 <style scoped>
-.shell {
+.pet-shell {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
   position: relative;
   user-select: none;
   -webkit-user-select: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-family: var(--font-main, system-ui, 'Microsoft YaHei', sans-serif);
 }
 
-/* ===== 头像/文字模式球体（光晕随 size 参数化：外扩 ≤ 窗口余量，不被方框裁切） ===== */
-.ball.avatar {
+/* ===== 台词气泡（角色头顶，带小尾巴） ===== */
+.speech {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-bar, rgba(34, 32, 36, 0.92)) 92%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  color: var(--text-main, #eee6e7);
+  font-size: var(--fs-12, 12px);
+  line-height: 1.45;
+  text-align: center;
+  word-break: break-word;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  z-index: 4;
+}
+.speech::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: color-mix(in srgb, var(--bg-bar, rgba(34, 32, 36, 0.92)) 92%, transparent);
+  border-bottom: 0;
+}
+.speech-enter-active,
+.speech-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.speech-enter-from,
+.speech-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* ===== 角色区 ===== */
+.pet-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: grab;
+  transform-origin: 50% 92%;
+  transition: opacity 0.25s;
+}
+.pet-stage:active {
+  cursor: grabbing;
+}
+.pet-stage.dim {
+  filter: saturate(0.75) brightness(0.88);
+}
+.pet-avatar {
+  width: 88%;
+  height: 88%;
+  object-fit: cover;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+.pet-text {
   width: 82%;
   height: 82%;
-  --glow: calc(v-bind(size) * 0.09px);
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent, #ff7a94), color-mix(in srgb, var(--accent, #ff7a94) 55%, #6db3ff));
-  border: 2px solid rgba(255, 255, 255, 0.7);
-  box-shadow: 0 4px calc(var(--glow) * 0.6) color-mix(in srgb, var(--accent, #ff7a94) 45%, transparent);
-  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  box-sizing: border-box;
-  transition: box-shadow 0.2s;
-}
-.ball.avatar:active {
-  cursor: grabbing;
-  box-shadow: 0 6px var(--glow) color-mix(in srgb, var(--accent, #ff7a94) 65%, transparent);
-}
-/* 呼吸光晕（blur 上限 = --glow，外扩 < 窗口余量，圆形不削边） */
-.ball.avatar.breathing {
-  animation: breathe 3s ease-in-out infinite;
-}
-@keyframes breathe {
-  0%, 100% { box-shadow: 0 4px calc(var(--glow) * 0.5) color-mix(in srgb, var(--accent, #ff7a94) 40%, transparent); }
-  50% { box-shadow: 0 6px var(--glow) color-mix(in srgb, var(--accent, #ff7a94) 80%, transparent); }
-}
-/* 长按蹭蹭：轻微缩放起伏 */
-.ball.avatar.cuddling {
-  animation: cuddle 0.9s ease-in-out 1;
-}
-@keyframes cuddle {
-  0%, 100% { transform: scale(1); }
-  20% { transform: scale(0.93) rotate(-3deg); }
-  45% { transform: scale(1.06) rotate(3deg); }
-  70% { transform: scale(0.97) rotate(-2deg); }
-}
-/* 单击回弹 */
-.ball.avatar.popping {
-  animation: pop 0.32s ease-out 1;
-}
-@keyframes pop {
-  0% { transform: scale(0.92); }
-  55% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-}
-
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.avatar-text {
-  font-size: calc(v-bind(size) * 0.27px);
+  font-size: calc(v-bind(size) * 0.2px);
   font-weight: 600;
   color: #fff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, var(--accent, #ff7a94), color-mix(in srgb, var(--accent, #ff7a94) 55%, #6db3ff));
+  border: 2px solid rgba(255, 255, 255, 0.7);
   pointer-events: none;
 }
-
-/* ===== Live2D ===== */
-.live2d-wrap {
+.live2d-container {
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: grab;
-  transition: transform 0.2s, box-shadow 0.2s;
 }
-.live2d-wrap:active { cursor: grabbing; transform: scale(1.01); }
-.live2d-container { width: 100%; height: 100%; }
 .l2d-fail {
   color: var(--text-secondary, #999);
   font-size: var(--fs-12, 12px);
@@ -1055,17 +1080,101 @@ async function loadLive2D() {
   padding: 20px;
 }
 
-/* ===== 消息闪烁 ===== */
-.ball.avatar.flashing,
-.live2d-wrap.flashing {
-  animation: flash 0.5s ease-in-out 6;
+/* 待机呼吸（轻微缩放，不动画宽度） */
+.breathing {
+  animation: pet-breathe 3.2s ease-in-out infinite;
 }
-@keyframes flash {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+@keyframes pet-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.018); }
 }
 
-/* ===== 消息角标 ===== */
+/* 被戳：弹一下 + 左右晃 */
+.state-poke {
+  animation: pet-poke 0.42s ease-out;
+}
+@keyframes pet-poke {
+  0% { transform: scale(1); }
+  30% { transform: scale(0.94) rotate(-3deg); }
+  60% { transform: scale(1.05) rotate(2deg); }
+  100% { transform: scale(1); }
+}
+
+/* 被摸头：舒服地上下浮 */
+.state-pat {
+  animation: pet-pat 0.9s ease-in-out;
+}
+@keyframes pet-pat {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  25% { transform: translateY(-4px) rotate(-1.5deg); }
+  55% { transform: translateY(2px) rotate(1deg); }
+  80% { transform: translateY(-2px) rotate(-0.5deg); }
+}
+
+/* 被拎起来：歪着轻轻晃 */
+.state-drag {
+  animation: pet-drag 1.1s ease-in-out infinite;
+  cursor: grabbing;
+}
+@keyframes pet-drag {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+
+/* 下落：先仰后正 */
+.state-fall {
+  animation: pet-fall 0.5s ease-out infinite alternate;
+}
+@keyframes pet-fall {
+  from { transform: rotate(-2deg) scale(0.99); }
+  to { transform: rotate(1deg) scale(1.01); }
+}
+
+/* 待机小动作：小小跳一下 */
+.state-hop {
+  animation: pet-hop 0.6s ease-out;
+}
+@keyframes pet-hop {
+  0% { transform: translateY(0); }
+  35% { transform: translateY(-7px) scale(1.01); }
+  70% { transform: translateY(1px); }
+  100% { transform: translateY(0); }
+}
+
+/* 打瞌睡 */
+.state-sleep {
+  animation: pet-sleep 4s ease-in-out infinite;
+}
+@keyframes pet-sleep {
+  0%, 100% { transform: rotate(-2deg) scale(0.99); }
+  50% { transform: rotate(-2deg) scale(1.005); }
+}
+
+/* zzz 小字 */
+.zzz {
+  position: absolute;
+  top: 22%;
+  right: 16%;
+  font-size: var(--fs-14, 14px);
+  font-weight: 600;
+  color: var(--text-main, #eee6e7);
+  opacity: 0.85;
+  z-index: 5;
+  pointer-events: none;
+}
+.zzz span {
+  margin-left: 2px;
+  animation: zzz-rise 2.2s ease-out infinite;
+  display: inline-block;
+}
+.zzz span:nth-child(2) { animation-delay: 0.5s; opacity: 0.7; }
+.zzz span:nth-child(3) { animation-delay: 1s; opacity: 0.45; }
+@keyframes zzz-rise {
+  0% { transform: translateY(0); opacity: 0.9; }
+  100% { transform: translateY(-14px); opacity: 0.1; }
+}
+
+/* 消息角标 */
 .msg-badge {
   position: absolute;
   top: 6px;
@@ -1083,10 +1192,9 @@ async function loadLive2D() {
   50% { transform: scale(1.35); opacity: 0.75; }
 }
 
-/* ===== 穿透胶囊 ===== */
 .ct-badge {
   position: absolute;
-  top: 4px;
+  top: 6px;
   left: 50%;
   transform: translateX(-50%);
   padding: 1px 8px;
@@ -1102,10 +1210,9 @@ async function loadLive2D() {
   backdrop-filter: blur(6px);
 }
 
-/* ===== 临时提示条 ===== */
 .notice-tip {
   position: absolute;
-  bottom: 10px;
+  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 16px);
@@ -1123,10 +1230,16 @@ async function loadLive2D() {
   pointer-events: none;
   backdrop-filter: blur(6px);
 }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 
-/* ===== 展开面板（灵动控制台） ===== */
+/* ===== 控制台 ===== */
 .panel {
   width: 100%;
   height: 100%;
@@ -1177,9 +1290,19 @@ async function loadLive2D() {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.panel-dot.on { background: var(--success, #7fd99a); box-shadow: 0 0 6px var(--success, #7fd99a); }
-.panel-dot.off { background: var(--text-secondary, #9a9294); }
-
+.panel-dot.on {
+  background: var(--success, #7fd99a);
+  box-shadow: 0 0 6px var(--success, #7fd99a);
+}
+.panel-dot.off {
+  background: var(--text-secondary, #9a9294);
+}
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
 .panel-body {
   flex: 1;
   overflow-y: auto;
@@ -1199,7 +1322,9 @@ async function loadLive2D() {
 .p-item:hover {
   background: color-mix(in srgb, var(--accent, #ff7a94) 18%, transparent);
 }
-.p-item.danger { color: var(--danger, #ff6b6b); }
+.p-item.danger {
+  color: var(--danger, #ff6b6b);
+}
 .p-hint {
   margin-left: auto;
   font-size: var(--fs-11, 11px);
@@ -1232,15 +1357,15 @@ async function loadLive2D() {
   cursor: pointer;
   transition: all 0.15s;
 }
-.seg-btn:hover { color: var(--text-main, #eee6e7); }
+.seg-btn:hover {
+  color: var(--text-main, #eee6e7);
+}
 .seg-btn.active {
   color: #fff;
   background: var(--accent, #ff7a94);
   border-color: var(--accent, #ff7a94);
   font-weight: 600;
 }
-
-/* ===== 小工具页 ===== */
 .back-arrow {
   font-size: var(--fs-16, 16px);
   line-height: 1;
@@ -1283,7 +1408,7 @@ async function loadLive2D() {
   text-align: center;
 }
 
-/* ===== 快速提问迷你卡 ===== */
+/* ===== 快速提问卡 ===== */
 .ask-card {
   width: 100%;
   height: 100%;
@@ -1368,7 +1493,6 @@ async function loadLive2D() {
   color: var(--text-secondary, #9a9294);
   flex-shrink: 0;
 }
-/* —— 迷你对话区 —— */
 .ask-body {
   flex: 1;
   min-height: 0;
@@ -1425,7 +1549,10 @@ async function loadLive2D() {
 </style>
 
 <style>
-html, body, #app, .app-root {
+html,
+body,
+#app,
+.app-root {
   background: transparent !important;
   overflow: hidden !important;
   width: 100% !important;
@@ -1433,7 +1560,6 @@ html, body, #app, .app-root {
   margin: 0 !important;
   padding: 0 !important;
 }
-/* 彻底隐藏悬浮球窗口的滚动条（滑轨） */
 html::-webkit-scrollbar,
 body::-webkit-scrollbar,
 #app::-webkit-scrollbar,

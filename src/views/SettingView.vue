@@ -564,6 +564,7 @@ async function saveBallSettings() {
     floating_ball_opacity: setting.floatingBallOpacity,
     floating_ball_breathing: setting.floatingBallBreathing,
     floating_ball_flash: setting.floatingBallFlash,
+    floating_ball_chatter: setting.floatingBallChatter,
   })
   generalMsg.value = '✓ 悬浮球设置已保存'
 }
@@ -1173,19 +1174,20 @@ async function toggleAiToolbox() {
               </section>
 
               <section class="card">
-                <div class="card-title">悬浮球</div>
+                <div class="card-title">桌宠（悬浮球）</div>
+                <p class="hint">桌面上陪你工作的小铃：会自己动一动、偶尔说话，点一下有反应，摸头会长呼噜，拖动可以被拎起来、松手会掉到屏幕底。</p>
                 <div class="field">
                   <label class="switch-wrap">
-                    <span class="label">显示悬浮球</span>
+                    <span class="label">显示桌宠</span>
                     <input type="checkbox" class="switch" v-model="setting.floatingBallEnabled" @change="saveBallSettings" />
                   </label>
                 </div>
                 <div v-if="setting.floatingBallEnabled" class="field">
-                  <label>显示模式</label>
+                  <label>形象</label>
                   <select v-model="setting.floatingBallMode" @change="saveBallSettings">
+                    <option value="live2d">Live2D 形象（推荐）</option>
                     <option value="avatar">头像</option>
                     <option value="simple">纯文字</option>
-                    <option value="live2d">Live2D（实验）</option>
                   </select>
                 </div>
                 <div v-if="setting.floatingBallEnabled" class="field">
@@ -1209,6 +1211,13 @@ async function toggleAiToolbox() {
                     <span class="label">消息闪烁</span>
                     <input type="checkbox" class="switch" v-model="setting.floatingBallFlash" @change="saveBallSettings" />
                   </label>
+                </div>
+                <div v-if="setting.floatingBallEnabled" class="row">
+                  <label class="switch-wrap">
+                    <span class="label">偶尔自言自语</span>
+                    <input type="checkbox" class="switch" v-model="setting.floatingBallChatter" @change="saveBallSettings" />
+                  </label>
+                  <span class="hint">关掉后只有动作，不冒气泡</span>
                 </div>
                 <div v-if="setting.floatingBallEnabled" class="actions">
                   <button class="btn ghost" @click="resetBallPosition">重置位置</button>

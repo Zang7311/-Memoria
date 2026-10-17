@@ -329,6 +329,8 @@ export interface AppConfig {
   floating_ball_breathing: boolean
   /** 是否开启消息闪烁 */
   floating_ball_flash: boolean
+  /** 桌宠是否偶尔自言自语（默认开） */
+  floating_ball_chatter?: boolean
   floating_ball_position: [number, number]
   monitor_enabled: boolean
   monitor_frequency: number
