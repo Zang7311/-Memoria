@@ -471,10 +471,13 @@ async function guardSize() {
   if (panelOpen.value || askOpen.value || dragging) return
   try {
     const outer = await win.outerSize()
-    // outerSize 是物理像素，窗口尺寸是逻辑像素，用 webview 的缩放比换算
-    const scale = window.devicePixelRatio || 1
-    const w = Math.round(outer.width / scale)
-    const h = Math.round(outer.height / scale)
+    // outerSize 是物理像素；必须用 Tauri 的 scaleFactor 换算（本机实测 1.5）。
+    // ⚠ 不能用 window.devicePixelRatio：在这个窗口里它报 1.00，会让守卫每 5 秒
+    // 误判一次尺寸并反复 setSize，反过来干扰渲染（GPT 静态检查发现的真 bug）。
+    const scale = await win.scaleFactor().catch(() => 1)
+    const safeScale = scale > 0 ? scale : 1
+    const w = Math.round(outer.width / safeScale)
+    const h = Math.round(outer.height / safeScale)
     if (w !== winW.value || h !== winH.value) {
       await win.setSize(new LogicalSize(winW.value, winH.value))
     }
