@@ -113,23 +113,75 @@ pub async fn check_update(force: bool) -> Result<CheckUpdateResponse, AppError> 
     })
 }
 
-/// 版本号比较：cur < latest 返回负数（简单三段比较）
+/// 版本号比较：cur < latest 返回负数，相等 0，cur > latest 正数。
+///
+/// 按 semver 的规则来（只做需要的那部分）：
+/// - 核心三段数字逐个比，缺的位按 0 算
+/// - 预发布后缀（-beta.9）不是修订号：0.7.0-beta.9 < 0.7.0 < 0.7.1
+/// - 两边都有预发布时逐个标识比，数字按数值（beta.10 > beta.9），数字小于字母
+/// - 构建元数据（+xxx）不参与比较
+///
+/// 之前是直接 split('.') 再 parse::<i32>()，后缀里那段 "0-beta" 解析失败被丢掉，
+/// 结果 0.7.0-beta.9 被当成 0.7.9 —— 稳定版 0.7.0 和 0.7.1~0.7.8 全被判成「已是最新」。
 fn compare_versions(cur: &str, latest: &str) -> i32 {
-    let parse = |s: &str| -> Vec<i32> {
-        s.split('.')
-            .filter_map(|p| p.parse::<i32>().ok())
-            .collect()
-    };
-    let a = parse(cur);
-    let b = parse(latest);
+    fn split_version(s: &str) -> (Vec<i64>, Vec<String>) {
+        let s = s.trim().trim_start_matches('v');
+        let s = s.split('+').next().unwrap_or(s);
+        let (core, pre) = match s.split_once('-') {
+            Some((c, p)) => (c, Some(p)),
+            None => (s, None),
+        };
+        let nums: Vec<i64> = core
+            .split('.')
+            .map(|p| p.trim().parse::<i64>().unwrap_or(0))
+            .collect();
+        let pres: Vec<String> = pre
+            .map(|p| p.split('.').map(|x| x.to_string()).collect())
+            .unwrap_or_default();
+        (nums, pres)
+    }
+
+    let (a, a_pre) = split_version(cur);
+    let (b, b_pre) = split_version(latest);
+
     for i in 0..a.len().max(b.len()) {
         let x = a.get(i).copied().unwrap_or(0);
         let y = b.get(i).copied().unwrap_or(0);
         if x != y {
-            return x - y;
+            return if x < y { -1 } else { 1 };
         }
     }
-    0
+
+    // 核心版本相同：带预发布后缀的那一方更旧
+    match (a_pre.is_empty(), b_pre.is_empty()) {
+        (true, true) => 0,
+        (false, true) => -1,
+        (true, false) => 1,
+        (false, false) => {
+            for i in 0..a_pre.len().max(b_pre.len()) {
+                match (a_pre.get(i), b_pre.get(i)) {
+                    (None, None) => break,
+                    (None, Some(_)) => return -1,
+                    (Some(_), None) => return 1,
+                    (Some(x), Some(y)) => {
+                        let ord = match (x.parse::<i64>(), y.parse::<i64>()) {
+                            (Ok(p), Ok(q)) => p.cmp(&q),
+                            // 数字标识比字母标识旧（semver 规定）
+                            (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+                            (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                            (Err(_), Err(_)) => x.cmp(y),
+                        };
+                        match ord {
+                            std::cmp::Ordering::Less => return -1,
+                            std::cmp::Ordering::Greater => return 1,
+                            std::cmp::Ordering::Equal => {}
+                        }
+                    }
+                }
+            }
+            0
+        }
+    }
 }
 
 #[cfg(test)]
@@ -144,5 +196,24 @@ mod tests {
         assert!(compare_versions("1.10.0", "1.9.9") > 0);
         // 前缀 v 已去掉
         assert!(compare_versions("0.1.0", "1.0.0") < 0);
+    }
+
+    #[test]
+    fn version_compare_prerelease() {
+        // 稳定版比同号预发布新
+        assert!(compare_versions("0.7.0-beta.9", "0.7.0") < 0);
+        assert!(compare_versions("0.7.0", "0.7.0-beta.9") > 0);
+        // 预发布后缀不能混进修订号：0.7.1 比 0.7.0-beta.9 新
+        assert!(compare_versions("0.7.0-beta.9", "0.7.1") < 0);
+        assert!(compare_versions("0.7.5", "0.7.0-beta.9") > 0);
+        // 预发布之间：数字按数值比，不能按字符串比
+        assert!(compare_versions("0.7.0-beta.9", "0.7.0-beta.10") < 0);
+        assert!(compare_versions("0.7.0-beta.9", "0.7.0-beta.8") > 0);
+        // 带 v 前缀、带构建元数据
+        assert_eq!(compare_versions("0.7.0-beta.9", "v0.7.0-beta.9"), 0);
+        assert_eq!(compare_versions("0.7.0+build.5", "0.7.0"), 0);
+        // 主次版本不同时后缀不影响判断
+        assert!(compare_versions("0.6.3", "0.7.0-beta.1") < 0);
+        assert!(compare_versions("0.8.0-beta.1", "0.7.0") > 0);
     }
 }
