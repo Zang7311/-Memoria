@@ -1185,10 +1185,13 @@ async function toggleAiToolbox() {
                 <div v-if="setting.floatingBallEnabled" class="field">
                   <label>形象</label>
                   <select v-model="setting.floatingBallMode" @change="saveBallSettings">
-                    <option value="live2d">Live2D 形象（推荐）</option>
-                    <option value="avatar">头像</option>
+                    <option value="avatar">头像（推荐）</option>
                     <option value="simple">纯文字</option>
+                    <option value="live2d">Live2D（实验）</option>
                   </select>
+                  <p class="hint" v-if="setting.floatingBallMode === 'live2d'">
+                    Live2D 形象是实验功能：在 150% 等高缩放屏幕上，模型可能比窗口大、被裁掉一部分。显示不对就切回头像。
+                  </p>
                 </div>
                 <div v-if="setting.floatingBallEnabled" class="field">
                   <label>大小</label>

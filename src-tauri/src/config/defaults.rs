@@ -34,7 +34,7 @@ pub fn default_config() -> AppConfig {
         model_mode: "script".to_string(),
         depth: 2,
         language_mix_rate: 8,
-        floating_ball_mode: "live2d".to_string(),
+        floating_ball_mode: "avatar".to_string(),
         floating_ball_enabled: true,
         floating_ball_size: 200,
         floating_ball_opacity: 1.0,

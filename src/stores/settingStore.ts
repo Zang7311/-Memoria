@@ -73,7 +73,7 @@ export const useSettingStore = defineStore('setting', () => {
   const modelMode = ref<'script' | 'api' | 'local'>('script')
   const depth = ref(2)
   const languageMixRate = ref(8)
-  const floatingBallMode = ref<'avatar' | 'simple' | 'live2d'>('live2d')
+  const floatingBallMode = ref<'avatar' | 'simple' | 'live2d'>('avatar')
   const floatingBallEnabled = ref(true)
   const floatingBallSize = ref(200) // 与后端默认 200 一致，避免冷启动窗口尺寸从 100 突变到 200
   const floatingBallOpacity = ref(1.0)
@@ -137,7 +137,7 @@ export const useSettingStore = defineStore('setting', () => {
     modelMode.value = (c.model_mode as 'script' | 'api' | 'local') || 'script'
     depth.value = ([1, 2, 3, 4] as number[]).includes(c.depth) ? c.depth : 2
     languageMixRate.value = (typeof c.language_mix_rate === 'number') ? Math.min(Math.max(c.language_mix_rate, 0), 30) : 8
-    floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple' | 'live2d') || 'live2d'
+    floatingBallMode.value = (c.floating_ball_mode as 'avatar' | 'simple' | 'live2d') || 'avatar'
     floatingBallEnabled.value = c.floating_ball_enabled ?? true
     floatingBallSize.value = c.floating_ball_size ?? 200
     floatingBallOpacity.value = c.floating_ball_opacity ?? 1.0

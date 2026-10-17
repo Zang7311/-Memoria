@@ -26,7 +26,10 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      //    另外忽略原子写入的临时目录/文件：编辑器（含 AI 工具）保存时先写
+      //    `.<name>.<pid>.<uuid>.tmpdir/<name>.tmp` 再改名，Windows 上 fs.watch 撞上
+      //    这些影子文件会抛 EBUSY 直接把 vite 进程带崩（dev 会话反复失败的真凶）。
+      ignored: ["**/src-tauri/**", "**/.*.tmpdir/**", "**/*.tmp", "**/.git/**"],
     },
   },
 }));

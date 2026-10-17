@@ -1,16 +1,16 @@
 <!-- 《铃·记忆体》桌宠 v8（悬浮球功能打回重做）
      定位：桌面宠物，而不是一个圆球。
-       - 形象：完整角色（Live2D 模型），头像/纯文字是轻量模式
+       - 形象：头像（默认，稳定）/ 纯文字 / Live2D（实验，高缩放屏可能被裁）
        - 生命感：待机小动作、偶尔自言自语、5 分钟没人理会趴下打瞌睡
-       - 互动：单击戳一下、长按摸摸头、拖动拎起来、松手会掉到屏幕底、双击快速提问
+       - 互动：单击戳一下、长按摸摸头、拖动拎起来、双击快速提问
        - 右键：控制台（打开主窗口 / 换形象 / 穿透 / 监测 / 设置 / 退出）
        - 反馈：头顶台词气泡（点击、摸头、自言自语、屏幕监测提醒）
-     窗口：透明置顶小窗（lib.rs 创建）；位置记忆、尺寸自愈、鼠标穿透保留。 -->
+     窗口：透明置顶小窗（lib.rs 创建，启动随配置常驻）。
+     ⚠️ 位置只由用户用系统拖动决定；本组件刻意不程序化移动窗口 ——
+        150% 缩放下移动透明窗口会让 WebView 画面与外壳脱节（实机踩到）。 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { convertFileSrc } from '@tauri-apps/api/core'
-import { resourceDir } from '@tauri-apps/api/path'
-import { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize, primaryMonitor } from '@tauri-apps/api/window'
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { emit, listen } from '@tauri-apps/api/event'
 import {
@@ -34,7 +34,6 @@ import { useSettingStore } from '../stores/settingStore'
 import {
   BUBBLE_MS,
   SLEEP_AFTER_MS,
-  fallTargetY,
   nextChatterDelay,
   nextIdleDelay,
   pickPetLine,
@@ -87,52 +86,6 @@ let longTimer: number | undefined
 let clickTimer: number | undefined
 let lastClickAt = 0
 let bubbleTimer: number | undefined
-
-// —— 位置持久化（逻辑坐标，避免高 DPI 缩放漂移）——
-const POS_KEY = 'floating-ball-pos-v9'
-
-async function dpiScale(): Promise<number> {
-  try {
-    const mon = (await currentMonitor()) || (await primaryMonitor())
-    return mon?.scaleFactor || 1
-  } catch {
-    return 1
-  }
-}
-
-async function winLogicalPos(): Promise<{ x: number; y: number }> {
-  const p = await win.outerPosition()
-  const s = await dpiScale()
-  return { x: Math.round(p.x / s), y: Math.round(p.y / s) }
-}
-
-async function screenLogicalSize(): Promise<{ w: number; h: number }> {
-  try {
-    const monitor = (await currentMonitor()) || (await primaryMonitor())
-    const scale = monitor?.scaleFactor || 1
-    return {
-      w: Math.round((monitor?.size.width ?? 0) / scale),
-      h: Math.round((monitor?.size.height ?? 0) / scale),
-    }
-  } catch {
-    return { w: 1920, h: 1080 }
-  }
-}
-
-async function clampToScreen(x: number, y: number): Promise<[number, number]> {
-  const { w, h } = await screenLogicalSize()
-  return [Math.min(Math.max(0, x), Math.max(0, w - winW.value)), Math.min(Math.max(0, y), Math.max(0, h - winH.value))]
-}
-
-function savePos() {
-  winLogicalPos().then((p) => {
-    try {
-      localStorage.setItem(POS_KEY, JSON.stringify(p))
-    } catch {
-      /* 忽略 */
-    }
-  }).catch(() => {})
-}
 
 // ==================== 鼠标事件 ====================
 let lastActive = Date.now()
@@ -270,53 +223,13 @@ function say(text: string) {
   }, BUBBLE_MS)
 }
 
-// ==================== 掉落（松手后掉到屏幕底，带弹跳） ====================
+// ==================== 松手之后 ====================
+// 说明：这里刻意不做「掉到屏幕底」的窗口位移 —— 在 150% 缩放 + 透明窗口上，
+// 程序化移动窗口会让 WebView 画面跟外壳脱节（实机踩到，画面跑到屏幕外）。
+// 桌宠的位置只由用户用系统拖动决定，系统拖动时画面能正确跟随。
 async function dropAfterDrag() {
-  const pos = await winLogicalPos()
-  const { h } = await screenLogicalSize()
-  const target = fallTargetY(h, winH.value)
-  if (target - pos.y > 60) {
-    petState.value = 'fall'
-    await animateFall(pos.x, pos.y, target)
-    petState.value = 'idle'
-    say(pickPetLine('drop'))
-  } else {
-    petState.value = 'idle'
-  }
-  savePos()
-}
-
-function animateFall(x: number, fromY: number, toY: number): Promise<void> {
-  return new Promise((resolve) => {
-    let y = fromY
-    let velocity = 0
-    let bounces = 0
-    let last = performance.now()
-    const gravity = 3200 // 逻辑像素 / 秒²
-    const step = (now: number) => {
-      const dt = Math.min(0.033, (now - last) / 1000)
-      last = now
-      velocity += gravity * dt
-      y += velocity * dt
-      if (y >= toY) {
-        y = toY
-        if (bounces < 2) {
-          bounces += 1
-          velocity = -velocity * 0.38
-          if (Math.abs(velocity) < 160) velocity = 0
-        } else {
-          velocity = 0
-        }
-      }
-      win.setPosition(new LogicalPosition(Math.round(x), Math.round(y))).catch(() => {})
-      if (velocity === 0 && y >= toY) {
-        resolve()
-        return
-      }
-      requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
-  })
+  petState.value = 'idle'
+  if (Math.random() < 0.5) say(pickPetLine('drop'))
 }
 
 // ==================== 右键控制台 ====================
@@ -330,8 +243,9 @@ const askStreaming = ref('')
 const askBusy = ref(false)
 const askComposing = ref(false)
 let askUnlisten: (() => void)[] = []
-let panelPrevPos = { x: 0, y: 0 }
 
+// 展开/收起只改尺寸、不动位置：移动透明窗口会让 WebView 画面与外壳脱节。
+// 展开时窗口以左上角为锚点变大，收起再缩回，桌宠始终待在原处。
 async function expandTo(w: number, h: number, kind: 'panel' | 'ask') {
   if (kind === 'ask' && panelOpen.value) panelOpen.value = false
   if (kind === 'panel' && askOpen.value) askOpen.value = false
@@ -339,14 +253,7 @@ async function expandTo(w: number, h: number, kind: 'panel' | 'ask') {
   if (kind === 'panel') panelOpen.value = true
   if (mode.value === 'live2d' && live2dCleanup) live2dCleanup()
   try {
-    const pos = await winLogicalPos()
-    panelPrevPos = { x: pos.x, y: pos.y }
-    const { w: sw, h: sh } = await screenLogicalSize()
-    const cx = Math.min(Math.max(0, pos.x + Math.round((winW.value - w) / 2)), Math.max(0, sw - w))
-    const cy = Math.min(Math.max(0, pos.y + Math.round((winH.value - h) / 2)), Math.max(0, sh - h))
-    await win.setPosition(new LogicalPosition(cx, cy))
     await win.setSize(new LogicalSize(w, h))
-    await win.setPosition(new LogicalPosition(cx, cy))
   } catch {
     /* 忽略 */
   }
@@ -354,10 +261,7 @@ async function expandTo(w: number, h: number, kind: 'panel' | 'ask') {
 
 async function restoreBall() {
   try {
-    const [cx, cy] = await clampToScreen(panelPrevPos.x, panelPrevPos.y)
-    await win.setPosition(new LogicalPosition(cx, cy))
     await win.setSize(new LogicalSize(winW.value, winH.value))
-    await win.setPosition(new LogicalPosition(cx, cy))
   } catch {
     /* 忽略 */
   }
@@ -565,7 +469,8 @@ async function guardSize() {
   if (panelOpen.value || askOpen.value || dragging) return
   try {
     const outer = await win.outerSize()
-    const scale = await dpiScale()
+    // outerSize 是物理像素，窗口尺寸是逻辑像素，用 webview 的缩放比换算
+    const scale = window.devicePixelRatio || 1
     const w = Math.round(outer.width / scale)
     const h = Math.round(outer.height / scale)
     if (w !== winW.value || h !== winH.value) {
@@ -656,6 +561,18 @@ onMounted(async () => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
 
+  // 高 DPI 修复：这台机器 150% 缩放时，Tauri 无边框透明窗的 WebView2 会把物理像素
+  // 当成 CSS 像素（内容整体放大约 1.5 倍、右下偏移）。按 DPR 反向缩放让画面回到窗口内。
+  try {
+    const dpr = window.devicePixelRatio || 1
+    if (dpr > 1.01) {
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      await getCurrentWebviewWindow().setZoom(1 / dpr)
+    }
+  } catch {
+    /* 忽略：缩放失败不影响桌宠功能 */
+  }
+
   try {
     if (!setting.loaded) await setting.loadConfig()
   } catch {
@@ -714,12 +631,8 @@ onMounted(async () => {
   }
 
   try {
-    const saved = localStorage.getItem(POS_KEY)
-    if (saved) {
-      const { x, y } = JSON.parse(saved)
-      const [cx, cy] = await clampToScreen(x, y)
-      await win.setPosition(new LogicalPosition(cx, cy))
-    }
+    // 位置不归前端管：窗口创建时 Rust 已按配置（或右下角默认）定位好。
+    // 早期在这里 setPosition 会踩到「外壳与画面错位」，详见 lib.rs 的注释。
     await win.setSize(new LogicalSize(winW.value, winH.value))
     if (mode.value === 'live2d') {
       await nextTick()
@@ -795,17 +708,9 @@ watch(size, async () => {
 
 watch(enabled, async (val) => {
   try {
-    if (val) {
-      await win.show()
-      const saved = localStorage.getItem(POS_KEY)
-      if (saved) {
-        const { x, y } = JSON.parse(saved)
-        const [cx, cy] = await clampToScreen(x, y)
-        await win.setPosition(new LogicalPosition(cx, cy))
-      }
-    } else {
-      await win.hide()
-    }
+    // 位置已在创建时定好，显示/隐藏只切可见性
+    if (val) await win.show()
+    else await win.hide()
   } catch {
     /* 忽略 */
   }
@@ -813,21 +718,42 @@ watch(enabled, async (val) => {
 
 // ==================== Live2D ====================
 const live2dMount = ref<HTMLDivElement | null>(null)
+const live2dReady = ref(false)
 let live2dCleanup: (() => void) | null = null
+let live2dRetries = 0
+let live2dReloaded = false
 
 async function loadLive2D() {
-  if (mode.value !== 'live2d' || panelOpen.value || !live2dMount.value) return
+  if (mode.value !== 'live2d' || panelOpen.value) return
+  live2dReady.value = false
   if (live2dCleanup) {
     live2dCleanup()
     live2dCleanup = null
   }
+  await nextTick()
+  // 模板还没挂上（首次渲染 / 热更新重挂载时可能撞上）→ 稍后重试，别就此空白
+  if (!live2dMount.value) {
+    if (live2dRetries < 5) {
+      live2dRetries += 1
+      window.setTimeout(() => {
+        if (mode.value === 'live2d') void loadLive2D()
+      }, 300)
+    }
+    return
+  }
+  live2dRetries = 0
   live2dMount.value.innerHTML = ''
   try {
     const { loadOml2d } = await import('oh-my-live2d')
     if (!live2dMount.value) return
     const container = live2dMount.value
-    const dir = await resourceDir()
-    const modelUrl = convertFileSrc(`${dir}live2d/haru/haru_greeter_t03.model3.json`)
+    // 模型走前端静态资源（public/live2d，打包时进 dist）：
+    // 之前用资源目录 + asset 协议，但资源在 F: 盘、assetProtocol scope 只放行 $HOME，
+    // 模型实际加载不到 → 窗口一片透明。改由 webview 自身源加载，dev/打包都可靠。
+    const modelUrl = `${import.meta.env.BASE_URL}live2d/haru/haru_greeter_t03.model3.json`
+
+    let loaded = false
+    let guard: number | undefined
 
     let oml2d: { onLoad: (fn: (s: string) => void) => void; destroy?: () => void } | null = null
     try {
@@ -838,22 +764,39 @@ async function loadLive2D() {
         models: [{ path: modelUrl, scale: 0.12 }],
       })
     } catch {
-      showNotice('Live2D 不可用，已切换头像模式')
-      setting.update({ floating_ball_mode: 'avatar' }).catch(() => {})
+      showNotice('Live2D 不可用，先显示头像')
       return
     }
     oml2d?.onLoad((status) => {
       if (status === 'fail') {
-        showNotice('Live2D 加载失败，已切换头像模式')
-        setting.update({ floating_ball_mode: 'avatar' }).catch(() => {})
+        live2dReady.value = false
+        showNotice('Live2D 加载失败，先显示头像')
         try {
           oml2d?.destroy?.()
         } catch {
           /* 忽略 */
         }
+        return
       }
+      live2dReady.value = true
     })
+    // 兜底：8 秒还没起来就重建一次（WebGL 上下文偶尔首次初始化失败），
+    // 再不行就保留底垫头像 —— 桌宠窗口绝不能是"隐形"的。
+    guard = window.setTimeout(() => {
+      const canvas = live2dMount.value?.querySelector('canvas') as HTMLCanvasElement | null
+      if (loaded || (canvas && canvas.width > 0 && canvas.height > 0)) {
+        live2dReady.value = true
+        return
+      }
+      if (!live2dReloaded) {
+        live2dReloaded = true
+        void loadLive2D()
+        return
+      }
+      showNotice('Live2D 没起来，先显示头像')
+    }, 8000)
     live2dCleanup = () => {
+      if (guard) clearTimeout(guard)
       try {
         oml2d?.destroy?.()
       } catch {
@@ -876,7 +819,11 @@ async function loadLive2D() {
       </Transition>
 
       <div class="pet-stage" :class="stageClass" :style="{ height: roleHeight + 'px', opacity: finalOpacity }">
-        <div v-if="mode === 'live2d'" ref="live2dMount" class="live2d-container"></div>
+        <div v-if="mode === 'live2d'" class="live2d-container">
+          <!-- 底垫头像：Live2D 还没起来时至少有形象，不让桌面出现一个"隐形窗口" -->
+          <img v-show="!live2dReady" :src="ballAvatar" class="pet-avatar l2d-backdrop" draggable="false" alt="铃" />
+          <div ref="live2dMount" class="live2d-mount"></div>
+        </div>
         <img v-else-if="mode === 'avatar'" :src="ballAvatar" class="pet-avatar" draggable="false" alt="铃" />
         <div v-else class="pet-text">{{ setting.selfName || '铃' }}</div>
       </div>
@@ -1070,6 +1017,27 @@ async function loadLive2D() {
   pointer-events: none;
 }
 .live2d-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+/* oml2d 在高 DPI（本机 150%）下会把 canvas 按物理像素撑开，溢出本就不大的桌宠窗口。
+   强制按容器尺寸显示，角色才会完整待在窗口里。 */
+.live2d-mount :deep(canvas) {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.live2d-container .l2d-backdrop {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 72%;
+  height: 72%;
+  border-radius: 50%;
+}
+.live2d-mount {
   width: 100%;
   height: 100%;
 }

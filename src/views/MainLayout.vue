@@ -21,6 +21,7 @@ import { assetUrl, isImagePath } from '../utils/tauri'
 import { useSyncStore } from '../stores/syncStore'
 import { useChatStore } from '../stores/chatStore'
 import { listen } from '@tauri-apps/api/event'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 const setting = useSettingStore()
 const desktop = useDesktopStore()
@@ -58,6 +59,10 @@ onMounted(() => {
   goals.init().catch(reason => { goals.error = String(reason) })
   // 悬浮球状态与后端同步（初始隐藏）
   desktop.loadMonitorRules().catch(() => {})
+  // 桌宠随应用启动常驻：同步窗口真实可见性，避免羽毛按钮状态与窗口对不上
+  WebviewWindow.getByLabel('floating-ball')
+    .then(async (ball) => { if (ball) desktop.floatingBallVisible = await ball.isVisible().catch(() => false) })
+    .catch(() => {})
   // AI-8：初始化同步 Store（网络状态监听 + 设备缓存）
   sync.init().catch(() => {})
   // 收尾批次3：加载多会话（无会话则自动新建）

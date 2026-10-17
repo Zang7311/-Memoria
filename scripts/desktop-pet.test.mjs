@@ -55,16 +55,17 @@ test('掉落目标贴屏幕底，不会算出负数', () => {
 
 test('桌宠契约：气泡、摸头、拖动掉落、打瞌睡、自言自语都接在外壳里', () => {
   const ball = readFileSync(new URL('src/components/FloatingBall.vue', root), 'utf8')
-  for (const token of ['speech', 'playPat', 'playPoke', 'animateFall', 'dropAfterDrag', 'maybeSleep', 'maybeChatter', 'pickPetLine', 'zzz']) {
+  for (const token of ['speech', 'playPat', 'playPoke', 'dropAfterDrag', 'maybeSleep', 'maybeChatter', 'pickPetLine', 'zzz']) {
     assert.match(ball, new RegExp(token), `桌宠外壳缺少 ${token}`)
   }
   // 音量开关：自言自语受设置控制，关掉后不再冒气泡
   assert.match(ball, /floatingBallChatter/)
 })
 
-test('前后端设置与默认形象一致：桌宠默认 Live2D，可关闭自言自语', () => {
+test('前后端设置与默认形象一致：桌宠默认头像，可关闭自言自语', () => {
   const defaults = readFileSync(new URL('src-tauri/src/config/defaults.rs', root), 'utf8')
-  assert.match(defaults, /floating_ball_mode: "live2d"/)
+  // Live2D 在高缩放屏幕上会溢出窗口（实机踩到），默认形象用稳定的头像
+  assert.match(defaults, /floating_ball_mode: "avatar"/)
   assert.match(defaults, /floating_ball_chatter: true/)
   assert.match(readFileSync(new URL('src-tauri/src/types.rs', root), 'utf8'), /pub floating_ball_chatter: bool/)
   assert.match(readFileSync(new URL('src/stores/settingStore.ts', root), 'utf8'), /floatingBallChatter/)

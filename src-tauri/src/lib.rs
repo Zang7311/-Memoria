@@ -43,6 +43,28 @@ fn greet(name: &str) -> String {
     { let _ = name; String::new() }
 }
 
+/// 桌宠窗口的启动位置（逻辑坐标）。
+///
+/// 配置里存过位置就用配置；全 0（从未移动过）→ 屏幕右下角，别一上来就压住主窗口。
+/// 目前仅作为参考实现保留：窗口位置统一由前端在「窗口稳定后」恢复，
+/// 因为透明窗口在创建阶段被移动会导致画面与外壳错位（见 setup 里的注释）。
+#[allow(dead_code)]
+fn floating_ball_start_position(app: &tauri::AppHandle) -> (f64, f64) {
+    const WIN_W: f64 = 300.0;
+    const WIN_H: f64 = 464.0;
+    let (x, y) = config::store::get_config().floating_ball_position;
+    if x != 0 || y != 0 {
+        return (x as f64, y as f64);
+    }
+    let monitor = app.primary_monitor().ok().flatten();
+    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or(1.0);
+    let (sw, sh) = monitor
+        .as_ref()
+        .map(|m| (m.size().width as f64 / scale, m.size().height as f64 / scale))
+        .unwrap_or((1280.0, 720.0));
+    ((sw - WIN_W - 24.0).max(0.0), (sh - WIN_H - 48.0).max(0.0))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // —— 主窗口/悬浮球卡顿修复：WebView2 强制软件渲染（老显卡 R7 350 GPU 合成不稳定）
@@ -118,12 +140,19 @@ pub fn run() {
 
             // 2. 悬浮球窗口（独立无边框透明小窗，常驻置顶；默认隐藏，托盘/设置可开启）
             //    默认 200x200（支持 Live2D），最小 80x80（纯头像/文字模式）
+            //
+            // ⚠️ 这里刻意不给 .position()：透明窗口在 WebView2 内容初始化前后被移动，
+            //    会出现「外壳移走了、画面留在原地（甚至跑到屏幕外）」的错位
+            //    （2026-10-17 实机踩到）。位置由前端在窗口稳定后恢复，见 FloatingBall.vue。
             tauri::WebviewWindowBuilder::new(
                 app,
                 "floating-ball",
                 tauri::WebviewUrl::App("index.html".into()),
             )
             .title("铃·记忆体 悬浮球")
+            // 先按小尺寸创建、由前端在挂载后 setSize 到目标尺寸：
+            // 高 DPI 下「创建即最终尺寸」会让 oml2d 的 canvas 按物理像素撑开、溢出窗口；
+            // 走一次 setSize 能让 WebView 重新布局，canvas 才会贴合窗口。
             .inner_size(200.0, 200.0)
             .min_inner_size(80.0, 80.0)
             .resizable(false)
@@ -134,6 +163,14 @@ pub fn run() {
             .shadow(false)
             .visible(false)
             .build()?;
+
+            // 桌宠是常驻的：配置里开着「显示桌宠」就随应用启动出现，
+            // 不该每次手动去点托盘。首次安装默认开启。
+            if config::store::get_config().floating_ball_enabled {
+                if let Some(ball) = app.get_webview_window("floating-ball") {
+                    let _ = ball.show();
+                }
+            }
 
             // 临时调试通道（v0.6 悬浮球诊断，发布前移除）：前端 emit ball-diag → 打印到日志
             {
