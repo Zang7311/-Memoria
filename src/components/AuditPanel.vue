@@ -76,8 +76,8 @@ async function clear() {
 .audit-panel { position: fixed; right: 16px; top: 64px; bottom: 24px; width: min(620px, calc(100vw - 32px)); z-index: 100; overflow-y: auto; padding: 20px; box-sizing: border-box; background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border, #8886); border-radius: var(--radius-ui, 12px); box-shadow: 0 8px 30px #0004; }
 header, .actions, .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 h2 { margin: 0 auto 0 0; }
-h3 { font-size: 14px; }
-.hint, .entry span { font-size: 12px; color: var(--text-secondary); }
+h3 { font-size: var(--fs-14, 14px); }
+.hint, .entry span { font-size: var(--fs-12, 12px); color: var(--text-secondary); }
 label { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
 input, select, button { padding: 6px 10px; border: 1px solid var(--border, #8886); border-radius: 6px; background: var(--bg-main); color: var(--text-main); }
 input { min-width: 0; width: 190px; }

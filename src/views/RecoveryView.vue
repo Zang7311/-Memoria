@@ -115,10 +115,10 @@ function onExit() {
   color: #eee;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
 }
-.rec-logo { font-size: 20px; font-weight: 800; color: #ff9db4; }
-.rec-sub { font-size: 12px; color: #aaa; margin: 6px 0 16px; }
+.rec-logo { font-size: var(--fs-20, 20px); font-weight: 800; color: #ff9db4; }
+.rec-sub { font-size: var(--fs-12, 12px); color: #aaa; margin: 6px 0 16px; }
 .rec-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.rec-loading { font-size: 13px; color: #888; text-align: center; padding: 10px; }
+.rec-loading { font-size: var(--fs-13, 13px); color: #888; text-align: center; padding: 10px; }
 .rec-item {
   display: flex;
   align-items: center;
@@ -126,13 +126,13 @@ function onExit() {
   padding: 8px 12px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
-  font-size: 13px;
+  font-size: var(--fs-13, 13px);
 }
 .rec-item.bad { background: rgba(255, 69, 58, 0.12); border: 1px solid rgba(255, 69, 58, 0.3); }
 .rec-mark { font-weight: 800; color: #4caf50; }
 .rec-item.bad .rec-mark { color: #ff453a; }
 .rec-name { font-weight: 600; flex-shrink: 0; }
-.rec-detail { font-size: 11px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-detail { font-size: var(--fs-11, 11px); color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-actions { display: flex; gap: 8px; }
 .rec-btn {
   flex: 1;
@@ -141,7 +141,7 @@ function onExit() {
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08);
   color: #eee;
-  font-size: 13px;
+  font-size: var(--fs-13, 13px);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -149,6 +149,6 @@ function onExit() {
 .rec-btn.primary { background: #ff7a94; border-color: #ff7a94; color: #fff; font-weight: 600; }
 .rec-btn.danger { border-color: rgba(255, 69, 58, 0.5); color: #ff6b5e; }
 .rec-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.rec-tip { font-size: 11px; color: #888; margin: 10px 0 0; }
-.rec-msg { font-size: 12px; color: #ff9db4; margin: 10px 0 0; }
+.rec-tip { font-size: var(--fs-11, 11px); color: #888; margin: 10px 0 0; }
+.rec-msg { font-size: var(--fs-12, 12px); color: #ff9db4; margin: 10px 0 0; }
 </style>

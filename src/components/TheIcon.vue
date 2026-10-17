@@ -80,7 +80,7 @@ const style = computed(() => ({
   align-items: center;
   justify-content: center;
   opacity: 0.5;
-  font-size: 12px;
+  font-size: var(--fs-12, 12px);
   color: var(--text-secondary, #999);
 }
 </style>

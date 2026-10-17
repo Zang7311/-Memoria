@@ -942,7 +942,7 @@ async function confirmDelete() {
 .forged-meta { margin-top: 4px; }
 .forged-toggle { display: flex; align-items: center; gap: 4px; font-size: var(--fs-11); color: var(--text-secondary); }
 .forged-actions { justify-content: flex-start; margin-top: 6px; }
-.forged-source { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; user-select: text; background: var(--input-bg, #2a272b); border-radius: 6px; font-size: 11px; }
+.forged-source { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; user-select: text; background: var(--input-bg, #2a272b); border-radius: 6px; font-size: var(--fs-11, 11px); }
 .forged-error { margin-top: 5px; color: var(--danger, #ff6b6b); font-size: var(--fs-11); }
 .panel-footer {
   margin-top: 10px;

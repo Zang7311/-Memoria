@@ -89,8 +89,8 @@ async function remove(goal: AgentGoal) {
 .goals-panel { position: fixed; right: 16px; top: 64px; bottom: 24px; width: min(480px, calc(100vw - 32px)); z-index: 100; overflow-y: auto; padding: 20px; box-sizing: border-box; background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border, #8886); border-radius: var(--radius-ui, 12px); box-shadow: 0 8px 30px #0004; }
 header, .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 h2 { margin: 0 auto 0 0; }
-h3 { font-size: 16px; overflow-wrap: anywhere; }
-h3 span, .hint { color: var(--text-secondary); font-size: 12px; }
+h3 { font-size: var(--fs-16, 16px); overflow-wrap: anywhere; }
+h3 span, .hint { color: var(--text-secondary); font-size: var(--fs-12, 12px); }
 article, form { border-top: 1px solid var(--border, #8886); margin-top: 16px; padding-top: 12px; }
 p, li { white-space: pre-wrap; overflow-wrap: anywhere; }
 label { display: flex; gap: 8px; align-items: center; margin: 8px 0; }

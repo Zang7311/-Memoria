@@ -339,7 +339,7 @@ async function onPersonaChange(e: Event) {
   transform: rotate(30deg);
   color: var(--accent);
 }
-.top-right .goal-button { background: transparent; border: 1px solid var(--border, #8886); border-radius: 6px; padding: 4px 8px; font-size: 13px; white-space: nowrap; }
+.top-right .goal-button { background: transparent; border: 1px solid var(--border, #8886); border-radius: 6px; padding: 4px 8px; font-size: var(--fs-13, 13px); white-space: nowrap; }
 .top-right .goal-button:hover, .top-right .goal-button.active { transform: none; }
 .persona-select {
   background: transparent;
@@ -352,8 +352,8 @@ async function onPersonaChange(e: Event) {
   max-width: 96px;
 }
 /* 多会话标签栏 */
-.goal-system-message, .goal-global-status { margin: 4px 16px; padding: 8px 12px; border-left: 3px solid var(--accent); color: var(--text-main); background: var(--bg-main); font-size: 13px; }
-.goal-system-message { color: var(--text-secondary); font-size: 12px; }
+.goal-system-message, .goal-global-status { margin: 4px 16px; padding: 8px 12px; border-left: 3px solid var(--accent); color: var(--text-main); background: var(--bg-main); font-size: var(--fs-13, 13px); }
+.goal-system-message { color: var(--text-secondary); font-size: var(--fs-12, 12px); }
 .session-tabs {
   display: flex;
   align-items: center;

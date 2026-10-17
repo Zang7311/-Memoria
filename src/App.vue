@@ -113,7 +113,7 @@ onMounted(async () => {
   border-radius: 8px;
   background: rgba(40, 167, 69, 0.92);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--fs-13, 13px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 .fade-enter-active,
@@ -140,17 +140,30 @@ onMounted(async () => {
   --font-mono: Consolas, 'Cascadia Mono', 'Sarasa Mono SC', monospace;
 
   /* 字号阶梯（统一档位） */
+  --fs-9: 9px;
   --fs-10: 10px;
   --fs-11: 11px;
   --fs-12: 12px;
   --fs-13: 13px;
   --fs-14: 14px;
+  --fs-15: 15px;
   --fs-16: 16px;
   --fs-18: 18px;
   --fs-20: 20px;
   --fs-24: 24px;
+  --fs-26: 26px;
   --fs-30: 30px;
+  --fs-32: 32px;
   --fs-40: 40px;
+
+  /* 组件里在用、但此前没定义的变量（不补的话它们会 fallback 到硬编码值，
+     主题切换时这几个颜色/字号不跟随 —— 这就是 UI 不统一的根源之一） */
+  --text-sub: var(--text-secondary);
+  --border-color: var(--border);
+  --accent-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  --radius: 10px;
+  --radius-ui: 12px;
+  --bg-image: none;
 
   /* 语义色（默认暗色系，亮色主题在下方覆盖） */
   --success: #7fd99a;
