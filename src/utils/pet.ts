@@ -17,6 +17,8 @@ export const PET_LINES = {
     '外面天气好吗？',
     '主人～在忙什么？',
   ],
+  /** 深夜专用：只在 23:00~05:00 自言自语时使用 */
+  night: ['这么晚了还不睡吗…', '熬夜对身体不好哦', '要不要早点休息呀', '我陪你，但别太晚…'],
 } as const
 
 export type PetLineKind = keyof typeof PET_LINES
@@ -27,6 +29,16 @@ export function pickPetLine(kind: PetLineKind, random: () => number = Math.rando
   if (!pool.length) return ''
   const index = Math.min(pool.length - 1, Math.floor(random() * pool.length))
   return pool[index]
+}
+
+/** 是否深夜（23 点之后到早上 5 点之前）；hour 用 0~23，便于测试 */
+export function isLateNight(hour: number): boolean {
+  return hour >= 23 || hour < 5
+}
+
+/** 自言自语时按时间挑台词池：深夜说贴心话，白天说日常话 */
+export function pickChatterLine(hour: number, random: () => number = Math.random): string {
+  return pickPetLine(isLateNight(hour) ? 'night' : 'chatter', random)
 }
 
 /** 待机小动作间隔：18~45 秒 */

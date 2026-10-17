@@ -53,9 +53,25 @@ test('掉落目标贴屏幕底，不会算出负数', () => {
   assert.equal(pet.SLEEP_AFTER_MS, 5 * 60 * 1000)
 })
 
+test('深夜说贴心话、白天说日常话', () => {
+  assert.equal(pet.isLateNight(23), true)
+  assert.equal(pet.isLateNight(0), true)
+  assert.equal(pet.isLateNight(4), true)
+  assert.equal(pet.isLateNight(5), false)
+  assert.equal(pet.isLateNight(22), false)
+  for (const hour of [0, 2, 4, 23]) {
+    const line = pet.pickChatterLine(hour, () => 0)
+    assert.ok(pet.PET_LINES.night.includes(line), `凌晨 ${hour} 点应说深夜台词，实际说：${line}`)
+  }
+  for (const hour of [8, 12, 18, 22]) {
+    const line = pet.pickChatterLine(hour, () => 0)
+    assert.ok(pet.PET_LINES.chatter.includes(line), `${hour} 点应说日常台词，实际说：${line}`)
+  }
+})
+
 test('桌宠契约：气泡、摸头、拖动掉落、打瞌睡、自言自语都接在外壳里', () => {
   const ball = readFileSync(new URL('src/components/FloatingBall.vue', root), 'utf8')
-  for (const token of ['speech', 'playPat', 'playPoke', 'dropAfterDrag', 'maybeSleep', 'maybeChatter', 'pickPetLine', 'zzz']) {
+  for (const token of ['speech', 'playPat', 'playPoke', 'dropAfterDrag', 'maybeSleep', 'maybeChatter', 'pickPetLine', 'pickChatterLine', 'zzz', 'pet-land']) {
     assert.match(ball, new RegExp(token), `桌宠外壳缺少 ${token}`)
   }
   // 音量开关：自言自语受设置控制，关掉后不再冒气泡

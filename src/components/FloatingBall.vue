@@ -36,6 +36,7 @@ import {
   SLEEP_AFTER_MS,
   nextChatterDelay,
   nextIdleDelay,
+  pickChatterLine,
   pickPetLine,
 } from '../utils/pet'
 import ballAvatar from '../assets/ball_avatar.png'
@@ -224,11 +225,11 @@ function say(text: string) {
 }
 
 // ==================== 松手之后 ====================
-// 说明：这里刻意不做「掉到屏幕底」的窗口位移 —— 在 150% 缩放 + 透明窗口上，
-// 程序化移动窗口会让 WebView 画面跟外壳脱节（实机踩到，画面跑到屏幕外）。
-// 桌宠的位置只由用户用系统拖动决定，系统拖动时画面能正确跟随。
+// 窗口位置只由系统拖动决定（程序移动会让 WebView 画面与外壳脱节，见 docs/PET_WINDOW_PLAN.md）；
+// 掉落物理退化为「角色在窗口里落地弹跳」——视觉上仍是松开手往下掉、然后站稳。
 async function dropAfterDrag() {
-  petState.value = 'idle'
+  petState.value = 'fall'
+  backToIdle(560)
   if (Math.random() < 0.5) say(pickPetLine('drop'))
 }
 
@@ -438,7 +439,8 @@ function scheduleChatter() {
 function maybeChatter() {
   if (!setting.floatingBallChatter) return
   if (petState.value !== 'idle' || panelOpen.value || askOpen.value || clickThrough.value || zzz.value) return
-  say(pickPetLine('chatter'))
+  // 深夜说贴心话，白天说日常话
+  say(pickChatterLine(new Date().getHours()))
 }
 
 function maybeSleep() {
@@ -1004,6 +1006,12 @@ async function loadLive2D() {
   border-radius: 50%;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
   pointer-events: none;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+/* 鼠标停在她身上：抬头看你一眼（桌宠该有的反应） */
+.pet-stage:hover .pet-avatar {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
 }
 .pet-text {
   width: 82%;
@@ -1092,13 +1100,16 @@ async function loadLive2D() {
   50% { transform: rotate(4deg); }
 }
 
-/* 下落：先仰后正 */
+/* 落地：下坠 → 触地压扁 → 弹起 → 站稳（拖动松手后的掉落物理） */
 .state-fall {
-  animation: pet-fall 0.5s ease-out infinite alternate;
+  animation: pet-land 0.56s cubic-bezier(0.22, 1.4, 0.4, 1);
 }
-@keyframes pet-fall {
-  from { transform: rotate(-2deg) scale(0.99); }
-  to { transform: rotate(1deg) scale(1.01); }
+@keyframes pet-land {
+  0% { transform: translateY(-26px) scaleY(0.97); }
+  45% { transform: translateY(3px) scaleY(0.92) scaleX(1.05); }
+  65% { transform: translateY(-6px) scaleY(1.02); }
+  82% { transform: translateY(1px) scaleY(0.99); }
+  100% { transform: translateY(0); }
 }
 
 /* 待机小动作：小小跳一下 */

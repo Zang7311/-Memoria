@@ -6,7 +6,7 @@
 
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.3-ff7a94" alt="version">
+  <img src="https://img.shields.io/badge/version-0.7.0--beta.9-ff7a94" alt="version">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="platform">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/offline--first-yes-success" alt="offline-first">
@@ -30,7 +30,8 @@
 | 🎭 形象互联 | 本地 TCP 服务（VBIL 协议），其他桌面虚拟形象接入；本地规则引擎 + off/rule_only/ai 三种响应模式；窗口扫描发现形象 |
 | 📟 快捷指令 | 自定义组合指令（如"晚安模式"），一条指令按序执行一串动作，聊天里说指令名直接触发 |
 | 📷 OCR / 二维码 | OCR 双引擎（Windows 内置优先，Tesseract 降级）；二维码生成/识别（纯 Rust，离线可用） |
-| 🖥️ 系统集成 | 系统托盘 / 悬浮球 / 屏幕监测+气泡 / 全局快捷键 / 开机自启 / 管理员自选 |
+| 🖥️ 系统集成 | 系统托盘 / 桌宠（原悬浮球，头像·文字·Live2D 三形态，待机小动作/摸头/戳/打瞌睡/自言自语/右键控制台） / 屏幕监测+气泡 / 全局快捷键 / 开机自启 / 管理员自选 |
+| 🧭 计划确认（Beta） | Agent 多步任务先把拆好的计划摆出来：步骤可改、可删、可加，确认后才动手；120 秒不回应自动按原计划开始；设置里可关 |
 | 🎨 外观 | 主色/背景图/头像/圆角/气泡色自定义（软件内选图）；多套主题；SVG 矢量图标；Emoji 三级开关 |
 | 💝 陪伴 | 陪伴日记（1-3 天一记）；特殊事件集（节日祝福 8 + 陪伴里程碑 7/30/100/365 + 关键词彩蛋 10） |
 | 🛟 兜底 | 救援模式（--recovery）；诊断报告导出；DependencyManager 统一依赖引导 |
@@ -49,7 +50,7 @@
 
 - **离线文库**：1656 条回复，21 个分组（日常/安慰/吐槽/撒娇/日语/古风/情话…）
 - **记忆分类**：兴趣爱好 / 工作学习 / 健康生活 / 家庭亲友 / 设备网络 / 日常对话
-- **单测**：101 passed / 0 failed
+- **单测**：前端 92 项 / Rust 436 项（2026-10-17 实测）
 
 ---
 
@@ -115,6 +116,8 @@ pnpm run test:network-robust # 网络回归
 pnpm run test:route-review # 路由与会话回归
 pnpm run test:model-slots  # 已提交模型槽位功能回归
 pnpm run test:attachments  # 文件读取、限制、发送、元信息持久化
+pnpm run test:plan-confirm # 计划确认卡（可编辑、超时、取消、前后端契约）
+pnpm run test:desktop-pet   # 桌宠台词池、节奏、深夜台词与交互契约
 cd src-tauri && cargo check      # 后端检查
 cd src-tauri && cargo test --lib # 单元测试
 ```
