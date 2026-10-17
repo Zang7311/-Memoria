@@ -81,3 +81,54 @@ Tauri 在 150% 缩放下创建这个无边框透明窗口时，WebView2 的 **Ra
 - 桌宠默认关闭（`floating_ball_enabled = false`），设置页有提示；
 - Live2D 标为实验；
 - 交互、台词、气泡、右键菜单等功能代码全部保留，问题只卡在「画面位置」。
+
+---
+
+# 2026-10-17 原生验证结果（pet-native）
+
+按 GPT 建议做的第一步：不经过 WebView2，用 Rust + Win32 分层窗口验证。
+
+程序在 `pet-native/`（独立子项目，不进主程序）。
+
+## 窗口 / DPI 实测（全部正确）
+
+```
+[pet-native] per-monitor v2 = true
+[pet-native] screen physical = 1920x1080, LOGPIXELSX dpi = 144, scale = 1.50
+[pet-native] target: logic 200x200 -> physical 300x300 at physical (150,150)
+[created] hwnd dpi=144 scale=1.50 phys=300x300
+          window_rect=(150,150)-(450,450) client=300x300 bitmap=300x300
+```
+
+| 指标 | 原生分层窗口 | WebView2 桌宠 |
+|---|---|---|
+| DPI 感知 | Per-Monitor V2 | 同 |
+| 窗口物理尺寸 | 300×300（逻辑 200） | 300×396 |
+| 客户区 | 300×300 | 对不上 |
+| 渲染位图 | 300×300 | 视口报 300×396 |
+| 屏幕位置 | (150,150) 精确 | 偏 (74,159) |
+| 形状 | 正圆，宽高均 274 像素 | 放大 1.35 倍 |
+
+## 交互实测（全部通过）
+
+- 单击圆内：收到 `left down` + `click (no drag)` ✅
+- 拖动：窗口从 (150,150) 移到 (294,246)，位移与鼠标位移（144,96）完全相等 ✅
+- 透明区域点击：窗口无事件，点击落到下层窗口（前台从桌宠变为 DSH）✅
+
+## 结论
+
+**问题 100% 在 WebView2（Tauri 的 webview 子窗口），不在系统、GPU、显示器或我们的代码。**
+原生分层窗口方案可行，可以进入下一阶段。
+
+## Cubism Native SDK 现状
+
+- 仓库可 clone（`Live2D/CubismNativeSamples`，26.6 MB，含 Samples/Framework）
+- **Core 不在仓库里**（README 明说），需要从 Live2D 官网下载（注册并同意许可）
+- 许可：个人/非商业免费（年收入 < 1000 万日元实体无需 Release License）；Core 走 Live2D Proprietary Software License；样例模型走 Free Material License
+
+## 下一步（按 GPT 顺序）
+
+1. ~~原生窗口验证~~ ✅
+2. 桌宠交互层（拖动/点击/右键/位置保存/穿透/掉落）
+3. Cubism Native 接入（等待 Core）
+
