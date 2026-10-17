@@ -224,8 +224,8 @@ async function onPersonaChange(e: Event) {
         </div>
       </div>
 
-      <!-- 右侧记忆面板（AI-4）：由顶部「记忆」按钮控制，和插件面板行为一致 -->
-      <MemoryPanel :expanded="showMemory" @toggle="showMemory = !showMemory" />
+      <!-- 右侧记忆面板（AI-4）：由顶部「记忆」按钮控制显示，关闭时整块消失 -->
+      <MemoryPanel v-if="showMemory" @close="showMemory = false" />
 
       <!-- 插件管理面板（AI-5） -->
       <PluginManager v-if="showPlugins" />

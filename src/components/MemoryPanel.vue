@@ -9,10 +9,9 @@ import type { Memory } from '../types'
 const store = useMemoryStore()
 const milestone = useMilestoneStore()
 
-// 面板展开/收起：由父组件（MainLayout 顶部「记忆」按钮）控制，与插件面板行为一致
-const props = withDefaults(defineProps<{ expanded?: boolean }>(), { expanded: false })
-const emit = defineEmits<{ toggle: [] }>()
-const expanded = computed(() => props.expanded)
+// 面板显示/隐藏由父组件（顶部「记忆」按钮）用 v-if 控制：
+// 关闭时整块消失，不留右侧窄条（主人明确要求）
+const emit = defineEmits<{ close: [] }>()
 
 // 新建记忆集输入框
 const showCreateInput = ref(false)
@@ -148,15 +147,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <aside class="memory-panel" :class="{ expanded }">
+  <aside class="memory-panel expanded">
     <!-- 面板头部 -->
-    <div class="panel-header" @click="emit('toggle')">
-      <span v-if="expanded" class="panel-title">记忆</span>
-      <span v-else class="collapsed-icon" title="展开记忆面板">📒</span>
-      <span class="toggle-btn">{{ expanded ? '❯' : '❮' }}</span>
+    <div class="panel-header">
+      <span class="panel-title">记忆</span>
+      <button class="toggle-btn" title="关闭记忆面板" @click="emit('close')">✕</button>
     </div>
 
-    <template v-if="expanded">
+    <template v-if="true">
       <!-- 记忆集管理 -->
       <div class="set-bar">
         <select :value="store.currentSet" class="set-select" @change="onSwitchSet">
