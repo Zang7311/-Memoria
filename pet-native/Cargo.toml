@@ -1,0 +1,14 @@
+[package]
+name = "pet-native"
+version = "0.1.0"
+edition = "2021"
+description = "铃·桌宠 原生窗口验证程序（不经过 WebView2）"
+
+[dependencies]
+winapi = { version = "0.3", features = [
+  "winuser", "wingdi", "libloaderapi", "winbase", "errhandlingapi", "minwindef", "windef"
+] }
+
+[[bin]]
+name = "pet-native"
+path = "src/main.rs"
