@@ -56,6 +56,45 @@ target_compile_definitions(${APP_NAME} PRIVATE CSM_MINIMUM_DEMO)
 
 target_link_libraries(${APP_NAME} Framework windowscodecs.lib)
 
+# ===== 桌宠用的渲染 DLL（隐藏窗口 + 离屏抓帧）=====
+add_library(PetL2D SHARED)
+target_sources(PetL2D PRIVATE
+  ${COMMON_PATH}/CubismSampleViewMatrix_Common.cpp
+  ${COMMON_PATH}/LAppAllocator_Common.cpp
+  ${COMMON_PATH}/LAppModel_Common.cpp
+  ${COMMON_PATH}/LAppSprite_Common.cpp
+  ${COMMON_PATH}/LAppTextureManager_Common.cpp
+  ${COMMON_PATH}/LAppView_Common.cpp
+  ${COMMON_PATH}/MouseActionManager_Common.cpp
+  ${COMMON_PATH}/TouchManager_Common.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppDefine.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppPal.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/CubismSprite.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/CubismSpriteShader.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/CubismTextureManager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/CubismUserModelExtend.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/CubismDirectXView.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/CubismDirectXRenderer.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/dll_main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/WICTextureLoader.cpp)
+target_include_directories(PetL2D PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/common)
+target_link_libraries(PetL2D Framework windowscodecs.lib)
+set_target_properties(PetL2D PROPERTIES OUTPUT_NAME "PetL2D")
+
+# DLL 旁边的资源与着色器（和 exe 一样）
+add_custom_command(TARGET PetL2D POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${SDK_ROOT}/Samples/Resources $<TARGET_FILE_DIR:PetL2D>/Resources
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:PetL2D>/SampleShaders
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${FRAMEWORK_PATH}/src/Rendering/D3D11/Shaders $<TARGET_FILE_DIR:PetL2D>/FrameworkShaders
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:PetL2D>)
+
 # 运行时需要的资源与着色器拷到 exe 旁边
 add_custom_command(TARGET ${APP_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
