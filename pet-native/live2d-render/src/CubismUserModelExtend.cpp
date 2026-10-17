@@ -201,6 +201,11 @@ void CubismUserModelExtend::SetupModel(csmUint32 width, csmUint32 height)
     // レイアウト情報から位置を設定
     _modelMatrix->SetupFromLayout(layout);
 
+    // 桌宠用「头部特写」：把模型放大并上移，让头部充满画面（桌宠窗口很小，全身看不清）
+    // 数值需要配合模型尺寸微调；Haru 的头部大约在画布上半部
+    _modelMatrix->Scale(2.6f, 2.6f);
+    _modelMatrix->Translate(0.0f, -1.5f);
+
     // パラメータを保存
     { FILE* f0 = fopen("setup_log.txt", "a"); if (f0) { fprintf(f0, "before SaveParameters\n"); fflush(f0); fclose(f0); } }
     _model->SaveParameters();
