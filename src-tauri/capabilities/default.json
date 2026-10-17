@@ -35,6 +35,7 @@
     "core:window:allow-is-focused",
     "core:window:allow-is-decorated",
     "core:window:allow-is-resizable",
-    "core:window:allow-is-enabled"
+    "core:window:allow-is-enabled",
+    "core:webview:allow-set-webview-zoom"
   ]
 }

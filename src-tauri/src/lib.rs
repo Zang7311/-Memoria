@@ -68,9 +68,9 @@ fn floating_ball_start_position(app: &tauri::AppHandle) -> (f64, f64) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // —— 主窗口/悬浮球卡顿修复：WebView2 强制软件渲染（老显卡 R7 350 GPU 合成不稳定）
+    // 2026-10-17 试过启用它排查桌宠窗口错位：无效（软件渲染下依然错位），已恢复注释。
     // 注意：必须在任何 webview 创建前设置；若报 0x8007139F 通常是残留实例占用
     // WebView2 user data 锁（先杀干净 mem 进程再启动），非本参数问题。
-    // 【临时诊断 2026-09-12 铃】注释掉下一行，排查 webview 创建失败 0x8007139F
     // std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
