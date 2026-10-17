@@ -633,6 +633,7 @@ onMounted(async () => {
   try {
     // 位置不归前端管：窗口创建时 Rust 已按配置（或右下角默认）定位好。
     // 早期在这里 setPosition 会踩到「外壳与画面错位」，详见 lib.rs 的注释。
+    // 另：试过「先缩 1px 再还原」逼 WebView2 重设 bounds —— 对 150% 缩放无效，已回退。
     await win.setSize(new LogicalSize(winW.value, winH.value))
     if (mode.value === 'live2d') {
       await nextTick()
