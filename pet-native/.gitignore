@@ -1,1 +1,6 @@
 /target
+/vendor/
+/live2d-test/*.exe
+/live2d-test/*.obj
+/live2d-test/*.dll
+/live2d-test/*.pdb
