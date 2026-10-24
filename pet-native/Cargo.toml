@@ -1,12 +1,14 @@
 [package]
 name = "pet-native"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "铃·桌宠 原生实现（Win32 分层窗口，不经过 WebView2；Live2D 走 PetL2D.dll）"
 
 [dependencies]
 winapi = { version = "0.3", features = [
-  "winuser", "wingdi", "libloaderapi", "winbase", "errhandlingapi", "minwindef", "windef", "wincon"
+  "winuser", "wingdi", "libloaderapi", "winbase", "errhandlingapi", "minwindef", "windef", "wincon",
+  # 应用托管启动用：单实例互斥量 + 父进程退出后自己关掉
+  "synchapi", "processthreadsapi", "handleapi", "winerror", "winnt"
 ] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 

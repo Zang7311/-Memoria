@@ -1,4 +1,4 @@
-// 铃·桌宠 原生实现 v0.3（Win32 分层窗口，不经过 WebView2）
+// 铃·桌宠 原生实现 v0.4（Win32 分层窗口，不经过 WebView2）
 //
 // 已验证：150% 缩放下窗口定位、DPI 换算、透明、鼠标交互全部正确。
 // v0.2：真实头像 PNG、待机浮动、单击说话气泡、长按摸头、拖动、
@@ -6,6 +6,10 @@
 // v0.3：接上 Live2D —— 每帧问 PetL2D.dll 要一帧 RGBA，裁剪缩放后贴进角色区，
 //      替掉 PNG 头像；窗口/拖动/掉落/弹跳/气泡/菜单全部不变。
 //      DLL 缺失或出帧失败时自动退回 PNG 头像，不会白屏。
+// v0.4：可以由《铃·记忆体》托管启动 ——
+//      --data-dir 把配置/位置存到用户数据目录（安装目录可能只读），
+//      --parent-pid 让应用退出时桌宠跟着关掉（不留孤儿进程），
+//      再加单实例互斥量，双击快捷方式和应用自动拉起不会出现两只。
 //
 // 素材：assets/avatar.png（PNG 兜底）、live2d/（PetL2D.dll + 着色器缓存 + Haru 模型）
 // 运行：cargo run（控制台会打印诊断；右键菜单退出）
@@ -19,9 +23,14 @@ use std::time::Instant;
 use image::imageops::FilterType;
 use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HBITMAP, HDC, HWND, POINT, RECT, SIZE};
+use winapi::shared::winerror::ERROR_ALREADY_EXISTS;
 use winapi::um::errhandlingapi::GetLastError;
+use winapi::um::handleapi::CloseHandle;
 use winapi::um::libloaderapi::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+use winapi::um::processthreadsapi::OpenProcess;
+use winapi::um::synchapi::{CreateMutexW, WaitForSingleObject};
 use winapi::um::wingdi::*;
+use winapi::um::winnt::SYNCHRONIZE;
 use winapi::um::winuser::*;
 
 /// 角色区逻辑尺寸（150% 下物理 225）
@@ -32,6 +41,94 @@ const BUBBLE_H: i32 = 45;
 const FALL_GRAVITY: f32 = 2.5;
 const SLEEP_AFTER_SECS: u64 = 300;
 const LONG_PRESS_MS: u32 = 700;
+
+/// 启动参数（由《铃·记忆体》托管启动时传入；手动双击时全为空，行为和以前一样）
+#[derive(Default)]
+struct RunOpts {
+    /// 配置/位置写到哪：安装目录可能是只读的（Program Files），应用会指到用户数据目录
+    data_dir: Option<std::path::PathBuf>,
+    /// 父进程 PID：应用一退出桌宠就跟着关掉，不留一个没人管的孤儿进程
+    parent_pid: Option<u32>,
+}
+
+static OPTS: std::sync::OnceLock<RunOpts> = std::sync::OnceLock::new();
+
+/// 解析 `--data-dir <目录>` / `--parent-pid <pid>`（`--key=value` 写法也认）
+fn parse_args() -> RunOpts {
+    fn take(inline: Option<String>, args: &mut std::iter::Skip<std::env::Args>) -> Option<String> {
+        inline.or_else(|| args.next())
+    }
+    let mut opts = RunOpts::default();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let (key, inline) = match arg.split_once('=') {
+            Some((k, v)) => (k.to_string(), Some(v.to_string())),
+            None => (arg, None),
+        };
+        match key.as_str() {
+            "--data-dir" => {
+                if let Some(v) = take(inline, &mut args) {
+                    opts.data_dir = Some(std::path::PathBuf::from(v));
+                }
+            }
+            "--parent-pid" => {
+                if let Some(v) = take(inline, &mut args) {
+                    opts.parent_pid = v.trim().parse().ok();
+                }
+            }
+            other => println!("[pet] 忽略不认识的参数：{other}"),
+        }
+    }
+    opts
+}
+
+/// 配置/位置文件的落点：给了 --data-dir 就用它，否则还是 exe 同目录
+fn state_path(name: &str) -> Option<std::path::PathBuf> {
+    let base = OPTS.get().and_then(|o| o.data_dir.clone()).or_else(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+    })?;
+    let _ = std::fs::create_dir_all(&base);
+    Some(base.join(name))
+}
+
+/// 单实例保护：应用自动拉起 + 用户又双击了快捷方式时，桌面上只留一只
+unsafe fn already_running() -> bool {
+    let name = wide("LingPetNative.SingleInstance");
+    let handle = CreateMutexW(null_mut(), 0, name.as_ptr());
+    if handle.is_null() {
+        return false;
+    }
+    if GetLastError() == ERROR_ALREADY_EXISTS {
+        return true;
+    }
+    // 故意不 CloseHandle：进程活着就一直占着这个互斥量，退出时由系统回收
+    false
+}
+
+/// 盯着父进程：应用被关掉（哪怕是被强杀）时桌宠自己退出，别在桌面上留下孤儿
+unsafe fn spawn_parent_watchdog(parent_pid: u32, hwnd: HWND) {
+    // 裸指针不是 Send，先转成整数再进线程
+    let hwnd_addr = hwnd as isize;
+    std::thread::spawn(move || {
+        let handle = OpenProcess(SYNCHRONIZE, 0, parent_pid);
+        if handle.is_null() {
+            println!("[pet] 监视不了父进程 {parent_pid}，忽略");
+            return;
+        }
+        loop {
+            let r = WaitForSingleObject(handle, 1000);
+            if r == 0 {
+                // WAIT_OBJECT_0：父进程没了。走 WM_CLOSE 这条正常退出路，位置能存下来
+                println!("[pet] 应用已退出，桌宠跟着关闭");
+                PostMessageW(hwnd_addr as HWND, WM_CLOSE, 0, 0);
+                CloseHandle(handle);
+                return;
+            }
+        }
+    });
+}
 
 #[derive(PartialEq, Clone, Copy)]
 enum State {
@@ -438,22 +535,17 @@ unsafe fn save_position(p: &Pet) {
     GetWindowRect(p.hwnd, &mut wr);
     let lx = (wr.left as f32 / p.scale).round() as i32;
     let ly = (wr.top as f32 / p.scale).round() as i32;
-    let path = std::env::current_exe().ok().map(|e| e.with_file_name("pet-position.txt"));
+    let path = state_path("pet-position.txt");
     if let Some(path) = path {
         let _ = std::fs::write(path, format!("{lx},{ly}"));
         println!("[pet] 位置已保存: {lx},{ly}");
     }
 }
 
-/// 尺寸配置：exe 同目录 pet-config.txt，内容 `size=150` / `bounce=1`
-fn config_path() -> Option<std::path::PathBuf> {
-    std::env::current_exe().ok().map(|e| e.with_file_name("pet-config.txt"))
-}
-
 /// 读配置文本并去掉 UTF-8 BOM（用记事本/PowerShell 存的文件常带 BOM，
 /// 带 BOM 时第一行 "size=..." 会匹配不上，之前就是这么静默失效的）
 fn config_text() -> Option<String> {
-    let path = config_path()?;
+    let path = state_path("pet-config.txt")?;
     let text = std::fs::read_to_string(path).ok()?;
     Some(text.trim_start_matches('\u{feff}').to_string())
 }
@@ -504,7 +596,7 @@ fn keep_console() -> bool {
 
 fn save_config(p: &Pet) {
     let console = keep_console();
-    if let Some(path) = config_path() {
+    if let Some(path) = state_path("pet-config.txt") {
         let _ = std::fs::write(
             path,
             format!(
@@ -564,7 +656,7 @@ unsafe fn apply_size(p: &mut Pet, logic: i32) {
 }
 
 unsafe fn load_position() -> Option<(i32, i32)> {
-    let path = std::env::current_exe().ok()?.with_file_name("pet-position.txt");
+    let path = state_path("pet-position.txt")?;
     let text = std::fs::read_to_string(path).ok()?;
     let mut it = text.split(',');
     let x = it.next()?.trim().parse().ok()?;
@@ -803,7 +895,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
 }
 
 fn main() {
+    let _ = OPTS.set(parse_args());
     unsafe {
+        // 应用会自动拉起桌宠，用户又双击了快捷方式的话，留一只就够了
+        if already_running() {
+            println!("[pet] 已经有一只桌宠在跑了，本次退出");
+            std::process::exit(2);
+        }
         // 桌宠是双击启动的，别把黑色控制台窗口摆在桌面上（要排查就 console=1）
         if !keep_console() {
             let cw = winapi::um::wincon::GetConsoleWindow();
@@ -891,6 +989,10 @@ fn main() {
         if hwnd.is_null() {
             println!("[pet] 创建窗口失败");
             return;
+        }
+        if let Some(pid) = OPTS.get().and_then(|o| o.parent_pid) {
+            println!("[pet] 由应用托管（父进程 {pid}），它退出时我会跟着关");
+            spawn_parent_watchdog(pid, hwnd);
         }
 
         let mem_dc = CreateCompatibleDC(hdc);
