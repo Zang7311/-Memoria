@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build && pnpm build:pet",
     "frontendDist": "../dist"
   },
   "app": {
@@ -45,7 +45,8 @@
       "resources/plugins/file_viewer/index.js": "plugins/file_viewer/index.js",
       "resources/hermes_plugins/hello_hermes/config.json": "hermes_plugins/hello_hermes/config.json",
       "resources/hermes_plugins/hello_hermes/main.js": "hermes_plugins/hello_hermes/main.js",
-      "live2d/": "live2d/"
+      "live2d/": "live2d/",
+      "../pet-native/dist/": "pet/"
     },
     "icon": [
       "icons/32x32.png",

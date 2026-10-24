@@ -624,6 +624,9 @@ pub struct AppConfig {
     /// 悬浮球位置 (x, y)
     #[serde(default)]
     pub floating_ball_position: (u32, u32),
+    /// 原生桌宠（随安装包分发的 pet-native.exe，Live2D 独立进程）是否随应用启动
+    #[serde(default)]
+    pub native_pet_enabled: bool,
     pub monitor_enabled: bool,
     /// 屏幕监测频率（秒）
     pub monitor_frequency: u32,

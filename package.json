@@ -16,6 +16,7 @@
     "test:version": "node --test scripts/version-sync.test.mjs",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "build:pet": "node scripts/build-pet.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

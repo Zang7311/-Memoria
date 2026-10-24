@@ -81,6 +81,8 @@ export const useSettingStore = defineStore('setting', () => {
   const floatingBallFlash = ref(true)
   const floatingBallChatter = ref(true)
   const floatingBallPosition = ref<[number, number]>([0, 0])
+  /** 原生桌宠（独立进程 + Live2D）是否随应用启动 */
+  const nativePetEnabled = ref(true)
   const monitorEnabled = ref(true)
   const monitorFrequency = ref(3)
   const hotkey = ref('Ctrl+Alt+L')
@@ -145,6 +147,7 @@ export const useSettingStore = defineStore('setting', () => {
     floatingBallFlash.value = c.floating_ball_flash ?? true
     floatingBallChatter.value = c.floating_ball_chatter ?? true
     floatingBallPosition.value = c.floating_ball_position ?? [0, 0]
+    nativePetEnabled.value = c.native_pet_enabled ?? true
     monitorEnabled.value = c.monitor_enabled
     monitorFrequency.value = c.monitor_frequency
     hotkey.value = c.hotkey
@@ -312,6 +315,7 @@ export const useSettingStore = defineStore('setting', () => {
     agentAllowDownload, agentAllowSoftware, agentAllowFileWrite, agentAllowShell, agentAllowToolForge,
     saveThemePreset, switchThemePreset, deleteThemePreset,
     languageMixRate, floatingBallMode, floatingBallEnabled, floatingBallSize, floatingBallOpacity, floatingBallBreathing, floatingBallFlash, floatingBallChatter, floatingBallPosition, monitorEnabled,
+    nativePetEnabled,
     monitorFrequency, hotkey, autostart, dataPath, pluginEnabled, selfName, userName, persona,
     hasMasterPassword, unlocked,
     applyConfig, loadConfig, update, toggleTheme, setTheme, saveApiKey, saveCheapApiKey, resetAll,

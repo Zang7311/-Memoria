@@ -733,9 +733,40 @@ export function installModel(path: string): Promise<InstallModelResult> {
   return invoke<InstallModelResult>('install_model', { path })
 }
 
-/** 彻底退出应用（关闭全部窗口 + 终止进程） */
+/** 彻底退出应用（关闭全部窗口 + 终止进程；托管的桌宠也会一起收掉） */
 export function quitApp(): Promise<void> {
   return invoke<void>('quit_app')
+}
+
+// ==================== 原生桌宠（独立进程 pet-native） ====================
+
+/** 原生桌宠状态（设置页用） */
+export interface NativePetStatus {
+  /** 是否在运行 */
+  running: boolean
+  /** 进程 ID */
+  pid: number | null
+  /** 有没有找到桌宠程序（没找到 = 安装包缺资源，或开发态没构建） */
+  found: boolean
+  /** 桌宠程序路径 */
+  exe_path: string
+  /** 给用户看的一句话 */
+  message: string
+}
+
+/** 查询原生桌宠状态 */
+export function nativePetStatus(): Promise<NativePetStatus> {
+  return invoke<NativePetStatus>('native_pet_status')
+}
+
+/** 按配置开关对齐桌宠进程（设置页开关改完配置后调用） */
+export function nativePetSync(): Promise<NativePetStatus> {
+  return invoke<NativePetStatus>('native_pet_sync')
+}
+
+/** 重启桌宠（卡住或换了模型时用） */
+export function nativePetRestart(): Promise<NativePetStatus> {
+  return invoke<NativePetStatus>('native_pet_restart')
 }
 
 // ==================== Agent 模式 IPC 封装 ====================

@@ -32,3 +32,7 @@ src-tauri/resources/models/
 
 # Live2D Cubism Editor 安装目录（用户本地素材，411 MB，绝不入库）
 Live2D Cubism 5.3/
+
+# 桌宠构建暂存目录（pnpm build:pet 的产物，打包时从这里取资源，不入库）
+pet-native/dist/
+pet-native/target/

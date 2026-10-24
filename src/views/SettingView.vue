@@ -15,7 +15,7 @@ import { MODEL_MODE_LABEL } from '../types'
 import type { ModelSlot } from '../types'
 import TheIcon from '../components/TheIcon.vue'
 import { networkDiagnostic } from '../utils/tauri'
-import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate } from '../utils/tauri'
+import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate, nativePetStatus, nativePetSync, nativePetRestart, type NativePetStatus } from '../utils/tauri'
 
 const setting = useSettingStore()
 const milestone = useMilestoneStore()
@@ -348,6 +348,8 @@ onMounted(async () => {
   await detectLocalAI()
   // 检测离线语义检索模型（方案3）
   await checkVectorModel()
+  // 原生桌宠状态（有没有随安装包装进来、现在在不在跑）
+  await refreshNativePet()
 })
 
 // 以管理员权限重启
@@ -571,6 +573,34 @@ async function saveBallSettings() {
 async function resetBallPosition() {
   await setting.update({ floating_ball_position: [0, 0] })
   generalMsg.value = '✓ 位置已重置（下次启动生效）'
+}
+
+// —— 原生桌宠（随安装包分发的 pet-native.exe，Live2D 独立进程）——
+const nativePet = ref<NativePetStatus | null>(null)
+const nativePetMsg = ref('')
+async function refreshNativePet() {
+  try {
+    nativePet.value = await nativePetStatus()
+  } catch {
+    nativePet.value = null
+  }
+}
+async function saveNativePet() {
+  await setting.update({ native_pet_enabled: setting.nativePetEnabled })
+  try {
+    nativePet.value = await nativePetSync()
+    nativePetMsg.value = nativePet.value?.message ?? ''
+  } catch (e) {
+    nativePetMsg.value = `操作失败：${e}`
+  }
+}
+async function restartNativePet() {
+  try {
+    nativePet.value = await nativePetRestart()
+    nativePetMsg.value = nativePet.value?.message ?? ''
+  } catch (e) {
+    nativePetMsg.value = `重启失败：${e}`
+  }
 }
 
 // —— 外观自定义 ——
@@ -1228,6 +1258,29 @@ async function toggleAiToolbox() {
                 <div v-if="setting.floatingBallEnabled" class="actions">
                   <button class="btn ghost" @click="resetBallPosition">重置位置</button>
                 </div>
+              </section>
+
+              <section class="card">
+                <div class="card-title">桌面伙伴（原生桌宠）</div>
+                <p class="hint">
+                  随安装包一起装到电脑上的独立小铃：不经过网页内核，透明背景、Live2D 动作，能拖动、摸头、说话，还能自己掉到屏幕底。
+                  在桌面双击「铃桌宠」也能单独启动，不会和这里重复开出两只。
+                </p>
+                <div class="field">
+                  <label class="switch-wrap">
+                    <span class="label">随应用启动</span>
+                    <input type="checkbox" class="switch" v-model="setting.nativePetEnabled" @change="saveNativePet" />
+                  </label>
+                </div>
+                <p class="hint" v-if="nativePet && !nativePet.found">
+                  没找到桌宠程序 pet\pet-native.exe：这份安装包里可能没带上它（开发版常见），用正式安装包装一次就有。
+                </p>
+                <template v-else>
+                  <p class="hint">状态：{{ nativePet?.running ? '运行中' : '未运行' }}{{ nativePetMsg ? '　' + nativePetMsg : '' }}</p>
+                  <div class="actions">
+                    <button class="btn ghost" @click="restartNativePet" :disabled="!setting.nativePetEnabled">重启桌宠</button>
+                  </div>
+                </template>
               </section>
 
               <section class="card">

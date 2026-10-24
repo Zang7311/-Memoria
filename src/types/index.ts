@@ -332,6 +332,11 @@ export interface AppConfig {
   /** 桌宠是否偶尔自言自语（默认开） */
   floating_ball_chatter?: boolean
   floating_ball_position: [number, number]
+  /**
+   * 原生桌宠（pet-native.exe，Live2D 独立进程）是否随应用启动。
+   * 跟上面的悬浮球不是一回事：悬浮球是应用内 WebView 小窗，这个是随安装包分发的独立程序。
+   */
+  native_pet_enabled?: boolean
   monitor_enabled: boolean
   monitor_frequency: number
   monitor_rules: ScreenMonitorRule[]

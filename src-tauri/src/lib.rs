@@ -172,6 +172,19 @@ pub fn run() {
                 }
             }
 
+            // 原生桌宠（独立进程 + Live2D）：配置里开着就随之起来。
+            // 找不到程序（开发态没构建）只是不启动，不影响应用本身。
+            match desktop::native_pet::sync_with_config(app.handle()) {
+                Ok(st) => {
+                    if st.running {
+                        log::info!("[native-pet] {}", st.message);
+                    } else {
+                        log::info!("[native-pet] 未启动：{}", st.message);
+                    }
+                }
+                Err(e) => log::warn!("[native-pet] 启动失败：{e}"),
+            }
+
             // 临时调试通道（v0.6 悬浮球诊断，发布前移除）：前端 emit ball-diag → 打印到日志
             {
                 let handle = app.handle().clone();
@@ -354,6 +367,10 @@ pub fn run() {
             commands::search_mode::install_model,
             // —— 应用生命周期 ——
             commands::app_lifecycle::quit_app,
+            // —— 原生桌宠托管 ——
+            desktop::native_pet::native_pet_status,
+            desktop::native_pet::native_pet_sync,
+            desktop::native_pet::native_pet_restart,
             // —— VBIL 虚拟形象互联层命令 ——
             vbil::commands::scan_windows,
             vbil::commands::get_vbil_status,
@@ -362,6 +379,12 @@ pub fn run() {
             vbil::commands::set_whitelist,
             vbil::commands::get_online_clients,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // 应用退了就把托管的桌宠一起收掉（桌宠自己也盯着父进程，双保险）
+            if let tauri::RunEvent::Exit = event {
+                desktop::native_pet::shutdown();
+            }
+        });
 }

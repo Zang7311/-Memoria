@@ -1,8 +1,9 @@
 // 《铃·记忆体》桌面交互与系统集成模块（AI-6）
-// 包含：系统托盘、悬浮球、屏幕监测、工具箱、全局快捷键、开机自启动
+// 包含：系统托盘、悬浮球、原生桌宠托管、屏幕监测、工具箱、全局快捷键、开机自启动
 pub mod autostart;
 pub mod hotkey;
 pub mod monitor;
+pub mod native_pet;
 pub mod toolbox;
 pub mod tray;
 
