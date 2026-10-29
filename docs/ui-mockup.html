@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>铃·记忆体 · UI 重做方案预览</title>
+<style>
+  /* ============ 设计令牌（唯一色彩/字号/间距来源） ============ */
+  :root {
+    --bg: #0F1116;
+    --bg-panel: #14161D;
+    --bg-raised: #1A1D26;
+    --bg-hover: #1F232E;
+    --border: #242833;
+    --border-strong: #333847;
+    --text: #E9EBEF;
+    --text-2: #A0A6B4;
+    --text-3: #6E7686;
+    --accent: #FF7A94;
+    --accent-soft: rgba(255, 122, 148, 0.14);
+    --ok: #3FB950;
+    --warn: #D29922;
+    --err: #F85149;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+    --fs-11: 11px;
+    --fs-12: 12px;
+    --fs-13: 13px;
+    --fs-14: 14px;
+    --fs-16: 16px;
+    --fs-20: 20px;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --font: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  html.light {
+    --bg: #FFFFFF;
+    --bg-panel: #FAFAFB;
+    --bg-raised: #FFFFFF;
+    --bg-hover: #F2F3F5;
+    --border: #E7E8EC;
+    --border-strong: #D6D8DE;
+    --text: #17181C;
+    --text-2: #5B616E;
+    --text-3: #8C93A1;
+    --accent-soft: rgba(255, 122, 148, 0.12);
+    --shadow: 0 8px 24px rgba(16, 20, 30, 0.10);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    font-size: var(--fs-13);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ============ 预览工具条（不是产品的一部分） ============ */
+  .toolbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .toolbar strong { font-size: var(--fs-14); font-weight: 600; }
+  .seg { display: flex; gap: 2px; padding: 2px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-md); }
+  .seg button { padding: var(--sp-1) var(--sp-3); border-radius: var(--r-sm); color: var(--text-2); font-size: var(--fs-12); }
+  .seg button:hover { color: var(--text); background: var(--bg-hover); }
+  .seg button.on { color: var(--text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .toolbar .spacer { flex: 1; }
+  .hintbar { font-size: var(--fs-12); color: var(--text-3); }
+  .btn { border: 1px solid var(--border); background: var(--bg-raised); padding: var(--sp-1) var(--sp-3); border-radius: var(--r-sm); font-size: var(--fs-12); color: var(--text-2); }
+  .btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ============ 通用零件（三套布局共用，这才是重点） ============ */
+  .app { display: flex; height: calc(100vh - 53px); }
+  .icon { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-item {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md);
+    color: var(--text-2); font-size: var(--fs-13); width: 100%; text-align: left;
+  }
+  .nav-item:hover { background: var(--bg-hover); color: var(--text); }
+  .nav-item.on { background: var(--bg-hover); color: var(--text); }
+  .nav-item .badge { margin-left: auto; font-size: var(--fs-11); color: var(--text-3); }
+  .sec-label { font-size: var(--fs-11); color: var(--text-3); padding: var(--sp-3) var(--sp-3) var(--sp-1); letter-spacing: 0.04em; }
+  .dot { width: 6px; height: 6px; border-radius: 99px; display: inline-block; flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+
+  .head { height: 52px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4); border-bottom: 1px solid var(--border); flex: none; }
+  .head .title { font-size: var(--fs-14); font-weight: 600; }
+  .head .sub { font-size: var(--fs-12); color: var(--text-3); display: flex; align-items: center; gap: var(--sp-1); }
+  .head .spacer { flex: 1; }
+  .icon-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--text-2); }
+  .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+  .thread { flex: 1; overflow-y: auto; padding: var(--sp-6) 0 0; }
+  .msg-wrap { max-width: var(--thread-w, 760px); margin: 0 auto; padding: 0 var(--sp-4); }
+  .row { display: flex; gap: var(--sp-3); margin-bottom: var(--sp-5); }
+  .row.user { justify-content: flex-end; }
+  .avatar { width: 26px; height: 26px; border-radius: 99px; flex: none; display: grid; place-items: center; font-size: var(--fs-11); font-weight: 600; margin-top: 2px; }
+  .avatar.suzu { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border); }
+  .avatar.me { background: var(--bg-hover); color: var(--text-2); border: 1px solid var(--border); }
+  .bubble-suzu { max-width: 82%; }
+  .bubble-suzu .name { font-size: var(--fs-12); color: var(--text-3); margin-bottom: 2px; }
+  .bubble-suzu .body { color: var(--text); }
+  .bubble-user { max-width: 72%; background: var(--bg-raised); border: 1px solid var(--border); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-lg); }
+  .meta-line { font-size: var(--fs-11); color: var(--text-3); margin-top: var(--sp-2); display: flex; gap: var(--sp-2); align-items: center; }
+
+  .composer-wrap { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
+  .composer { max-width: var(--thread-w, 760px); margin: 0 auto; background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: var(--r-lg); padding: var(--sp-3); box-shadow: var(--shadow); }
+  .composer .ph { color: var(--text-3); font-size: var(--fs-13); min-height: 42px; }
+  .composer .foot { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .composer .foot .spacer { flex: 1; }
+  .send { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent); color: #fff; }
+  .chip { font-size: var(--fs-11); color: var(--text-2); border: 1px solid var(--border); border-radius: 99px; padding: 1px var(--sp-2); }
+
+  /* 布局 A：三栏 */
+  .lay-a .sidebar { width: 260px; flex: none; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: var(--sp-3); gap: var(--sp-1); }
+  .lay-a .side-top { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-2); }
+  .lay-a .new-chat { display: flex; align-items: center; gap: var(--sp-2); border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); color: var(--text); font-size: var(--fs-13); }
+  .lay-a .new-chat:hover { background: var(--bg-hover); }
+  .lay-a .session { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); color: var(--text-2); font-size: var(--fs-13); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lay-a .session:hover { background: var(--bg-hover); color: var(--text); }
+  .lay-a .session.on { background: var(--bg-hover); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+  .lay-a .side-list { flex: 1; overflow-y: auto; margin: 0 calc(var(--sp-2) * -1); padding: 0 var(--sp-2); }
+  .lay-a .side-foot { border-top: 1px solid var(--border); padding-top: var(--sp-2); margin-top: var(--sp-2); display: flex; flex-direction: column; gap: 2px; }
+  .lay-a .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .lay-a .right { width: 320px; flex: none; background: var(--bg-panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+  .lay-a .tabs { display: flex; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3) 0; }
+  .lay-a .tabs button { padding: var(--sp-1) var(--sp-3); border-radius: var(--r-sm); font-size: var(--fs-12); color: var(--text-2); }
+  .lay-a .tabs button.on { background: var(--bg-hover); color: var(--text); }
+  .lay-a .panel-body { padding: var(--sp-3); overflow-y: auto; }
+  .card-mini { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-3); margin-bottom: var(--sp-2); }
+  .card-mini .t { font-size: var(--fs-12); color: var(--text-2); margin-bottom: var(--sp-1); }
+  .card-mini .v { font-size: var(--fs-13); }
+
+  /* 布局 B：单列时间线 */
+  .lay-b .center { flex: 1; display: flex; flex-direction: column; align-items: center; }
+  .lay-b .topnav { width: 100%; display: flex; align-items: center; gap: var(--sp-1); justify-content: center; border-bottom: 1px solid var(--border); padding: 0 var(--sp-4); height: 52px; flex: none; }
+  .lay-b .topnav .brand { position: absolute; left: var(--sp-4); display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); font-weight: 600; }
+  .lay-b .topnav .tab { padding: var(--sp-1) var(--sp-4); border-radius: 99px; color: var(--text-2); font-size: var(--fs-13); }
+  .lay-b .topnav .tab.on { background: var(--bg-hover); color: var(--text); }
+  .lay-b .topnav .right { position: absolute; right: var(--sp-4); display: flex; gap: var(--sp-1); }
+  .lay-b { --thread-w: 680px; }
+  .lay-b .slip { margin-bottom: var(--sp-4); border-bottom: 1px solid var(--border); padding-bottom: var(--sp-4); max-width: var(--thread-w); margin-left: auto; margin-right: auto; width: 100%; }
+  .lay-b .slip .hd { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-2); font-size: var(--fs-12); color: var(--text-3); }
+  .lay-b .composer-wrap { width: 100%; }
+
+  /* 布局 C：窄图标栏 + 抽屉 */
+  .lay-c .rail { width: 60px; flex: none; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: var(--sp-3) 0; gap: var(--sp-2); }
+  .lay-c .rail .icon-btn { width: 36px; height: 36px; }
+  .lay-c .rail .icon-btn.on { background: var(--bg-hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .lay-c .rail .spacer { flex: 1; }
+  .lay-c .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .lay-c { --thread-w: 820px; }
+  .lay-c .drawer { width: 300px; flex: none; background: var(--bg-panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+  .lay-c .drawer .dh { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-4); border-bottom: 1px solid var(--border); font-size: var(--fs-13); font-weight: 600; }
+
+  .spec-note { max-width: 900px; margin: var(--sp-4) auto; padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border-strong); border-radius: var(--r-md); color: var(--text-3); font-size: var(--fs-12); }
+  .spec-note b { color: var(--text-2); font-weight: 600; }
+</style>
+</head>
+<body>
+<header class="toolbar">
+  <strong>铃·记忆体 · UI 重做方案预览</strong>
+  <div class="seg" id="layoutSeg">
+    <button data-layout="a" class="on">A 三栏 · DeepSeek 风</button>
+    <button data-layout="b">B 单列 · Twitter 风</button>
+    <button data-layout="c">C 窄栏 + 抽屉</button>
+  </div>
+  <div class="spacer"></div>
+  <span class="hintbar">同一套零件，三种骨架</span>
+  <button class="btn" id="themeBtn">亮色 / 暗色</button>
+</header>
+<main id="stage"></main>
+<script>
+const ICON = {
+  chat: '<path d="M4 5.5h16v11H9l-5 4z"/>',
+  memory: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  toolbox: '<path d="M3 8h18v11H3z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  plugin: '<path d="M9 3h6v4h3v6h-3v4H9v-4H6V7h3z"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+  spark: '<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
+  send: '<path d="M4 12l16-8-6 8 6 8z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  panel: '<path d="M4 5h16v14H4z"/><path d="M15 5v14"/>',
+}
+const icon = (name, cls = 'icon') => `<svg class="${cls}" viewBox="0 0 24 24">${ICON[name] || ''}</svg>`
+
+const DATA = {
+  sessions: [
+    ['今天', ['桌宠接进安装包后的联调', 'Live2D 取帧裁剪参数', 'v0.8.0 发布说明怎么写']],
+    ['昨天', ['记忆库按相关性注入', 'Agent 计划先给我看', '版本比较的预发布 bug']],
+    ['更早', ['桌宠 Zzz 的写法', '悬浮球在 150% 下错位', '第一次跑通 cargo test']],
+  ],
+  messages: [
+    { who: 'suzu', text: '主人回来啦。桌宠这次真的跟着安装包走了，我确认过 MSI 和 NSIS 里都有它。', time: '19:02' },
+    { who: 'user', text: '干', time: '19:03' },
+    { who: 'suzu', text: '好的，我按顺序来：先把这一版推上 GitHub，再开始 UI 重做。', time: '19:03' },
+    { who: 'user', text: 'UI 全量重做，参考 DeepSeek 和推特的布局，别学国内那几家。', time: '19:05' },
+    { who: 'suzu', text: '明白了。骨架我出三套给你挑：三栏、单列时间线、窄栏加抽屉。选好之后我定规范，页面模块再分给别的 AI 写。', time: '19:05' },
+  ],
+  panels: [['记忆', '6 个记忆库 · 128 条'], ['目标', '2 个进行中'], ['工具箱', '18 个自定义指令'], ['插件', '5 个已启用']],
+}
+
+function thread(layout) {
+  if (layout === 'b') {
+    return DATA.messages.map((m) => `
+      <div class="slip">
+        <div class="hd">
+          <span class="avatar ${m.who === 'suzu' ? 'suzu' : 'me'}">${m.who === 'suzu' ? '铃' : '主'}</span>
+          <b style="color:var(--text)">${m.who === 'suzu' ? '铃' : '主人'}</b>
+          <span>· ${m.time}</span>
+        </div>
+        <div style="color:var(--text); white-space:pre-wrap">${m.text}</div>
+      </div>`).join('')
+  }
+  return DATA.messages.map((m) => m.who === 'suzu'
+    ? `<div class="row"><div class="avatar suzu">铃</div><div class="bubble-suzu"><div class="name">铃 · ${m.time}</div><div class="body">${m.text}</div></div></div>`
+    : `<div class="row user"><div class="bubble-user">${m.text}</div><div class="avatar me">主</div></div>`).join('')
+}
+
+const composer = () => `
+  <div class="composer-wrap">
+    <div class="composer">
+      <div class="ph">和铃说点什么…（Enter 发送，Shift+Enter 换行）</div>
+      <div class="foot">
+        <span class="chip">附件</span><span class="chip">截屏问问</span><span class="chip">深度 2</span>
+        <span class="spacer"></span>
+        <span class="dot ok"></span><span style="font-size:var(--fs-11);color:var(--text-3)">在线</span>
+        <span class="send">${icon('send', 'icon')}</span>
+      </div>
+    </div>
+  </div>`
+
+const sessions = () => DATA.sessions.map(([label, items]) => `
+  <div class="sec-label">${label}</div>
+  ${items.map((s, i) => `<button class="session ${label === '今天' && i === 0 ? 'on' : ''}">${s}</button>`).join('')}
+`).join('')
+
+const panelCards = () => DATA.panels.map(([t, v]) => `<div class="card-mini"><div class="t">${t}</div><div class="v">${v}</div></div>`).join('')
+
+const layouts = {
+  a: () => `
+  <div class="app lay-a">
+    <aside class="sidebar">
+      <div class="side-top">
+        <button class="new-chat">${icon('plus')} 新对话</button>
+      </div>
+      <div class="side-list">${sessions()}</div>
+      <div class="side-foot">
+        <button class="nav-item">${icon('memory')} 记忆</button>
+        <button class="nav-item">${icon('spark')} 目标<span class="badge">2</span></button>
+        <button class="nav-item">${icon('toolbox')} 工具箱</button>
+        <button class="nav-item">${icon('settings')} 设置</button>
+      </div>
+    </aside>
+    <section class="center">
+      <div class="head">
+        <span class="title">桌宠接进安装包后的联调</span>
+        <span class="sub"><span class="dot ok"></span> 在线 · 记忆已同步</span>
+        <span class="spacer"></span>
+        <button class="icon-btn">${icon('panel')}</button>
+      </div>
+      <div class="thread"><div class="msg-wrap">${thread('a')}</div></div>
+      ${composer()}
+    </section>
+    <aside class="right">
+      <div class="tabs"><button class="on">记忆</button><button>目标</button><button>执行记录</button></div>
+      <div class="panel-body">
+        <div class="card-mini"><div class="t">最近写入</div><div class="v">桌宠随安装包分发，退出时收掉子进程</div></div>
+        <div class="card-mini"><div class="t">今天用了多少</div><div class="v">12 次对话 · 3 次工具调用</div></div>
+        <div class="card-mini"><div class="t">长期记忆</div><div class="v">按相关性注入 5 条</div></div>
+      </div>
+    </aside>
+  </div>`,
+
+  b: () => `
+  <div class="app lay-b">
+    <section class="center">
+      <div class="topnav">
+        <div class="brand"><span class="avatar suzu" style="width:22px;height:22px">铃</span> 记忆体</div>
+        <button class="tab on">对话</button>
+        <button class="tab">记忆</button>
+        <button class="tab">目标</button>
+        <button class="tab">工具箱</button>
+        <button class="tab">设置</button>
+        <div class="right"><button class="icon-btn">${icon('panel')}</button><button class="icon-btn">${icon('settings')}</button></div>
+      </div>
+      <div class="thread"><div class="msg-wrap" style="max-width:680px">${thread('b')}</div></div>
+      <div class="composer-wrap" style="max-width:none">${composer()}</div>
+    </section>
+  </div>`,
+
+  c: () => `
+  <div class="app lay-c">
+    <nav class="rail">
+      <button class="icon-btn on" title="对话">${icon('chat')}</button>
+      <button class="icon-btn" title="记忆">${icon('memory')}</button>
+      <button class="icon-btn" title="目标">${icon('spark')}</button>
+      <button class="icon-btn" title="工具箱">${icon('toolbox')}</button>
+      <button class="icon-btn" title="插件">${icon('plugin')}</button>
+      <div class="spacer"></div>
+      <button class="icon-btn" title="设置">${icon('settings')}</button>
+    </nav>
+    <section class="center">
+      <div class="head">
+        <span class="title">和铃的对话</span>
+        <span class="sub"><span class="dot ok"></span> 在线</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" title="历史会话">${icon('panel')}</button>
+      </div>
+      <div class="thread"><div class="msg-wrap">${thread('c')}</div></div>
+      ${composer()}
+    </section>
+    <aside class="drawer">
+      <div class="dh">记忆<div class="icon-btn">${icon('close')}</div></div>
+      <div class="panel-body" style="padding:var(--sp-3)">${panelCards()}</div>
+    </aside>
+  </div>`,
+}
+
+function render(layout) {
+  document.getElementById('stage').innerHTML = layouts[layout]()
+}
+document.getElementById('layoutSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-layout]')
+  if (!btn) return
+  document.querySelectorAll('#layoutSeg button').forEach((b) => b.classList.toggle('on', b === btn))
+  render(btn.dataset.layout)
+})
+document.getElementById('themeBtn').addEventListener('click', () => {
+  document.documentElement.classList.toggle('light')
+})
+// 支持直接打开 #b / #c 看指定方案（方便截图和对比）
+const initial = (location.hash || '').replace('#', '')
+if (['a', 'b', 'c'].includes(initial)) {
+  document.querySelectorAll('#layoutSeg button').forEach((b) => b.classList.toggle('on', b.dataset.layout === initial))
+  render(initial)
+} else {
+  render('a')
+}
+</script>
+</body>
+</html>
