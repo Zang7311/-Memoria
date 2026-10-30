@@ -24,6 +24,17 @@ const mixRate = ref(8)
 const selfName = ref('铃')
 const userName = ref('主人')
 
+/** 形象人格：立即保存（原来在顶栏的下拉框，挪到这里） */
+const PERSONA_OPTIONS = [
+  { id: 'daily', label: '日常' },
+  { id: 'chuunibyou', label: '中二' },
+  { id: 'healing', label: '治愈' },
+  { id: 'lewd', label: '涩涩' },
+]
+async function pickPersona(id: string) {
+  await setting.update({ persona: id }).catch((e) => toastErr(`切换人格失败：${e}`))
+}
+
 async function savePersona() {
   await setting.update({
     language_mix_rate: mixRate.value,
@@ -282,6 +293,9 @@ onMounted(async () => {
 
     <!-- 个性化 -->
     <AppCard title="个性化">
+      <AppField label="形象人格" hint="决定铃的说话风格，切换立即生效（API 模式下才用得到）。">
+        <AppTabs :model-value="setting.persona" :items="PERSONA_OPTIONS" @update:model-value="pickPersona" />
+      </AppField>
       <AppField label="日语修饰词浓度" hint="0-30；越高铃说话越带日语腔调，0 就是纯中文。">
         <input v-model.number="mixRate" class="range" type="range" min="0" max="30" />
         <p class="status-line">

@@ -5,6 +5,7 @@
 import { onMounted, ref } from 'vue'
 import { exportDiagnostic, recoveryCheck, recoveryResetConfig } from '../utils/tauri'
 import { confirmDialog } from '../utils/dialog'
+import TheIcon from '../components/TheIcon.vue'
 
 interface CheckItem {
   name: string
@@ -75,14 +76,14 @@ function onExit() {
 <template>
   <div class="recovery">
     <div class="rec-card">
-      <div class="rec-logo">🔧 铃·恢复模式</div>
+      <div class="rec-logo"><TheIcon name="toolbox" :size="20" /> 铃·恢复模式</div>
       <p class="rec-sub">配置或启动出现问题，先在这里检查一下～</p>
 
       <!-- 检测列表 -->
       <div class="rec-checks">
         <div v-if="checking" class="rec-loading">检测中…</div>
         <div v-for="it in items" :key="it.name" class="rec-item" :class="{ bad: !it.ok }">
-          <span class="rec-mark">{{ it.ok ? '✓' : '⚠' }}</span>
+          <span class="rec-mark" />
           <span class="rec-name">{{ it.name }}</span>
           <span class="rec-detail">{{ it.detail }}</span>
         </div>
@@ -90,9 +91,9 @@ function onExit() {
 
       <!-- 操作 -->
       <div class="rec-actions">
-        <button class="rec-btn" :disabled="busy" @click="onExport">📦 导出诊断报告</button>
-        <button class="rec-btn danger" :disabled="busy" @click="onResetConfig">♻️ 重置配置</button>
-        <button class="rec-btn primary" @click="onExit">🚪 退出</button>
+        <button class="rec-btn" :disabled="busy" @click="onExport"><TheIcon name="file" :size="14" /> 导出诊断报告</button>
+        <button class="rec-btn danger" :disabled="busy" @click="onResetConfig"><TheIcon name="refresh" :size="14" /> 重置配置</button>
+        <button class="rec-btn primary" @click="onExit"><TheIcon name="power" :size="14" /> 退出</button>
       </div>
       <p v-if="done" class="rec-tip">配置已重置，请退出后重新启动软件。</p>
       <p v-if="msg" class="rec-msg">{{ msg }}</p>
@@ -107,53 +108,121 @@ function onExit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(160deg, #2e2e40, #23233a);
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  padding: var(--ui-sp-4);
+  background: linear-gradient(160deg, var(--ui-bg), var(--ui-panel));
+  color: var(--ui-text);
 }
 .rec-card {
-  width: 560px;
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  padding: 24px 28px;
-  color: #eee;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  width: min(560px, 100%);
+  padding: var(--ui-sp-5) var(--ui-sp-6);
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-lg);
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-text);
 }
-.rec-logo { font-size: var(--fs-20, 20px); font-weight: 800; color: #ff9db4; }
-.rec-sub { font-size: var(--fs-12, 12px); color: #aaa; margin: 6px 0 16px; }
-.rec-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.rec-loading { font-size: var(--fs-13, 13px); color: #888; text-align: center; padding: 10px; }
+.rec-logo {
+  font-size: var(--ui-fs-20);
+  font-weight: 800;
+  color: var(--ui-accent);
+}
+.rec-sub {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  margin: var(--ui-sp-1) 0 var(--ui-sp-4);
+}
+.rec-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-1);
+  margin-bottom: var(--ui-sp-4);
+}
+.rec-loading {
+  font-size: var(--ui-fs-13);
+  color: var(--ui-text-3);
+  text-align: center;
+  padding: var(--ui-sp-2);
+}
 .rec-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  font-size: var(--fs-13, 13px);
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--ui-r-md);
+  background: var(--ui-hover);
+  font-size: var(--ui-fs-13);
 }
-.rec-item.bad { background: rgba(255, 69, 58, 0.12); border: 1px solid rgba(255, 69, 58, 0.3); }
-.rec-mark { font-weight: 800; color: #4caf50; }
-.rec-item.bad .rec-mark { color: #ff453a; }
-.rec-name { font-weight: 600; flex-shrink: 0; }
-.rec-detail { font-size: var(--fs-11, 11px); color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-actions { display: flex; gap: 8px; }
+.rec-item.bad {
+  background: color-mix(in srgb, var(--ui-err) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ui-err) 30%, transparent);
+}
+.rec-mark {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-ok);
+}
+.rec-item.bad .rec-mark {
+  background: var(--ui-err);
+}
+.rec-name {
+  font-weight: 600;
+  flex-shrink: 0;
+  color: var(--ui-text);
+}
+.rec-detail {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rec-actions {
+  display: flex;
+  gap: var(--ui-sp-2);
+  flex-wrap: wrap;
+}
 .rec-btn {
   flex: 1;
-  padding: 9px 0;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: #eee;
-  font-size: var(--fs-13, 13px);
+  min-width: 120px;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--ui-dur-1) var(--ui-ease), border-color var(--ui-dur-1) var(--ui-ease);
 }
-.rec-btn:hover { background: rgba(255, 255, 255, 0.16); }
-.rec-btn.primary { background: #ff7a94; border-color: #ff7a94; color: #fff; font-weight: 600; }
-.rec-btn.danger { border-color: rgba(255, 69, 58, 0.5); color: #ff6b5e; }
-.rec-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.rec-tip { font-size: var(--fs-11, 11px); color: #888; margin: 10px 0 0; }
-.rec-msg { font-size: var(--fs-12, 12px); color: #ff9db4; margin: 10px 0 0; }
+.rec-btn:hover:not(:disabled) {
+  background: var(--ui-hover);
+  border-color: var(--ui-border-strong);
+}
+.rec-btn.primary {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-on-accent);
+  font-weight: 600;
+}
+.rec-btn.danger {
+  border-color: color-mix(in srgb, var(--ui-err) 50%, transparent);
+  color: var(--ui-err);
+}
+.rec-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.rec-tip {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  margin: var(--ui-sp-2) 0 0;
+}
+.rec-msg {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-accent);
+  margin: var(--ui-sp-2) 0 0;
+}
 </style>

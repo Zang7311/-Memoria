@@ -26,8 +26,6 @@ const EXEMPT = new Map([
   ['src/components/FloatingBall.vue', '悬浮球是独立窗口，本目标不碰'],
   ['src/components/Bubble.vue', '气泡是独立窗口，本目标不碰'],
   ['src/components/PixelArtPanel.vue', '像素画布与调色板必须是固定色值'],
-  ['src/views/RecoveryView.vue', '救援模式是独立窗口'],
-  ['src/views/OnboardingView.vue', '首次启动引导页'],
   ['src/styles/theme-defaults.ts', '主题预设默认色，作为数据写入用户配置，必须是具体色值'],
 ])
 

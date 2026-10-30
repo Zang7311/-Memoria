@@ -178,11 +178,6 @@ async function toggleFloatingBall() {
 function openSettings() {
   showSettings.value = true
 }
-
-async function onPersonaChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  await setting.update({ persona: v }).catch(() => {})
-}
 </script>
 
 <template>
@@ -276,17 +271,6 @@ async function onPersonaChange(e: Event) {
           >
             <AppStatusDot :state="syncState" :text="syncText" />
           </button>
-          <select
-            class="persona"
-            :value="setting.persona"
-            title="切换人格（API 模式生效）"
-            @change="onPersonaChange"
-          >
-            <option value="daily">日常</option>
-            <option value="chuunibyou">中二</option>
-            <option value="healing">治愈</option>
-            <option value="lewd">涩涩</option>
-          </select>
         </div>
       </header>
 
@@ -572,21 +556,6 @@ async function onPersonaChange(e: Event) {
   background: var(--ui-hover);
   border-color: var(--ui-border);
 }
-.persona {
-  height: 24px;
-  padding: 0 var(--ui-sp-2);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-r-pill);
-  background: var(--ui-raised);
-  color: var(--ui-text-2);
-  font-size: var(--ui-fs-12);
-  cursor: pointer;
-}
-.persona:hover {
-  color: var(--ui-text);
-  border-color: var(--ui-border-strong);
-}
-
 /* 会话标签：选中只加描边和文字色，不整块粉底 */
 .sessions {
   display: flex;
