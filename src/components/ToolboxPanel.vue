@@ -10,6 +10,7 @@ import TheIcon from './TheIcon.vue'
 import AppButton from './ui/AppButton.vue'
 import AppTabs from './ui/AppTabs.vue'
 import AppStatusDot from './ui/AppStatusDot.vue'
+import AppInput from './ui/AppInput.vue'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
 import { confirmDialog } from '../utils/dialog'
@@ -122,6 +123,28 @@ const depGuide = ref<{ id?: string; name: string; hint: string; install: string;
 const showOutput = ref(false)
 const outputContent = ref('')
 const outputTitle = ref('执行输出')
+
+// —— 工具参数输入：内嵌表单（替代原生 prompt）——
+const showInputPrompt = ref(false)
+const inputLabel = ref('')
+const inputPlaceholder = ref('')
+const inputValue = ref('')
+let inputResolve: ((value: string | null) => void) | null = null
+function askInput(label: string, placeholder = '', initial = ''): Promise<string | null> {
+  inputLabel.value = label
+  inputPlaceholder.value = placeholder
+  inputValue.value = initial
+  showInputPrompt.value = true
+  return new Promise<string | null>((resolve) => {
+    inputResolve = resolve
+  })
+}
+function finishInputPrompt(value: string | null) {
+  showInputPrompt.value = false
+  const done = inputResolve
+  inputResolve = null
+  done?.(value)
+}
 // —— moon10：二维码预览图片 URL（生成成功后展示）——
 const qrImageUrl = ref<string | null>(null)
 
@@ -234,9 +257,9 @@ async function recheckDep() {
 
 async function runItem(item: ToolboxItem) {
   if (executingId.value) return
-  // 格式化硬盘：毁灭性操作，双确认（输入盘符 + 确认不可恢复）
+  // 格式化硬盘：毁灭性操作，双确认（内嵌表单输入盘符 + 确认不可恢复）
   if (item.id === 'format-disk') {
-    const drv = prompt('注意：格式化硬盘（不可恢复！）\n\n输入要格式化的盘符（单个字母，如 D）：', 'D')
+    const drv = await askInput('格式化硬盘（不可恢复）：输入要格式化的盘符，单个字母', 'D', 'D')
     if (drv === null) return
     const ok = await confirmDialog(
       `注意：再次确认，将格式化 ${drv.trim().replace(/:$/, '')}: 盘\n该操作会删除磁盘上所有数据，且无法恢复！\n\n确定继续吗？`,
@@ -275,7 +298,7 @@ async function runItem(item: ToolboxItem) {
   }
   // 二维码生成：调用 Rust 命令，弹窗展示图片预览 + 保存路径
   if (item.id === 'qrcode-gen') {
-    const v = window.prompt(item.input_label || '请输入要生成二维码的内容：', item.input_placeholder || '')
+    const v = await askInput(item.input_label || '请输入要生成二维码的内容：', item.input_placeholder || '')
     if (v === null) return
     executingId.value = item.id
     feedback.value = null
@@ -298,7 +321,7 @@ async function runItem(item: ToolboxItem) {
   }
   // 二维码识别：输入图片路径，返回解码内容
   if (item.id === 'qrcode-decode') {
-    const v = window.prompt(item.input_label || '请输入包含二维码的图片完整路径：', item.input_placeholder || '')
+    const v = await askInput(item.input_label || '请输入包含二维码的图片完整路径：', item.input_placeholder || '')
     if (v === null) return
     executingId.value = item.id
     feedback.value = null
@@ -319,7 +342,7 @@ async function runItem(item: ToolboxItem) {
   }
   // OCR 文字识别（moon11）：优先 Windows OCR，失败自动降级 Tesseract
   if (item.id === 'ocr') {
-    const v = window.prompt(item.input_label || '请输入要识别的图片完整路径：', item.input_placeholder || '')
+    const v = await askInput(item.input_label || '请输入要识别的图片完整路径：', item.input_placeholder || '')
     if (v === null) return
     executingId.value = item.id
     feedback.value = null
@@ -345,7 +368,7 @@ async function runItem(item: ToolboxItem) {
       input = formatDiskInput.value
       formatDiskInput.value = null
     } else {
-      const v = window.prompt(item.input_label || `请输入「${item.name}」所需参数：`, item.input_placeholder || '')
+      const v = await askInput(item.input_label || `请输入「${item.name}」所需参数：`, item.input_placeholder || '')
       if (v === null) return // 用户取消
       input = v
     }
@@ -574,6 +597,22 @@ async function confirmDelete() {
     </div>
 
     <!-- 弹窗：固定遮罩层，不进抽屉内容区，避免被抽屉宽度裁切 -->
+    <!-- 工具参数输入（内嵌表单，替代原生 prompt） -->
+    <div v-if="showInputPrompt" class="modal-mask" @click.self="finishInputPrompt(null)">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-title">{{ inputLabel }}</div>
+        <AppInput
+          :model-value="inputValue"
+          :placeholder="inputPlaceholder"
+          @update:model-value="inputValue = $event"
+        />
+        <div class="modal-actions">
+          <AppButton @click="finishInputPrompt(null)">取消</AppButton>
+          <AppButton variant="primary" @click="finishInputPrompt(inputValue)">确定</AppButton>
+        </div>
+      </div>
+    </div>
+
     <!-- 输出弹窗：完整显示命令输出（端口/清理等），可滚动，无视觉盲区 -->
     <div v-if="showOutput" class="modal-mask" @click.self="showOutput = false">
       <div class="modal output-modal" role="dialog" aria-modal="true" :aria-label="outputTitle">

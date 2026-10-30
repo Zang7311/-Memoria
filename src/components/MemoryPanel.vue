@@ -146,12 +146,21 @@ async function onDelete(m: Memory) {
   })
   if (ok) store.deleteMemory(m.id)
 }
-// 编辑（改内容后后端重新分类）
+// 编辑（改内容后后端重新分类）：内嵌文本框，不再用原生 prompt
+const editingId = ref<string | null>(null)
+const editingText = ref('')
 function onEdit(m: Memory) {
-  const newContent = prompt('编辑这条记忆：', m.content)
-  if (newContent !== null && newContent.trim() && newContent !== m.content) {
-    store.editMemory(m.id, newContent.trim())
-  }
+  editingId.value = m.id
+  editingText.value = m.content
+}
+function cancelEdit() {
+  editingId.value = null
+  editingText.value = ''
+}
+function saveEdit(m: Memory) {
+  const text = editingText.value.trim()
+  if (text && text !== m.content) store.editMemory(m.id, text)
+  cancelEdit()
 }
 // 批量删除（带确认）
 async function batchDelete() {
@@ -403,12 +412,21 @@ onMounted(() => {
               />
             </div>
             <div v-if="isExpanded(m.id)" class="mem-full">
-              <p class="content">{{ m.content }}</p>
-              <div class="mem-meta">
-                <span v-if="m.category" class="tag">{{ m.category }}</span>
-                <span v-if="(m.use_count || 0) > 0" class="uses">想起 {{ m.use_count }} 次</span>
+              <!-- 编辑态：内嵌文本框，替代原生 prompt -->
+              <div v-if="editingId === m.id" class="edit-box">
+                <textarea v-model="editingText" class="edit-ta" rows="3" />
+                <div class="edit-acts">
+                  <AppButton size="sm" variant="primary" @click="saveEdit(m)">保存</AppButton>
+                  <AppButton size="sm" @click="cancelEdit">取消</AppButton>
+                </div>
               </div>
-              <div class="mem-acts">
+              <template v-else>
+                <p class="content">{{ m.content }}</p>
+                <div class="mem-meta">
+                  <span v-if="m.category" class="tag">{{ m.category }}</span>
+                  <span v-if="(m.use_count || 0) > 0" class="uses">想起 {{ m.use_count }} 次</span>
+                </div>
+                <div class="mem-acts">
                 <button
                   v-if="!isImportant(m)"
                   class="icon-act"
@@ -435,7 +453,8 @@ onMounted(() => {
                 >
                   <TheIcon name="delete" :size="14" />
                 </button>
-              </div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -815,6 +834,33 @@ onMounted(() => {
   padding: var(--ui-sp-2);
   border-radius: var(--ui-r-sm);
   background: var(--ui-hover);
+}
+/* 内嵌编辑表单（替代原生 prompt） */
+.edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-2);
+}
+.edit-ta {
+  width: 100%;
+  min-height: 72px;
+  padding: var(--ui-sp-2);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
+  resize: vertical;
+}
+.edit-ta:focus {
+  border-color: var(--ui-accent);
+  outline: none;
+}
+.edit-acts {
+  display: flex;
+  gap: var(--ui-sp-1);
+  justify-content: flex-end;
 }
 .content {
   margin: 0;

@@ -31,14 +31,10 @@ const EXEMPT = new Map([
   ['src/styles/theme-defaults.ts', '主题预设默认色，作为数据写入用户配置，必须是具体色值'],
 ])
 
-/** 待迁移清单：还没换成新令牌的旧文件。迁移完请从这里删掉对应行。 */
-const LEGACY = new Map([
-  ['src/components/MonitorSettings.vue', '设置页子面板，等设置页批次收尾'],
-  ['src/components/SyncPanel.vue', '设置页子面板，等设置页批次收尾'],
-  ['src/components/QuickCommandPanel.vue', '快捷指令面板，表情图标要换成 TheIcon'],
-  ['src/components/PluginStore.vue', '插件市场子页，跟随插件面板一起重做'],
-  ['src/components/RegexTester.vue', '快捷指令里的正则测试器，跟随快捷指令面板一起重做'],
-])
+/** 待迁移清单：目前为空（2026-10-31 五个旧文件已全部迁移完）。
+ *  以后发现还没换新规范的旧文件，在这里登记一行，门禁会把它记为「待迁移」而不是失败；
+ *  迁移完成后记得删掉对应行，让新代码重新受严格约束。 */
+const LEGACY = new Map([])
 
 function collect(dir, out = []) {
   for (const name of readdirSync(dir)) {
