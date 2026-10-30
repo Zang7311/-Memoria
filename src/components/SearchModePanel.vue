@@ -246,35 +246,35 @@ function sizeFmt(mb: number) {
 
 .smp-toggle {
   background: none;
-  border: 1px solid var(--border, #ccc);
+  border: 1px solid var(--ui-border);
   border-radius: 6px;
   padding: 2px 10px;
   font-size: var(--fs-11, 11px);
-  color: var(--text-secondary, #888);
+  color: var(--ui-text-2);
   cursor: pointer;
   line-height: 1.6;
   transition: background 0.15s, color 0.15s;
 }
 .smp-toggle:hover,
 .smp-toggle.active {
-  background: var(--input-bg, #f4f4f4);
-  color: var(--text-main, #333);
+  background: var(--ui-raised);
+  color: var(--ui-text);
 }
 
 .smp-panel {
   margin-top: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--border, #e0e0e0);
+  border: 1px solid var(--ui-border);
   border-radius: 8px;
-  background: var(--input-bg, #fafafa);
+  background: var(--ui-raised);
   font-size: var(--fs-12, 12px);
-  color: var(--text-main, #333);
+  color: var(--ui-text);
   max-width: 340px;
 }
 
 .smp-desc {
   margin: 0 0 8px;
-  color: var(--text-secondary, #888);
+  color: var(--ui-text-2);
   font-size: var(--fs-11, 11px);
 }
 
@@ -290,12 +290,12 @@ function sizeFmt(mb: number) {
   align-items: center;
   gap: 2px;
   padding: 6px 4px;
-  border: 1px solid var(--border, #ddd);
+  border: 1px solid var(--ui-border);
   border-radius: 6px;
-  background: var(--bg-main, #fff);
+  background: var(--ui-bg);
   cursor: pointer;
   font-size: var(--fs-11, 11px);
-  color: var(--text-main, #333);
+  color: var(--ui-text);
   transition: border-color 0.15s, background 0.15s;
   line-height: 1.4;
 }
@@ -304,13 +304,13 @@ function sizeFmt(mb: number) {
   cursor: not-allowed;
 }
 .smp-mode-btn:hover:not(:disabled) {
-  border-color: var(--accent, #a78bba);
-  background: var(--input-bg, #f4f4f4);
+  border-color: var(--ui-accent);
+  background: var(--ui-raised);
 }
 .smp-mode-btn.sel {
-  border-color: var(--accent, #a78bba);
-  background: color-mix(in srgb, var(--accent, #a78bba) 12%, transparent);
-  color: var(--accent, #6b3f8a);
+  border-color: var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 12%, transparent);
+  color: var(--ui-accent);
   font-weight: 600;
 }
 
@@ -337,7 +337,7 @@ function sizeFmt(mb: number) {
 .smp-req {
   margin: 0;
   font-size: var(--fs-11, 11px);
-  color: var(--danger, #d9534f);
+  color: var(--ui-err);
   line-height: 1.5;
 }
 
@@ -346,24 +346,24 @@ function sizeFmt(mb: number) {
   font-size: var(--fs-11, 11px);
   line-height: 1.5;
 }
-.warn-bad { color: var(--danger, #d9534f); }
-.warn-mid { color: var(--warning, #e6a817); }
-.warn-ok  { color: var(--success, #4caf50); }
+.warn-bad { color: var(--ui-err); }
+.warn-mid { color: var(--ui-warn); }
+.warn-ok  { color: var(--ui-ok); }
 
 .smp-checking {
   margin: 0;
   font-size: var(--fs-11, 11px);
-  color: var(--text-secondary, #888);
+  color: var(--ui-text-2);
 }
 .smp-model-ok {
   margin: 0;
   font-size: var(--fs-11, 11px);
-  color: var(--success, #4caf50);
+  color: var(--ui-ok);
 }
 .smp-model-missing {
   margin: 0;
   font-size: var(--fs-11, 11px);
-  color: var(--danger, #d9534f);
+  color: var(--ui-err);
   line-height: 1.5;
 }
 
@@ -371,16 +371,16 @@ function sizeFmt(mb: number) {
   margin-top: 4px;
   padding: 3px 10px;
   font-size: var(--fs-11, 11px);
-  border: 1px solid var(--accent, #a78bba);
+  border: 1px solid var(--ui-accent);
   border-radius: 5px;
   background: none;
-  color: var(--accent, #6b3f8a);
+  color: var(--ui-accent);
   cursor: pointer;
   transition: background 0.15s;
   align-self: flex-start;
 }
 .smp-scan-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent, #a78bba) 12%, transparent);
+  background: color-mix(in srgb, var(--ui-accent) 12%, transparent);
 }
 .smp-scan-btn:disabled {
   opacity: 0.55;
@@ -390,7 +390,7 @@ function sizeFmt(mb: number) {
 .smp-no-candidates {
   margin-top: 4px;
   font-size: var(--fs-11, 11px);
-  color: var(--text-secondary, #888);
+  color: var(--ui-text-2);
   line-height: 1.5;
 }
 
@@ -406,9 +406,9 @@ function sizeFmt(mb: number) {
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
-  border: 1px solid var(--border, #e0e0e0);
+  border: 1px solid var(--ui-border);
   border-radius: 5px;
-  background: var(--bg-main, #fff);
+  background: var(--ui-bg);
   font-size: var(--fs-11, 11px);
 }
 
@@ -417,18 +417,18 @@ function sizeFmt(mb: number) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-main, #333);
+  color: var(--ui-text);
 }
 
 .smp-cand-size {
-  color: var(--text-secondary, #888);
+  color: var(--ui-text-2);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .smp-cand-installed {
   flex-shrink: 0;
-  color: var(--success, #4caf50);
+  color: var(--ui-ok);
   font-size: var(--fs-10, 10px);
 }
 
@@ -436,15 +436,15 @@ function sizeFmt(mb: number) {
   flex-shrink: 0;
   padding: 2px 8px;
   font-size: var(--fs-10, 10px);
-  border: 1px solid var(--accent, #a78bba);
+  border: 1px solid var(--ui-accent);
   border-radius: 4px;
   background: none;
-  color: var(--accent, #6b3f8a);
+  color: var(--ui-accent);
   cursor: pointer;
   transition: background 0.15s;
 }
 .smp-install-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent, #a78bba) 12%, transparent);
+  background: color-mix(in srgb, var(--ui-accent) 12%, transparent);
 }
 .smp-install-btn:disabled {
   opacity: 0.55;

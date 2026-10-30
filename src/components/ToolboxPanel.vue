@@ -12,6 +12,8 @@ import AppTabs from './ui/AppTabs.vue'
 import AppStatusDot from './ui/AppStatusDot.vue'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
+import { confirmDialog } from '../utils/dialog'
+import { toast } from '../utils/toast'
 
 const desktop = useDesktopStore()
 const setting = useSettingStore()
@@ -104,7 +106,7 @@ function doErrorAction(a: { label: string; url?: string; kind: 'url' | 'hint' | 
     openGuideUrl(a.url)
   } else if (a.kind === 'admin') {
     showOutput.value = false
-    alert('请关闭本软件，右键「铃·记忆体.exe」→「以管理员身份运行」，再重试此工具。')
+    toast('请关闭本软件，右键「铃·记忆体.exe」→「以管理员身份运行」，再重试此工具。')
   } else {
     showOutput.value = false
   }
@@ -190,7 +192,8 @@ async function copyForgedCode(tool: ForgedTool) {
   try { await navigator.clipboard.writeText(tool.code); feedback.value = { ok: true, text: '源码已复制' } } catch (error) { feedback.value = { ok: false, text: String(error) } }
 }
 async function removeForgedTool(tool: ForgedTool) {
-  if (!window.confirm('确定删除这个自制工具吗？删除后无法恢复。')) return
+  const ok = await confirmDialog('确定删除这个自制工具吗？删除后无法恢复。', { danger: true, confirmText: '删除' })
+  if (!ok) return
   try { await deleteForgedTool(tool.id); forgedTools.value = forgedTools.value.filter((item) => item.id !== tool.id) } catch (error) { feedback.value = { ok: false, text: String(error) } }
 }
 
@@ -235,7 +238,10 @@ async function runItem(item: ToolboxItem) {
   if (item.id === 'format-disk') {
     const drv = prompt('注意：格式化硬盘（不可恢复！）\n\n输入要格式化的盘符（单个字母，如 D）：', 'D')
     if (drv === null) return
-    const ok = confirm(`注意：再次确认，将格式化 ${drv.trim().replace(/:$/, '')}: 盘\n该操作会删除磁盘上所有数据，且无法恢复！\n\n确定继续吗？`)
+    const ok = await confirmDialog(
+      `注意：再次确认，将格式化 ${drv.trim().replace(/:$/, '')}: 盘\n该操作会删除磁盘上所有数据，且无法恢复！\n\n确定继续吗？`,
+      { danger: true, confirmText: '继续格式化' },
+    )
     if (!ok) return
     // 直接执行（命令内部读 TOOLBOX_INPUT），不再弹通用输入框
     formatDiskInput.value = drv.trim().replace(/:$/, '')
@@ -243,15 +249,17 @@ async function runItem(item: ToolboxItem) {
   }
   // WiFi 密码工具：提前声明（仅解自己的 + 不上传）
   if (item.id === 'wifi-pwd') {
-    const ok = confirm(
-      '看 WiFi 密码前先确认：\n\n· 仅查看本机已保存的 WiFi 密码（你自己的网络）\n· 所有处理均在本机完成，不会上传任何数据\n\n是否继续？'
+    const ok = await confirmDialog(
+      '看 WiFi 密码前先确认：\n\n· 仅查看本机已保存的 WiFi 密码（你自己的网络）\n· 所有处理均在本机完成，不会上传任何数据\n\n是否继续？',
+      { confirmText: '继续' },
     )
     if (!ok) return
   }
   // XOR 破解声明（仅限授权数据）
   if (item.id === 'xor') {
-    const ok = confirm(
-      'XOR 破解前先确认：\n\n· 仅用于破解你拥有或获授权测试的加密数据\n· 请勿用于非法破解他人数据\n\n是否继续？'
+    const ok = await confirmDialog(
+      'XOR 破解前先确认：\n\n· 仅用于破解你拥有或获授权测试的加密数据\n· 请勿用于非法破解他人数据\n\n是否继续？',
+      { confirmText: '继续' },
     )
     if (!ok) return
   }

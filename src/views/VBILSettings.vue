@@ -217,7 +217,7 @@ onMounted(refresh)
 
 <style scoped>
 .vbil-settings {
-  color: var(--text-main, #eee6e7);
+  color: var(--ui-text);
 }
 .section-title {
   font-weight: 600;
@@ -240,12 +240,12 @@ onMounted(refresh)
 }
 .label {
   font-size: var(--fs-13);
-  color: var(--text-secondary, #9a9294);
+  color: var(--ui-text-2);
 }
 .switch {
   width: 40px;
   height: 20px;
-  accent-color: var(--accent, #ff7a94);
+  accent-color: var(--ui-accent);
 }
 select,
 input {
@@ -256,7 +256,7 @@ input {
   color: var(--text-main);
 }
 .port {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--ui-hover);
   padding: 3px 8px;
   border-radius: 6px;
   font-size: var(--fs-12);
@@ -265,7 +265,7 @@ input {
   margin-bottom: 10px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgba(255, 160, 60, 0.15);
+  background: color-mix(in srgb, var(--ui-warn) 15%, transparent);
   color: var(--warning);
   font-size: var(--fs-12);
 }
@@ -291,7 +291,7 @@ input {
   font-size: var(--fs-13);
 }
 .btn.primary {
-  background: var(--accent, #ff7a94);
+  background: var(--ui-accent);
   color: var(--text-user);
 }
 .btn:disabled {
@@ -302,7 +302,7 @@ input {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--accent, #ff7a94);
+  color: var(--ui-accent);
   font-size: var(--fs-12);
 }
 .table {
@@ -313,17 +313,17 @@ input {
 .table th {
   text-align: left;
   padding: 6px 8px;
-  color: var(--text-secondary, #9a9294);
+  color: var(--ui-text-2);
   border-bottom: 1px solid var(--border);
   font-weight: 500;
 }
 .table td {
   padding: 6px 8px;
-  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--ui-border));
   vertical-align: middle;
 }
 .code {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--ui-hover);
   padding: 2px 6px;
   border-radius: 5px;
   font-size: var(--fs-11);
@@ -336,7 +336,7 @@ input {
   white-space: nowrap;
 }
 .caps {
-  color: var(--text-secondary, #9a9294);
+  color: var(--ui-text-2);
 }
 .whitelist-add {
   display: flex;
@@ -358,14 +358,14 @@ input {
   gap: 6px;
   padding: 3px 10px;
   border-radius: 12px;
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--ui-hover);
   font-size: var(--fs-12);
 }
 .tag-x {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, #9a9294);
+  color: var(--ui-text-2);
   font-size: var(--fs-14);
   padding: 0;
 }
@@ -374,7 +374,7 @@ input {
 }
 .empty {
   text-align: center;
-  color: var(--text-secondary, #9a9294);
+  color: var(--ui-text-2);
   font-size: var(--fs-12);
   padding: 12px 0;
 }

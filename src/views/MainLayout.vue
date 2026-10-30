@@ -1046,7 +1046,7 @@ async function onPersonaChange(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--ui-bg) 55%, transparent);
 }
 .settings-panel {
   position: relative;

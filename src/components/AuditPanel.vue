@@ -8,6 +8,7 @@ import AppButton from './ui/AppButton.vue'
 import AppStatusDot from './ui/AppStatusDot.vue'
 import AppInput from './ui/AppInput.vue'
 import AppEmpty from './ui/AppEmpty.vue'
+import { confirmDialog } from '../utils/dialog'
 
 // 关闭由标签条处理；仍声明 close，避免父组件的监听落到根元素上
 defineEmits<{ close: [] }>()
@@ -41,7 +42,11 @@ async function exportJson() {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 async function clear() {
-  if (!confirm('确定清空全部执行记录？此操作不可恢复，不会删除会话、目标或文件。')) return
+  const ok = await confirmDialog('确定清空全部执行记录？此操作不可恢复，不会删除会话、目标或文件。', {
+    danger: true,
+    confirmText: '清空',
+  })
+  if (!ok) return
   if (await audit.clear(true)) { expanded.value = null; await refresh() }
 }
 </script>

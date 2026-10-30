@@ -28,6 +28,7 @@ const EXEMPT = new Map([
   ['src/components/PixelArtPanel.vue', '像素画布与调色板必须是固定色值'],
   ['src/views/RecoveryView.vue', '救援模式是独立窗口'],
   ['src/views/OnboardingView.vue', '首次启动引导页'],
+  ['src/styles/theme-defaults.ts', '主题预设默认色，作为数据写入用户配置，必须是具体色值'],
 ])
 
 /** 待迁移清单：还没换成新令牌的旧文件。迁移完请从这里删掉对应行。 */
@@ -148,8 +149,19 @@ test('5. 面板组件不许自带 position: fixed', () => {
       continue
     }
     const bucket = LEGACY.has(path) ? legacy : hits
-    f.text.split(/\r?\n/).forEach((line, i) => {
-      if (/position\s*:\s*fixed/.test(line)) bucket.push(`${path}:${i + 1}  ${line.trim()}`)
+    const lines = f.text.split(/\r?\n/)
+    let selector = ''
+    lines.forEach((line, i) => {
+      const trimmed = line.trim()
+      // 记录当前所处的选择器，用来判断这条 fixed 是不是「弹窗遮罩」
+      if (trimmed.endsWith('{')) selector = trimmed
+      if (!/position\s*:\s*fixed/.test(trimmed)) return
+      // 弹窗遮罩/浮层本来就是全窗口定位，不算面板本体
+      if (/mask|overlay|modal|dialog|backdrop|popup/i.test(selector)) {
+        legacy.push(`${path}:${i + 1}  [弹窗遮罩] ${trimmed}`)
+        return
+      }
+      bucket.push(`${path}:${i + 1}  ${trimmed}  （选择器 ${selector}）`)
     })
   }
   logLegacy('面板固定定位', legacy)

@@ -8,6 +8,7 @@ import AppButton from './ui/AppButton.vue'
 import AppSwitch from './ui/AppSwitch.vue'
 import AppStatusDot from './ui/AppStatusDot.vue'
 import AppEmpty from './ui/AppEmpty.vue'
+import { confirmDialog } from '../utils/dialog'
 
 // 关闭由标签条处理；仍声明 close，避免父组件的监听落到根元素上
 defineEmits<{ close: [] }>()
@@ -47,7 +48,11 @@ function stepBudget(goal: AgentGoal, event: Event) {
   goals.settings(goal, goal.auto_advance, goal.auto_interval_secs, { ...goal.budget, max_steps_per_run: Number((event.target as HTMLInputElement).value) })
 }
 async function remove(goal: AgentGoal) {
-  if (confirm('确定删除目标「' + goal.title + '」及其全部推进记录？此操作不可恢复。')) await goals.remove(goal.id)
+  const ok = await confirmDialog(`确定删除目标「${goal.title}」及其全部推进记录？此操作不可恢复。`, {
+    danger: true,
+    confirmText: '删除',
+  })
+  if (ok) await goals.remove(goal.id)
 }
 </script>
 

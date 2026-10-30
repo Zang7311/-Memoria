@@ -29,7 +29,7 @@ const status = computed<{ label: string; cls: string }>(() => {
   align-items: center;
   gap: 6px;
   font-size: var(--fs-12);
-  color: var(--text-secondary, #888);
+  color: var(--ui-text-2);
 }
 .dot {
   width: 8px;
@@ -39,10 +39,10 @@ const status = computed<{ label: string; cls: string }>(() => {
 }
 /* 状态色统一走语义变量（主题切换自动适配） */
 .dot.online {
-  background: var(--success, #4caf50);
+  background: var(--ui-ok);
 }
 .dot.thinking {
-  background: var(--warning, #f0b429);
+  background: var(--ui-warn);
 }
 .label {
   opacity: 0.9;

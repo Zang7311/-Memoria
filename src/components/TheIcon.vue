@@ -81,6 +81,6 @@ const style = computed(() => ({
   justify-content: center;
   opacity: 0.5;
   font-size: var(--fs-12, 12px);
-  color: var(--text-secondary, #999);
+  color: var(--ui-text-2);
 }
 </style>

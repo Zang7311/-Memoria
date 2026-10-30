@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { AppConfig, MasterPasswordStatus, ModelSlot, UiThemePreset } from '../types'
+import { THEME_DEFAULT } from '../styles/theme-defaults'
 import {
   exportConfig,
   getConfig,
@@ -208,12 +209,12 @@ export const useSettingStore = defineStore('setting', () => {
   async function saveThemePreset(name: string): Promise<UiThemePreset> {
     const preset: UiThemePreset = {
       name,
-      accent_color: accentColor.value ?? '#ff7a94',
+      accent_color: accentColor.value ?? THEME_DEFAULT.accent,
       danger_color: dangerColor.value,
-      bg_color: bgColor.value ?? '#1d1b1f',
+      bg_color: bgColor.value ?? THEME_DEFAULT.background,
       bg_image: bgImage.value,
-      bubble_user_color: bubbleUserColor.value ?? '#2d2d2d',
-      bubble_suzu_color: bubbleSuzuColor.value ?? '#3a3438',
+      bubble_user_color: bubbleUserColor.value ?? THEME_DEFAULT.bubbleUser,
+      bubble_suzu_color: bubbleSuzuColor.value ?? THEME_DEFAULT.bubbleSuzu,
       ui_radius: uiRadius.value ?? 12,
       avatar_suzu: avatarSuzu.value,
     }
