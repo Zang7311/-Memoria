@@ -144,25 +144,25 @@ C 的中栏能到 840 以上，聊天读起来最舒服。会话列表放进抽�
 | 卡片总览 | 「总览」按钮打开卡片层：点卡片切换、卡片右上角关闭、进出有缩放淡入，参考 Edge 手机版标签页与 iOS 清后台 |
 | 拖放附件 | 桌面文件拖进窗口即可当附件（虚线框提示，不弹文字）；后端 `read_dropped_file` 负责读内容，扩展名与大小上限和「选择文件」一致 |
 
-### 第三批（2026-10-30 夜间，进行中）
+### 第三批（2026-10-30 夜间，已完成）
 
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 主题集中 | 完成 | App.vue 里 270 行全局主题（七套配色 + 风格深化层）搬进 `tokens.css`，颜色只有一处来源；新增 `--ui-on-accent` / `--ui-canvas` / `--ui-bubble-*` 令牌 |
-| 提示与弹窗 | 完成 | `AppToast` + `AppDialog` 挂在 App 根节点，全窗口共用；`useStreamRender` / `desktopStore` / 快捷指令 / 插件市场的 `alert`/`confirm` 全部替换 |
+| 提示与弹窗 | 完成 | `AppToast` + `AppDialog` 挂在 App 根节点，全窗口共用；`useStreamRender` / `desktopStore` / 快捷指令 / 插件市场 / 五个面板的 `alert`/`confirm` 全部替换 |
 | 聊天区 | 完成 | 铃无底色消息流（自定义气泡色用 `--ui-bubble-suzu` 承接，默认透明）、主人 raised 底气泡、composer 圆角容器、流式光标换 CSS 竖线 |
-| 工具箱 / 目标 / 执行记录 | 完成 | 去掉固定定位与自带标题栏，操作条 + 自适应网格/三列筛选，表情图标换成语义图标 |
-| 记忆 / 插件面板 | 进行中 | 同一套改法（子代理处理中，面板本体已改成流内布局） |
-| 设置页拆分 | 完成 | `SettingView.vue` 1688 行 / 79.6 KB → 190 行 / 5.7 KB（外框），新增 `components/settings/` 八个分页 + `shared.ts`；左侧图标导航，通知与确认走 toast / confirmDialog，导入路径不再用原生 prompt；顺手修掉接入向导第三步永远不亮的判断错误 |
-| 规范门禁 | 完成 | `scripts/ui-audit.test.mjs`：六条可 grep 的硬指标；新文件严格断言，旧文件记入待迁移清单并打印。第 5 条只允许弹窗遮罩用固定定位 |
+| 五个面板 | 完成 | 记忆/插件/工具箱/目标/执行记录全部改成抽屉内嵌：去固定定位、去自带标题栏、操作条 + 内容区自滚动；`MainLayout` 里 `:deep()` 过渡写法已删除 |
+| 设置页拆分 | 完成 | `SettingView.vue` 1688 行 / 79.6 KB → 190 行 / 5.7 KB，新增 `components/settings/` 八个分页 + `shared.ts` |
+| 规范门禁 | 完成 | `pnpm test:ui`（`scripts/ui-audit.test.mjs`）六条全绿；`package.json` 已接线 |
 
-本轮顺手清掉的历史包袱：`SearchModePanel` / `StatusIndicator` / `TheIcon` / `VBILSettings` 的旧颜色回退值全部换成令牌；`settingStore` 里的主题预设默认色收进 `styles/theme-defaults.ts`（作为数据默认值单独豁免）；工具箱/执行记录/目标面板的原生 `alert`/`confirm` 换成统一组件，连「格式化硬盘」的双确认也走 `confirmDialog`。
+**本轮验证**：`pnpm exec vue-tsc --noEmit` = 0；`node --test scripts/ui-audit.test.mjs` = 6/6 通过；`pnpm build` 通过；暗色与亮色两套截图核对（主界面、记忆面板、插件面板、工具箱、执行记录、设置页通用/形象）。
 
 ### 未完成（下一批次）
 
-1. **记忆 / 插件面板**：等子代理交付后集成并清掉残留 `alert`/`confirm`，然后删除 `MainLayout` 里 `:deep()` 过渡写法。
-2. **待迁移清单**：`MonitorSettings` / `SyncPanel` / `QuickCommandPanel` / `PluginStore` / `RegexTester` 五个旧文件还留着旧配色与表情图标，属于下一批。
+1. **待迁移清单**（门禁里已登记，不算失败）：`MonitorSettings` / `SyncPanel` / `QuickCommandPanel` / `PluginStore` / `RegexTester` 五个旧文件仍用旧配色与表情图标。
+2. **原生 `prompt()` 两处**：记忆面板「编辑记忆」、工具箱「格式化硬盘输入盘符」，需要内嵌表单替代（门禁只覆盖 alert/confirm，故未强制）。
 3. **救援模式与引导页**：`RecoveryView` / `OnboardingView` 仍是旧样式（已列入结构性例外）。
 4. **人格选择器**：仍在顶栏右侧，计划移进设置页「形象」。
-5. **「铃的气泡只有时间」**：旧会话数据 `content` 为空导致，不是渲染 bug，无需改代码。
+5. **桌宠遮挡**：原生桌宠窗口是置顶的，和主窗口重叠时会盖住右下角；要不要改成「只在桌面层」待定。
+6. **「铃的气泡只有时间」**：旧会话数据 `content` 为空导致，不是渲染 bug，无需改代码。
 
