@@ -1,84 +1,64 @@
-<!-- 《铃·记忆体》插件管理界面（AI-5）
-     插件列表（启用开关/权限配置/卸载）+ 安装插件对话框 + 终端命令扩展 + 插件市场入口 -->
+<!-- 《铃·记忆体》插件面板（抽屉内嵌版）
+     标题与关闭由抽屉标签条负责，这里只负责内容：
+     插件列表（启用/禁用、权限、卸载）/ 安装 / 终端命令 / 插件市场 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { usePluginStore } from '../stores/pluginStore'
 import { PERMISSION_LABELS } from '../types'
 import type { Plugin } from '../types'
 import PluginStore from './PluginStore.vue'
+import TheIcon from './TheIcon.vue'
+import AppButton from './ui/AppButton.vue'
+import AppCard from './ui/AppCard.vue'
+import AppEmpty from './ui/AppEmpty.vue'
+import AppInput from './ui/AppInput.vue'
+import AppStatusDot from './ui/AppStatusDot.vue'
+import AppSwitch from './ui/AppSwitch.vue'
+import AppTabs from './ui/AppTabs.vue'
+import { confirmDialog } from '../utils/dialog'
+import { toastOk, toastErr } from '../utils/toast'
 
 const store = usePluginStore()
 
-// 面板展开/收起
-// 面板显示/隐藏由父组件（顶部「插件」按钮）用 v-if 控制：关闭即整块消失
-const emit = defineEmits<{ close: [] }>()
+// —— 插件分类 ——
+function isTerminal(p: Plugin) {
+  return p.manifest.main.trim() === ''
+}
+const normalPlugins = computed(() => store.plugins.filter((p) => !isTerminal(p)))
+const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)))
 
-// 安装对话框
+// 当前 tab：插件 / 终端命令 / 市场
+const tab = ref<'plugins' | 'terminal' | 'store'>('plugins')
+// 内容滚动容器：切页/开表单/弹权限确认时回到顶部，避免表单落在视口外
+const scrollEl = ref<HTMLDivElement | null>(null)
+function scrollToTop() {
+  nextTick(() => {
+    if (scrollEl.value) scrollEl.value.scrollTop = 0
+  })
+}
+function setTab(id: string) {
+  if (id === 'plugins' || id === 'terminal' || id === 'store') {
+    tab.value = id
+    scrollToTop()
+  }
+}
+const tabItems = computed(() => [
+  { id: 'plugins', label: '插件', count: normalPlugins.value.length },
+  { id: 'terminal', label: '终端命令', count: terminalPlugins.value.length },
+  { id: 'store', label: '市场' },
+])
+
+// —— 安装 ——
 const showInstall = ref(false)
 const installSource = ref('')
 const installError = ref('')
 
-// 终端命令表单
-const showTermForm = ref(false)
-const termName = ref('')
-const termCommand = ref('')
-const termDescription = ref('')
-const termError = ref('')
-
-// 权限展开的插件 id
-const permExpanded = ref<Set<string>>(new Set())
-
-function togglePermExpand(id: string) {
-  const s = new Set(permExpanded.value)
-  if (s.has(id)) s.delete(id)
-  else s.add(id)
-  permExpanded.value = s
+function toggleInstall() {
+  showInstall.value = !showInstall.value
+  if (showInstall.value) scrollToTop()
+  else installError.value = ''
 }
 
-// 当前 tab：插件 / 终端命令 / 市场
-const tab = ref<'plugins' | 'terminal' | 'store'>('plugins')
-
-onMounted(() => {
-  store.loadPlugins()
-})
-
-// 插件是否已授权某权限（后端 Plugin.granted 同步）
-function grantedOf(p: Plugin): string[] {
-  return p.granted || []
-}
-
-function hasPerm(p: Plugin, perm: string): boolean {
-  return grantedOf(p).includes(perm)
-}
-
-async function togglePerm(p: Plugin, perm: string) {
-  try {
-    const updated = await store.setPermission(p.id, perm, !hasPerm(p, perm))
-    // store 已把更新后的插件写回列表，直接同步本地引用
-    Object.assign(p, updated)
-  } catch (e) {
-    alert(String(e))
-  }
-}
-
-// 插件是否为终端命令（main 为空）
-function isTerminal(p: Plugin) {
-  return p.manifest.main.trim() === ''
-}
-
-// 插件是否为 Hermes 兼容
-function isHermes(p: Plugin) {
-  return p.manifest.hermes_compatible
-}
-
-// 技能动作类型标签
-function actionLabel(_p: Plugin, action: string): string {
-  if (action.startsWith('command:')) return '🖥️ 终端命令'
-  if (action.startsWith('builtin:')) return '⚙️ 内置动作'
-  return '🧩 JS 技能'
-}
-
-// 安装
 async function onInstall() {
   const src = installSource.value.trim()
   if (!src) {
@@ -95,18 +75,18 @@ async function onInstall() {
     const newPlugin = await store.install(src)
     showInstall.value = false
     installSource.value = ''
-    // 安装成功 → 弹权限确认单（用刚安装的插件对象，不是 find 列表里第一个有权限的插件）
+    // 安装成功 → 弹权限确认单（用刚安装的插件对象）
     if (newPlugin && newPlugin.manifest.permissions?.length > 0) {
       openPermConfirm(newPlugin)
     } else {
-      alert('安装成功！请先启用插件（如无权限申请则直接可用）。')
+      toastOk('安装成功，请先启用插件')
     }
   } catch (e) {
     installError.value = String(e)
   }
 }
 
-// —— P2：安装后权限确认单 ——
+// —— 安装后权限确认单（安全关键，默认全不勾，最小权限原则） ——
 const permConfirm = ref<Plugin | null>(null)
 const permChecked = ref<Set<string>>(new Set())
 const permConfirmBusy = ref(false)
@@ -116,6 +96,7 @@ function openPermConfirm(p: Plugin) {
   permChecked.value = new Set()
   permConfirmMsg.value = ''
   permConfirm.value = p
+  scrollToTop()
 }
 function togglePermCheck(perm: string) {
   const s = new Set(permChecked.value)
@@ -123,7 +104,6 @@ function togglePermCheck(perm: string) {
   else s.add(perm)
   permChecked.value = s
 }
-// 确认授权（勾选的权限批量授予）
 async function confirmPerms() {
   const p = permConfirm.value
   if (!p) return
@@ -148,27 +128,75 @@ function rejectPerms() {
   permConfirm.value = null
 }
 
-// 卸载（带确认）
-async function onUninstall(p: Plugin) {
-  if (confirm(`确定卸载插件「${p.name}」吗？\n（插件目录将被删除）`)) {
-    try {
-      await store.uninstall(p.id)
-    } catch (e) {
-      alert(String(e))
-    }
+// —— 权限 ——
+function grantedOf(p: Plugin): string[] {
+  return p.granted || []
+}
+function hasPerm(p: Plugin, perm: string): boolean {
+  return grantedOf(p).includes(perm)
+}
+async function togglePerm(p: Plugin, perm: string) {
+  try {
+    const updated = await store.setPermission(p.id, perm, !hasPerm(p, perm))
+    // store 已把更新后的插件写回列表，直接同步本地引用
+    Object.assign(p, updated)
+  } catch (e) {
+    toastErr(String(e))
   }
 }
+// 权限展开的插件 id
+const permExpanded = ref<Set<string>>(new Set())
+function togglePermExpand(id: string) {
+  const s = new Set(permExpanded.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  permExpanded.value = s
+}
 
-// 启用/禁用
+// 插件是否为 Hermes 兼容
+function isHermes(p: Plugin) {
+  return p.manifest.hermes_compatible
+}
+// 技能动作类型标签（纯文字，不用 emoji）
+function actionLabel(action: string): string {
+  if (action.startsWith('command:')) return '终端命令'
+  if (action.startsWith('builtin:')) return '内置动作'
+  return 'JS 技能'
+}
+
+// —— 卸载 / 启用禁用 ——
+async function onUninstall(p: Plugin) {
+  const ok = await confirmDialog(`确定卸载插件「${p.name}」吗？\n（插件目录将被删除）`, {
+    danger: true,
+    confirmText: '卸载',
+  })
+  if (!ok) return
+  try {
+    await store.uninstall(p.id)
+  } catch (e) {
+    toastErr(String(e))
+  }
+}
 async function onToggle(p: Plugin) {
   try {
     await store.toggle(p)
   } catch (e) {
-    alert(String(e))
+    toastErr(String(e))
   }
 }
 
-// 终端命令
+// —— 终端命令 ——
+const showTermForm = ref(false)
+const termName = ref('')
+const termCommand = ref('')
+const termDescription = ref('')
+const termError = ref('')
+
+function toggleTermForm() {
+  showTermForm.value = !showTermForm.value
+  if (showTermForm.value) scrollToTop()
+  else termError.value = ''
+}
 async function onAddTerminal() {
   const name = termName.value.trim()
   const cmd = termCommand.value.trim()
@@ -183,534 +211,578 @@ async function onAddTerminal() {
     termCommand.value = ''
     termDescription.value = ''
     showTermForm.value = false
-    alert('终端命令已添加！注意：system 权限默认禁用，需在下方手动开启后才能执行。')
+    toastOk('终端命令已添加。system 权限默认禁用，需要时在下方手动开启')
   } catch (e) {
     termError.value = String(e)
   }
 }
 
-const normalPlugins = computed(() => store.plugins.filter((p) => !isTerminal(p)))
-const terminalPlugins = computed(() => store.plugins.filter((p) => isTerminal(p)))
+onMounted(() => {
+  store.loadPlugins()
+})
 </script>
 
 <template>
-  <aside class="plugin-panel">
-    <div class="panel-header">
-      <span class="panel-title"><span class="title-icon">🧩</span><span class="title-text">插件管理</span></span>
-      <button class="icon-btn" title="关闭插件面板" @click="emit('close')">✕</button>
+  <section class="plugin-panel">
+    <!-- 顶部：分页标签（轻量操作条在下方） -->
+    <div class="panel-tabs">
+      <AppTabs :items="tabItems" :model-value="tab" @update:model-value="setTab" />
     </div>
 
-    <template v-if="true">
-      <!-- Tab 切换 -->
-      <div class="tabs">
-        <button :class="{ active: tab === 'plugins' }" @click="tab = 'plugins'">插件 ({{ normalPlugins.length }})</button>
-        <button :class="{ active: tab === 'terminal' }" @click="tab = 'terminal'">终端命令 ({{ terminalPlugins.length }})</button>
-        <button :class="{ active: tab === 'store' }" @click="tab = 'store'">市场</button>
-      </div>
+    <!-- 轻量操作条：随 tab 变化 -->
+    <div class="action-bar">
+      <template v-if="tab === 'plugins'">
+        <AppButton variant="ghost" size="md" @click="toggleInstall">
+          <TheIcon :name="showInstall ? 'close' : 'add'" :size="14" />
+          {{ showInstall ? '取消安装' : '安装插件' }}
+        </AppButton>
+        <AppButton
+          variant="text"
+          size="md"
+          title="刷新插件列表"
+          aria-label="刷新插件列表"
+          @click="store.loadPlugins()"
+        >
+          <TheIcon name="refresh" :size="14" />
+          刷新
+        </AppButton>
+      </template>
+      <template v-else-if="tab === 'terminal'">
+        <AppButton variant="ghost" size="md" @click="toggleTermForm">
+          <TheIcon :name="showTermForm ? 'close' : 'add'" :size="14" />
+          {{ showTermForm ? '收起表单' : '添加终端命令' }}
+        </AppButton>
+      </template>
+      <span v-else class="bar-hint">市场里的插件装好后会出现在「插件」页</span>
+    </div>
 
-      <div v-if="store.errorMsg" class="error-box">{{ store.errorMsg }}</div>
+    <div ref="scrollEl" class="scroll">
+      <div v-if="store.errorMsg" class="error">{{ store.errorMsg }}</div>
+      <div v-if="store.isLoading" class="hint">加载中…</div>
 
-      <!-- ============ 插件列表 ============ -->
-      <div v-if="tab === 'plugins'" class="plugin-list">
-        <button class="primary-btn" @click="showInstall = true">＋ 安装插件</button>
+      <!-- ============ 插件 ============ -->
+      <template v-if="tab === 'plugins'">
+        <!-- 安装表单：流内展开，不再用固定遮罩 -->
+        <AppCard v-if="showInstall" title="安装插件" hint="本地目录或 Git 仓库">
+          <div class="form">
+            <AppInput
+              v-model="installSource"
+              placeholder="C:\path\to\plugin 或 https://github.com/xxx/plugin.git"
+              @keyup.enter="onInstall"
+            />
+            <div v-if="installError" class="error">{{ installError }}</div>
+            <div class="form-actions">
+              <AppButton variant="text" size="sm" @click="toggleInstall">取消</AppButton>
+              <AppButton variant="primary" size="sm" @click="onInstall">安装</AppButton>
+            </div>
+          </div>
+        </AppCard>
 
-        <div v-if="normalPlugins.length === 0" class="empty-tip">暂无插件，点击上方按钮安装～</div>
+        <!-- 安装后的权限确认单 -->
+        <AppCard v-if="permConfirm" title="插件权限确认" :hint="permConfirm.name">
+          <p class="form-tip">默认全不勾选（最小权限）。未授权的功能会提示权限不足。</p>
+          <div class="perm-list">
+            <label
+              v-for="perm in permConfirm.manifest.permissions"
+              :key="perm"
+              class="perm-item"
+            >
+              <input
+                type="checkbox"
+                :checked="permChecked.has(perm)"
+                @change="togglePermCheck(perm)"
+              />
+              <span class="perm-name">{{ PERMISSION_LABELS[perm] || perm }}</span>
+            </label>
+          </div>
+          <div v-if="permConfirmMsg" class="error">{{ permConfirmMsg }}</div>
+          <div class="form-actions">
+            <AppButton variant="text" size="sm" :disabled="permConfirmBusy" @click="rejectPerms">
+              全部拒绝
+            </AppButton>
+            <AppButton variant="ghost" size="sm" :disabled="permConfirmBusy" @click="confirmPerms">
+              {{ permConfirmBusy ? '授权中…' : `确认授权（${permChecked.size}）` }}
+            </AppButton>
+          </div>
+        </AppCard>
 
-        <div v-for="p in normalPlugins" :key="p.id" class="plugin-card">
-          <div class="card-top">
-            <div class="card-info">
-              <div class="card-name">
+        <AppEmpty
+          v-if="!store.isLoading && normalPlugins.length === 0 && !showInstall && !permConfirm"
+          text="还没有安装插件"
+          hint="支持本地插件目录或 Git 仓库"
+          action-label="安装插件"
+          @action="toggleInstall"
+        />
+
+        <div v-else class="list">
+          <AppCard v-for="p in normalPlugins" :key="p.id" class="plugin-card">
+            <div class="p-head">
+              <div class="p-name">
                 {{ p.name }}
-                <span v-if="isHermes(p)" class="tag hermes">Hermes</span>
+                <span v-if="isHermes(p)" class="tag">Hermes</span>
               </div>
-              <div class="card-meta">v{{ p.version }} · {{ p.author }}</div>
-              <div class="card-desc">{{ p.description || '（无描述）' }}</div>
-              <div class="card-skills">
-                <span v-for="s in p.manifest.skills" :key="s.name" class="skill-tag" :title="s.description">
-                  {{ s.name }}
-                  <em>{{ actionLabel(p, s.action) }}</em>
-                </span>
-              </div>
+              <AppSwitch :model-value="p.enabled" @update:model-value="onToggle(p)" />
             </div>
-            <div class="card-actions">
-              <label class="switch">
-                <input type="checkbox" :checked="p.enabled" @change="onToggle(p)" />
-                <span class="slider"></span>
-              </label>
-              <button class="mini-btn danger" @click="onUninstall(p)">卸载</button>
+            <div class="meta">v{{ p.version }} · {{ p.author }}</div>
+            <p class="desc">{{ p.description || '（无描述）' }}</p>
+            <div v-if="p.manifest.skills.length" class="skills">
+              <span v-for="s in p.manifest.skills" :key="s.name" class="skill">
+                {{ s.name }}
+                <span class="skill-act">{{ actionLabel(s.action) }}</span>
+              </span>
             </div>
-          </div>
 
-          <!-- 权限区 -->
-          <div class="perm-area">
-            <div class="perm-title" @click="togglePermExpand(p.id)">
-              权限配置 <span class="perm-toggle">{{ permExpanded.has(p.id) ? '▲' : '▼' }}</span>
-            </div>
-            <div v-if="permExpanded.has(p.id)" class="perm-list">
-              <div v-if="p.manifest.permissions.length === 0" class="perm-empty">该插件未声明任何权限（默认无权限）</div>
-              <label v-for="perm in p.manifest.permissions" :key="perm" class="perm-item">
-                <input type="checkbox" :checked="hasPerm(p, perm)" @change="togglePerm(p, perm)" />
-                <span :class="{ danger: perm === 'system' }">
-                  {{ PERMISSION_LABELS[perm] || perm }}
-                  <em v-if="perm === 'system'">⚠️ 高风险</em>
+            <!-- 权限展示与配置 -->
+            <div class="perms">
+              <button
+                class="perm-toggle"
+                type="button"
+                :aria-expanded="permExpanded.has(p.id)"
+                @click="togglePermExpand(p.id)"
+              >
+                <TheIcon name="lock" :size="12" />
+                <span class="perm-title">
+                  权限 {{ grantedOf(p).length }}/{{ p.manifest.permissions.length }}
                 </span>
-              </label>
+                <span class="perm-more">{{ permExpanded.has(p.id) ? '收起' : '展开' }}</span>
+              </button>
+              <div v-if="permExpanded.has(p.id)" class="perm-list">
+                <div v-if="p.manifest.permissions.length === 0" class="dim">
+                  该插件未声明任何权限（默认无权限）
+                </div>
+                <label v-for="perm in p.manifest.permissions" :key="perm" class="perm-item">
+                  <input type="checkbox" :checked="hasPerm(p, perm)" @change="togglePerm(p, perm)" />
+                  <span class="perm-name">{{ PERMISSION_LABELS[perm] || perm }}</span>
+                </label>
+              </div>
             </div>
-          </div>
+
+            <div class="p-foot">
+              <AppStatusDot
+                :state="p.enabled ? 'ok' : 'idle'"
+                :text="p.enabled ? '已启用' : '已停用'"
+              />
+              <button class="danger-btn" type="button" @click="onUninstall(p)">卸载</button>
+            </div>
+          </AppCard>
         </div>
-      </div>
+      </template>
 
       <!-- ============ 终端命令 ============ -->
-      <div v-if="tab === 'terminal'" class="plugin-list">
-        <button class="primary-btn" @click="showTermForm = !showTermForm">{{ showTermForm ? '收起表单' : '＋ 添加终端命令' }}</button>
-
-        <div v-if="showTermForm" class="term-form">
-          <input v-model="termName" placeholder="命令名（如 clean_temp）" />
-          <input v-model="termCommand" placeholder="命令内容（如 del /q %TEMP%\*）" />
-          <input v-model="termDescription" placeholder="描述（可选）" />
-          <div v-if="termError" class="error-box">{{ termError }}</div>
-          <button class="primary-btn small" @click="onAddTerminal">✓ 保存命令</button>
-        </div>
-
-        <div v-if="terminalPlugins.length === 0 && !showTermForm" class="empty-tip">暂无自定义终端命令～</div>
-
-        <div v-for="p in terminalPlugins" :key="p.id" class="plugin-card">
-          <div class="card-top">
-            <div class="card-info">
-              <div class="card-name">{{ p.manifest.skills[0]?.name }}</div>
-              <div class="card-desc">{{ p.manifest.skills[0]?.description || '（无描述）' }}</div>
-              <code class="cmd-code">{{ p.manifest.skills[0]?.action.replace('command:', '') }}</code>
-            </div>
-            <div class="card-actions">
-              <label class="switch">
-                <input type="checkbox" :checked="p.enabled" @change="onToggle(p)" />
-                <span class="slider"></span>
-              </label>
-              <button class="mini-btn danger" @click="onUninstall(p)">删除</button>
+      <template v-else-if="tab === 'terminal'">
+        <AppCard v-if="showTermForm" title="添加终端命令">
+          <div class="form">
+            <AppInput v-model="termName" placeholder="命令名（如 clean_temp）" />
+            <AppInput v-model="termCommand" placeholder="命令内容（如 del /q %TEMP%\*）" />
+            <AppInput v-model="termDescription" placeholder="描述（可选）" />
+            <div v-if="termError" class="error">{{ termError }}</div>
+            <div class="form-actions">
+              <AppButton variant="text" size="sm" @click="toggleTermForm">取消</AppButton>
+              <AppButton variant="ghost" size="sm" @click="onAddTerminal">保存</AppButton>
             </div>
           </div>
-          <div class="perm-area">
-            <div class="perm-title">权限：{{ hasPerm(p, 'system') ? '✅ 已授权 system' : '⛔ 未授权（无法执行）' }}</div>
-            <div class="perm-list">
+        </AppCard>
+
+        <AppEmpty
+          v-if="!store.isLoading && terminalPlugins.length === 0 && !showTermForm"
+          text="还没有自定义终端命令"
+          hint="把常用命令存成技能，铃需要时自己调用"
+          action-label="添加终端命令"
+          @action="toggleTermForm"
+        />
+
+        <div v-else class="list">
+          <AppCard v-for="p in terminalPlugins" :key="p.id" class="plugin-card">
+            <div class="p-head">
+              <div class="p-name">{{ p.manifest.skills[0]?.name }}</div>
+              <AppSwitch :model-value="p.enabled" @update:model-value="onToggle(p)" />
+            </div>
+            <p class="desc">{{ p.manifest.skills[0]?.description || '（无描述）' }}</p>
+            <code class="cmd">{{ p.manifest.skills[0]?.action.replace('command:', '') }}</code>
+
+            <div class="perms">
+              <AppStatusDot
+                :state="hasPerm(p, 'system') ? 'warn' : 'idle'"
+                :text="hasPerm(p, 'system') ? '已授权 system' : '未授权 system，无法执行'"
+              />
               <label class="perm-item">
-                <input type="checkbox" :checked="hasPerm(p, 'system')" @change="togglePerm(p, 'system')" />
-                <span class="danger">system 系统命令 <em>⚠️ 高风险，默认禁用</em></span>
+                <input
+                  type="checkbox"
+                  :checked="hasPerm(p, 'system')"
+                  @change="togglePerm(p, 'system')"
+                />
+                <span class="perm-name">system 系统命令</span>
+                <span class="warn-text">高风险，默认禁用</span>
               </label>
             </div>
-          </div>
+
+            <div class="p-foot">
+              <AppStatusDot
+                :state="p.enabled ? 'ok' : 'idle'"
+                :text="p.enabled ? '已启用' : '已停用'"
+              />
+              <button class="danger-btn" type="button" @click="onUninstall(p)">删除</button>
+            </div>
+          </AppCard>
         </div>
-      </div>
+      </template>
 
       <!-- ============ 插件市场 ============ -->
-      <div v-if="tab === 'store'" class="plugin-list">
+      <div v-else class="market">
         <PluginStore @installed="store.loadPlugins()" />
       </div>
-    </template>
-
-    <!-- 安装对话框 -->
-    <div v-if="showInstall" class="modal-mask" @click.self="showInstall = false">
-      <div class="modal">
-        <h3>安装插件</h3>
-        <p class="modal-tip">输入本地插件目录路径，或 Git 仓库 URL</p>
-        <input v-model="installSource" placeholder="C:\path\to\plugin 或 https://github.com/xxx/plugin.git" @keyup.enter="onInstall" />
-        <div v-if="installError" class="error-box">{{ installError }}</div>
-        <div class="modal-actions">
-          <button class="mini-btn" @click="showInstall = false">取消</button>
-          <button class="primary-btn small" @click="onInstall">安装</button>
-        </div>
-      </div>
     </div>
-
-    <!-- P2：安装后权限确认单（安全关键，默认全不勾，最小权限原则） -->
-    <div v-if="permConfirm" class="modal-mask">
-      <div class="modal perm-modal">
-        <h3>🔐 插件权限确认</h3>
-        <p class="modal-tip">
-          插件「<b>{{ permConfirm.name }}</b>」申请以下权限：
-        </p>
-        <div class="perm-list">
-          <label
-            v-for="perm in permConfirm.manifest.permissions"
-            :key="perm"
-            class="perm-item"
-            :class="{ high: perm === 'system' }"
-          >
-            <input
-              type="checkbox"
-              :checked="permChecked.has(perm)"
-              @change="togglePermCheck(perm)"
-            />
-            <span class="perm-name">{{ PERMISSION_LABELS[perm] || perm }}</span>
-            <span v-if="perm === 'system'" class="perm-warn">⚠️ 高风险</span>
-          </label>
-        </div>
-        <p class="modal-tip">默认全不勾选（最小权限）。未授权的功能会提示权限不足。</p>
-        <div v-if="permConfirmMsg" class="error-box">{{ permConfirmMsg }}</div>
-        <div class="modal-actions">
-          <button class="mini-btn" :disabled="permConfirmBusy" @click="rejectPerms">全部拒绝</button>
-          <button class="primary-btn small" :disabled="permConfirmBusy" @click="confirmPerms">
-            {{ permConfirmBusy ? '授权中…' : `确认授权（${permChecked.size}）` }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </aside>
+  </section>
 </template>
 
 <style scoped>
+/* 流内布局：宽高由抽屉决定，面板自己不再有外框、固定宽度和定位 */
 .plugin-panel {
-  width: 340px;
-  border-left: 1px solid var(--border, rgba(128, 128, 128, 0.2));
-  background: var(--bg-bar, rgba(255, 255, 255, 0.6));
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
   min-height: 0;
-  transition: width 0.2s ease;
+  color: var(--ui-text);
+  background: transparent;
+  font-size: var(--ui-fs-13);
 }
-.plugin-panel.collapsed {
-  width: 44px;
+
+/* 顶部分页与轻量操作条 */
+.panel-tabs {
+  flex: none;
+  padding: var(--ui-sp-2) var(--ui-sp-2) 0;
 }
-.panel-header {
+.action-bar {
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-bottom: 1px solid var(--ui-border);
 }
-.panel-title {
-  font-weight: 600;
-  font-size: var(--fs-14);
+.bar-hint {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
 }
-.icon-btn {
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: var(--fs-11);
-  line-height: 1;
-  opacity: 0.75;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
-}
-.icon-btn:hover {
-  background: var(--border, rgba(128, 128, 128, 0.2));
-  color: var(--text-main);
-  opacity: 1;
-}
-/* 收起态与记忆面板对齐：竖排窄条，只留图标和折叠按钮，标题文字隐藏 */
-.plugin-panel.collapsed .panel-header {
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 0;
-  min-height: 64px;
-}
-.plugin-panel.collapsed .title-text {
-  display: none;
-}
-.plugin-panel.collapsed .panel-title {
-  font-size: var(--fs-16);
-  line-height: 1;
-}
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.2));
-}
-.tabs button {
+
+/* 内容区自己滚动 */
+.scroll {
   flex: 1;
-  border: none;
-  background: transparent;
-  padding: 6px 4px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: var(--fs-12);
-  color: var(--text-main, #222);
-  opacity: 0.7;
-}
-.tabs button.active {
-  background: rgba(255, 182, 193, 0.35);
-  opacity: 1;
-  font-weight: 600;
-}
-.plugin-list {
-  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--ui-sp-3);
+  padding: var(--ui-sp-3);
 }
-.plugin-card {
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
-  border-radius: 10px;
-  padding: 10px;
-  background: var(--bg-main, rgba(255, 255, 255, 0.5));
+/* 滚动区里的块不参与压缩（否则卡片会被挤扁、内容被裁掉） */
+.scroll > * {
+  flex: none;
 }
-.card-top {
+
+.list {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: var(--ui-sp-3);
 }
-.card-name {
-  font-weight: 600;
-  font-size: var(--fs-14);
+
+/* —— 插件卡片 —— */
+.p-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-sp-2);
+}
+.p-head :deep(.sw) {
+  flex: none;
+  padding: 0;
+  gap: 0;
+}
+.p-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  font-size: var(--ui-fs-14);
+  font-weight: 600;
+  color: var(--ui-text);
+  word-break: break-word;
 }
 .tag {
-  font-size: var(--fs-10);
-  padding: 1px 6px;
-  border-radius: 8px;
+  flex: none;
+  padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-active);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-11);
   font-weight: 400;
 }
-.tag.hermes {
-  background: var(--info-bg);
-  color: var(--info);
+.meta {
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  overflow-wrap: anywhere;
 }
-.card-meta {
-  font-size: var(--fs-11);
-  opacity: 0.6;
-  margin-top: 2px;
+.desc {
+  margin: var(--ui-sp-1) 0 0;
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+  word-break: break-word;
 }
-.card-desc {
-  font-size: var(--fs-12);
-  opacity: 0.8;
-  margin-top: 4px;
-  line-height: 1.4;
-}
-.card-skills {
+.skills {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--ui-sp-1);
+  margin-top: var(--ui-sp-2);
 }
-.skill-tag {
-  font-size: var(--fs-11);
-  background: rgba(255, 182, 193, 0.25);
-  border-radius: 6px;
-  padding: 2px 6px;
+.skill {
+  max-width: 100%;
+  padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-hover);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-11);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
 }
-.skill-tag em {
-  font-style: normal;
-  opacity: 0.55;
-  margin-left: 4px;
+.skill-act {
+  margin-left: var(--ui-sp-1);
+  color: var(--ui-text-3);
 }
-.card-actions {
+.cmd {
+  display: block;
+  margin-top: var(--ui-sp-2);
+  padding: var(--ui-sp-2);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-hover);
+  color: var(--ui-text-2);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: var(--ui-fs-11);
+  line-height: var(--ui-line);
+  word-break: break-all;
+}
+
+/* —— 权限 —— */
+.perms {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 36px;
-  height: 20px;
-}
-.switch input {
-  display: none;
-}
-.slider {
-  position: absolute;
-  inset: 0;
-  background: var(--text-secondary, #ccc);
-  border-radius: 20px;
-  transition: 0.2s;
-  cursor: pointer;
-}
-.slider::before {
-  content: '';
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  left: 3px;
-  top: 3px;
-  background: #ffffff; /* 开关滑块固定白色 */
-  border-radius: 50%;
-  transition: 0.2s;
-}
-.switch input:checked + .slider {
-  background: var(--accent);
-}
-.switch input:checked + .slider::before {
-  transform: translateX(16px);
-}
-.mini-btn {
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.4));
-  background: transparent;
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: var(--fs-11);
-  cursor: pointer;
-}
-.mini-btn.danger {
-  color: var(--danger);
-  border-color: rgba(220, 38, 38, 0.4);
-}
-.mini-btn.danger:hover {
-  background: rgba(220, 38, 38, 0.08);
-}
-.primary-btn {
-  border: none;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 45%, #fff), var(--accent));
-  color: var(--text-user);
-  border-radius: 8px;
-  padding: 7px 12px;
-  font-size: var(--fs-13);
-  cursor: pointer;
-  font-weight: 600;
-}
-.primary-btn.small {
-  padding: 5px 10px;
-  font-size: var(--fs-12);
-}
-.primary-btn:hover {
-  filter: brightness(1.05);
-}
-.perm-area {
-  margin-top: 8px;
-  border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.3));
-  padding-top: 6px;
-}
-.perm-title {
-  font-size: var(--fs-12);
-  opacity: 0.7;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
+  gap: var(--ui-sp-1);
+  margin-top: var(--ui-sp-3);
+  padding-top: var(--ui-sp-2);
+  border-top: 1px solid var(--ui-border);
 }
 .perm-toggle {
-  font-size: var(--fs-10);
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  width: 100%;
+  padding: var(--ui-sp-1) 0;
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-12);
+  text-align: left;
+}
+.perm-toggle:hover {
+  color: var(--ui-text);
+}
+.perm-title {
+  flex: 1;
+  min-width: 0;
+}
+.perm-more {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
 }
 .perm-list {
-  margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ui-sp-1);
 }
 .perm-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-12);
+  gap: var(--ui-sp-1);
+  padding: var(--ui-sp-1) var(--ui-sp-2);
+  border-radius: var(--ui-r-sm);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
   cursor: pointer;
 }
-.perm-item .danger {
-  color: var(--danger);
+.perm-item:hover {
+  background: var(--ui-hover);
 }
-.perm-item em {
-  font-style: normal;
-  font-size: var(--fs-10);
-  opacity: 0.6;
-  margin-left: 4px;
+.perm-item input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--ui-accent);
+  cursor: pointer;
 }
-.perm-empty {
-  font-size: var(--fs-12);
-  opacity: 0.6;
+.perm-name {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
-.empty-tip {
-  text-align: center;
-  color: var(--text-main, #888);
-  font-size: var(--fs-12);
-  padding: 20px 0;
+.warn-text {
+  flex: none;
+  font-size: var(--ui-fs-11);
+  color: var(--ui-warn);
 }
-.error-box {
-  background: rgba(220, 38, 38, 0.1);
-  color: var(--danger);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: var(--fs-12);
-  margin: 8px 10px 0;
-  word-break: break-all;
+.dim {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
 }
-.term-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.term-form input,
-.modal input {
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.4));
-  background: var(--bg-main, #fff);
-  color: var(--text-main, #222);
-  border-radius: 6px;
-  padding: 7px 10px;
-  font-size: var(--fs-12);
-}
-.cmd-code {
-  display: block;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: var(--fs-11);
-  margin-top: 4px;
-  word-break: break-all;
-}
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+
+/* —— 卡片底部 —— */
+.p-foot {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 100;
+  justify-content: space-between;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-3);
+  padding-top: var(--ui-sp-2);
+  border-top: 1px solid var(--ui-border);
 }
-.modal {
-  background: var(--bg-main, #fff);
-  border-radius: 12px;
-  padding: 18px;
-  width: 380px;
+.danger-btn {
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-err);
+  padding: var(--ui-sp-1) var(--ui-sp-2);
+  font-size: var(--ui-fs-12);
+  transition: background var(--ui-dur-1) var(--ui-ease);
+}
+.danger-btn:hover {
+  background: var(--ui-hover);
+}
+
+/* —— 表单 —— */
+.form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--ui-sp-2);
 }
-.modal h3 {
+.form-tip {
   margin: 0;
-  font-size: var(--fs-15);
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
 }
-.modal-tip {
-  margin: 0;
-  font-size: var(--fs-12);
-  opacity: 0.7;
-}
-.modal-actions {
+.form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--ui-sp-2);
 }
-/* —— P2：权限确认单样式 —— */
-.perm-list {
+
+.error {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-err);
+  line-height: var(--ui-line);
+  word-break: break-word;
+}
+.hint {
+  padding: var(--ui-sp-4) 0;
+  text-align: center;
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-3);
+}
+
+/* 市场页由 PluginStore 组件渲染（该组件不在本批次改动范围），
+   这里只补齐它在抽屉里的卡片与按钮样式，避免默认白底按钮看不清 */
+.market :deep(.store) {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
+  gap: var(--ui-sp-3);
 }
-.perm-item {
+.market :deep(.store-card) {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
-  cursor: pointer;
-  font-size: var(--fs-13);
-  transition: background 0.15s;
+  justify-content: space-between;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+  background: var(--ui-raised);
 }
-.perm-item:hover { background: rgba(128, 128, 128, 0.08); }
-.perm-item.high { border-color: rgba(217, 83, 79, 0.4); background: rgba(217, 83, 79, 0.06); }
-.perm-item input { accent-color: var(--accent, #ff7a94); cursor: pointer; }
-.perm-name { flex: 1; }
-.perm-warn {
-  font-size: var(--fs-10);
-  color: var(--danger, #d9534f);
+.market :deep(.store-info) {
+  min-width: 0;
+}
+.market :deep(.store-name) {
+  font-size: var(--ui-fs-14);
   font-weight: 600;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+.market :deep(.store-tag) {
+  padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-active);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-11);
+  font-weight: 400;
+}
+.market :deep(.store-meta) {
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  opacity: 1;
+}
+.market :deep(.store-desc) {
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+  opacity: 1;
+  overflow-wrap: anywhere;
+}
+.market :deep(.store-msg) {
+  padding: var(--ui-sp-2);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  white-space: pre-line;
+}
+.market :deep(.store-tip) {
+  margin: 0;
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
+  text-align: center;
+}
+.market :deep(.primary-btn) {
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  white-space: nowrap;
+}
+.market :deep(.primary-btn:hover) {
+  background: var(--ui-hover);
+  border-color: var(--ui-border-strong);
+}
+.market :deep(.primary-btn.small) {
+  padding: 0 var(--ui-sp-2);
+}
+.market :deep(.more-btn) {
+  height: var(--ui-ctl-h);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-12);
+}
+.market :deep(.more-btn:hover) {
+  background: var(--ui-hover);
+  color: var(--ui-text);
 }
 </style>

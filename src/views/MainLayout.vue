@@ -373,22 +373,23 @@ async function onPersonaChange(e: Event) {
         </div>
       </div>
 
-      <!-- 面板本体：v-show 切页，切换不丢各自的滚动位置和状态 -->
+      <!-- 面板本体：v-show 切页，切换不丢各自的滚动位置和状态。
+           关闭由标签条负责，面板自己不再 emit close -->
       <div class="dock-body">
         <div v-if="openTabs.includes('memory')" v-show="activeTab === 'memory'" class="pane">
-          <MemoryPanel @close="closeTab('memory')" />
+          <MemoryPanel />
         </div>
         <div v-if="openTabs.includes('goals')" v-show="activeTab === 'goals'" class="pane">
-          <GoalsPanel @close="closeTab('goals')" />
+          <GoalsPanel />
         </div>
         <div v-if="openTabs.includes('toolbox')" v-show="activeTab === 'toolbox'" class="pane">
-          <ToolboxPanel @close="closeTab('toolbox')" />
+          <ToolboxPanel />
         </div>
         <div v-if="openTabs.includes('plugins')" v-show="activeTab === 'plugins'" class="pane">
-          <PluginManager @close="closeTab('plugins')" />
+          <PluginManager />
         </div>
         <div v-if="openTabs.includes('audit')" v-show="activeTab === 'audit'" class="pane">
-          <AuditPanel @close="closeTab('audit')" />
+          <AuditPanel />
         </div>
       </div>
     </aside>
@@ -871,32 +872,6 @@ async function onPersonaChange(e: Event) {
 .pane {
   height: 100%;
   overflow: hidden;
-}
-/* 过渡期：标签条已经给了标题和关闭按钮，面板自带的 .panel-header 先隐藏；
-   目标/执行记录的头部里还有「新建/刷新」，保留不动 */
-.dock :deep(.panel-header) {
-  display: none;
-}
-
-/* 过渡期：五个面板都还自带 position:fixed / 固定宽度 / 自己的一层外框，
-   先统一压成「本体内嵌」，等「各面板」批次重做时再删掉这段 */
-.dock :deep(.memory-panel),
-.dock :deep(.plugin-panel),
-.dock :deep(.toolbox-panel),
-.dock :deep(.goals-panel),
-.dock :deep(.audit-panel) {
-  position: static;
-  inset: auto;
-  width: 100%;
-  height: 100%;
-  max-height: none;
-  z-index: auto;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-  backdrop-filter: none;
 }
 
 /* ---------- 卡片总览（Edge 手机版标签页 / iOS 清后台） ---------- */
