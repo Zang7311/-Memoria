@@ -4,6 +4,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { exportDiagnostic, recoveryCheck, recoveryResetConfig } from '../utils/tauri'
+import { confirmDialog } from '../utils/dialog'
 
 interface CheckItem {
   name: string
@@ -34,12 +35,12 @@ async function onExport() {
   try {
     const res = await exportDiagnostic({ include_logs: true, include_config: true, include_system_info: true })
     if (res.success && res.file_path) {
-      msg.value = `✅ 诊断报告已导出：${res.file_path}`
+      msg.value = `诊断报告已导出：${res.file_path}`
     } else {
-      msg.value = `✗ 导出失败：${res.error || '未知错误'}`
+      msg.value = `导出失败：${res.error || '未知错误'}`
     }
   } catch (e) {
-    msg.value = `✗ 导出失败：${e}`
+    msg.value = `导出失败：${e}`
   } finally {
     busy.value = false
   }
@@ -47,15 +48,19 @@ async function onExport() {
 
 // 重置配置
 async function onResetConfig() {
-  if (!confirm('将备份当前配置并恢复默认设置（记忆数据不受影响）。继续？')) return
+  const ok = await confirmDialog('将备份当前配置并恢复默认设置（记忆数据不受影响）。继续？', {
+    danger: true,
+    confirmText: '恢复默认',
+  })
+  if (!ok) return
   busy.value = true
   msg.value = ''
   try {
     const r = await recoveryResetConfig()
-    msg.value = `✅ ${r}`
+    msg.value = `${r}`
     done.value = true
   } catch (e) {
-    msg.value = `✗ 重置失败：${e}`
+    msg.value = `重置失败：${e}`
   } finally {
     busy.value = false
   }
