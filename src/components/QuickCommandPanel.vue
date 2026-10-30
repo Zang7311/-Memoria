@@ -1,5 +1,6 @@
-<!-- 《铃·记忆体》快捷指令管理面板（AI-9）
-     新增/编辑/删除指令（名称 + 步骤列表 + 可选铃说句话），列表展示 + 一键执行 -->
+<!-- 《铃·记忆体》快捷指令管理面板（设置 → 指令）
+     新增/编辑/删除指令（名称 + 步骤列表 + 可选铃说句话），列表展示 + 一键执行
+     皮肤：全部走 --ui-* 令牌；图标走 TheIcon，不再用 emoji -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { QuickCommand, QuickCommandStep } from '../types'
@@ -7,6 +8,11 @@ import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { confirmDialog } from '../utils/dialog'
 import { toastErr } from '../utils/toast'
+import TheIcon from './TheIcon.vue'
+import AppButton from './ui/AppButton.vue'
+import AppCard from './ui/AppCard.vue'
+import AppEmpty from './ui/AppEmpty.vue'
+import AppInput from './ui/AppInput.vue'
 
 const store = useQuickCommandStore()
 const desktop = useDesktopStore()
@@ -34,12 +40,12 @@ const running = ref(false)
 const DANGEROUS_TOOLS = new Set(['shutdown-1h', 'lock', 'shred', 'bsod', 'empty-recycle-bin', 'cancel-shutdown', 'format-disk'])
 
 // —— 模块库：系统命令（快捷指令专用） + 工具箱工具 ——
-const SYS_MODULES: { tool: string; name: string; icon: string; input_label?: string; placeholder?: string }[] = [
-  { tool: 'volume', name: '音量', icon: '🔊', input_label: '音量数值（0-100）', placeholder: '20' },
-  { tool: 'music', name: '音乐', icon: '🎵', input_label: '音乐文件路径（可选）', placeholder: 'C:\\music\\song.mp3' },
-  { tool: 'power-balanced', name: '电源·平衡', icon: '🔋' },
-  { tool: 'power-high', name: '电源·高性能', icon: '⚡' },
-  { tool: 'power-saver', name: '电源·省电', icon: '🍃' },
+const SYS_MODULES: { tool: string; name: string; input_label?: string; placeholder?: string }[] = [
+  { tool: 'volume', name: '音量', input_label: '音量数值（0-100）', placeholder: '20' },
+  { tool: 'music', name: '音乐', input_label: '音乐文件路径（可选）', placeholder: 'C:\\music\\song.mp3' },
+  { tool: 'power-balanced', name: '电源·平衡' },
+  { tool: 'power-high', name: '电源·高性能' },
+  { tool: 'power-saver', name: '电源·省电' },
 ]
 
 // 模块分类（工具箱工具按 id 归类，便于浏览）
@@ -51,6 +57,67 @@ const MODULE_CATEGORIES: { key: string; label: string; ids: string[] }[] = [
   { key: 'net', label: '网络', ids: ['network', 'port-list', 'lan-ip', 'wifi-pwd', 'ping', 'ip-lookup', 'speedtest'] },
   { key: 'tool', label: '工具', ids: ['fortune', 'cpu-test', 'benchmark', 'encrypt', 'decrypt', 'shred', 'compress', 'uncompress', 'clicker', 'ffmpeg', 'xor', 'pixel-art', 'regex', 'batch-rename', 'ocr', 'qrcode-gen', 'qrcode-decode'] },
 ]
+
+// 工具 id → TheIcon 图标名（不再用 emoji；未知 id 兜底 command）
+const TOOL_ICONS: Record<string, string> = {
+  // 快捷指令专用系统命令
+  volume: 'music',
+  music: 'music',
+  'power-saver': 'power',
+  'power-balanced': 'power',
+  'power-high': 'power',
+  // 应用
+  explorer: 'file',
+  'open-file': 'file',
+  'open-app': 'file',
+  calc: 'calculator',
+  notepad: 'edit',
+  taskmgr: 'monitor',
+  vm: 'monitor',
+  'open-cmd': 'command',
+  'open-powershell': 'command',
+  // 系统
+  lock: 'lock',
+  'shutdown-1h': 'power',
+  'cancel-shutdown': 'power',
+  bsod: 'diagnostic',
+  'empty-recycle-bin': 'clean',
+  'clipboard-history': 'file',
+  screenshot: 'screenshot',
+  'format-disk': 'delete',
+  'install-python': 'toolbox',
+  'install-jdk': 'toolbox',
+  // 电源 / 清理
+  'clean-temp': 'clean',
+  'clean-memory': 'memory',
+  // 网络
+  network: 'network',
+  'port-list': 'network',
+  'lan-ip': 'network',
+  'wifi-pwd': 'network',
+  ping: 'network',
+  'ip-lookup': 'network',
+  speedtest: 'network',
+  // 工具
+  fortune: 'chat',
+  'cpu-test': 'diagnostic',
+  benchmark: 'diagnostic',
+  encrypt: 'lock',
+  decrypt: 'lock',
+  shred: 'delete',
+  compress: 'file',
+  uncompress: 'file',
+  clicker: 'send',
+  ffmpeg: 'music',
+  'pixel-art': 'customize',
+  regex: 'search',
+  'batch-rename': 'edit',
+  ocr: 'search',
+  'qrcode-decode': 'search',
+}
+function toolIcon(id: string): string {
+  return TOOL_ICONS[id] ?? 'command'
+}
 
 // 从工具箱加载工具模块（挂载时）
 onMounted(async () => {
@@ -66,12 +133,12 @@ const library = computed(() => {
   const list: { tool: string; name: string; icon: string; input_label?: string; placeholder?: string; cat: string }[] = []
   // 快捷指令专用系统命令（不在工具箱里）
   for (const s of SYS_MODULES) {
-    list.push({ ...s, cat: 'qc' })
+    list.push({ ...s, icon: toolIcon(s.tool), cat: 'qc' })
   }
   for (const c of MODULE_CATEGORIES) {
     for (const id of c.ids) {
       const t = toolboxModule(id)
-      if (t) list.push({ tool: t.id, name: t.name, icon: t.icon || '🔧', input_label: t.input_label ?? undefined, placeholder: t.input_placeholder ?? undefined, cat: c.key })
+      if (t) list.push({ tool: t.id, name: t.name, icon: toolIcon(t.id), input_label: t.input_label ?? undefined, placeholder: t.input_placeholder ?? undefined, cat: c.key })
     }
   }
   return list
@@ -233,41 +300,44 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
-    <section class="card">
-      <div class="card-title">快捷指令</div>
-      <p class="hint">
-        把一串动作组合成一条指令（如「晚安模式」：设电源平衡 → 清临时文件 → 音量 20% → 启动音乐 → 铃说晚安）。在聊天里直接说指令名即可触发。
-        每行一个动作，格式「工具名」或「工具名=输入」。可用系统工具：volume（0-100）、music、power-balanced / power-high / power-saver，也可填任意工具箱工具 id（如 clean-temp、clean-memory）。
-      </p>
+  <div class="qc-page">
+    <!-- 编辑区 -->
+    <AppCard title="快捷指令" hint="把多个动作串成一条">
+      <p class="hint">把一串动作组合成一条指令（如「晚安模式」：设电源平衡 → 清临时文件 → 音量 20% → 启动音乐 → 铃说晚安）。在聊天里直接说指令名即可触发。</p>
+      <p class="hint">每行一个动作，格式「工具名」或「工具名=输入」。可用系统工具：volume（0-100）、music、power-balanced / power-high / power-saver，也可填任意工具箱工具 id（如 clean-temp、clean-memory）。</p>
 
-      <!-- 编辑区 -->
       <div class="field">
-        <label>指令名称（聊天里说这个名字触发）</label>
-        <input v-model="name" class="input" placeholder="如：晚安模式" />
+        <label class="field-label" for="qc-name">指令名称（聊天里说这个名字触发）</label>
+        <AppInput id="qc-name" v-model="name" placeholder="如：晚安模式" />
       </div>
 
       <!-- 编辑模式切换：手敲 / 模块 -->
-      <div class="mode-switch">
-        <button class="btn ghost mode-btn" :class="{ on: editMode === 'text' }" @click="switchMode('text')">✍️ 手敲</button>
-        <button class="btn ghost mode-btn" :class="{ on: editMode === 'module' }" @click="switchMode('module')">🧩 模块</button>
+      <div class="mode-switch" role="group" aria-label="编辑模式">
+        <AppButton size="sm" :variant="editMode === 'text' ? 'ghost' : 'text'" @click="switchMode('text')">
+          <TheIcon name="edit" :size="14" />手敲步骤
+        </AppButton>
+        <AppButton size="sm" :variant="editMode === 'module' ? 'ghost' : 'text'" @click="switchMode('module')">
+          <TheIcon name="customize" :size="14" />模块拼接
+        </AppButton>
       </div>
 
       <!-- 手敲模式：文本步骤 -->
       <div v-if="editMode === 'text'" class="field">
-        <label>步骤列表（每行一个动作）</label>
-        <textarea v-model="stepsText" class="input area" rows="5" placeholder="power-balanced&#10;clean-temp&#10;volume=20&#10;music"></textarea>
+        <label class="field-label" for="qc-steps">步骤列表（每行一个动作）</label>
+        <textarea
+          id="qc-steps"
+          v-model="stepsText"
+          class="qc-textarea"
+          rows="5"
+          placeholder="power-balanced&#10;clean-temp&#10;volume=20&#10;music"
+        />
       </div>
 
       <!-- 模块模式：模块库 + 已选步骤 -->
       <div v-else class="module-editor">
-        <label class="field-label">模块库（点击或拖拽添加，可用系统命令与工具箱工具）</label>
+        <p class="field-label">模块库（点击或拖拽添加，可用系统命令与工具箱工具）</p>
         <div class="mod-lib">
-          <div
-            v-for="cat in MODULE_CATEGORIES"
-            :key="cat.key"
-            class="mod-cat"
-          >
+          <div v-for="cat in MODULE_CATEGORIES" :key="cat.key" class="mod-cat">
             <div class="mod-cat-title">{{ cat.label }}</div>
             <div class="mod-cat-items">
               <div
@@ -279,27 +349,23 @@ onMounted(() => {
                 @click="addModule(m.tool)"
                 @dragstart="onDragStart(m.tool)"
               >
-                <span class="mod-icon">{{ m.icon }}</span>
+                <TheIcon :name="m.icon" :size="13" />
                 <span class="mod-name">{{ m.name }}</span>
-                <span class="mod-add">+</span>
+                <span class="mod-add"><TheIcon name="add" :size="12" /></span>
               </div>
             </div>
           </div>
           <p v-if="library.length === 0" class="hint">工具箱未加载，请先打开工具箱或稍后重试。</p>
         </div>
 
-        <label class="field-label">已选步骤（{{ moduleSteps.length }}）—— 拖入/点击添加，拖动排序，可填参数</label>
-        <div
-          class="mod-steps"
-          @dragover.prevent
-          @drop="onDropOnList"
-        >
+        <p class="field-label">已选步骤（{{ moduleSteps.length }}）—— 拖入/点击添加，拖动排序，可填参数</p>
+        <div class="mod-steps" @dragover.prevent @drop="onDropOnList">
           <div
             v-for="(s, i) in moduleSteps"
             :key="i"
             class="mod-step"
-            draggable="true"
             :class="{ over: dragOverIdx === i }"
+            draggable="true"
             @dragstart="onStepDragStart(i)"
             @dragover.prevent
             @drop="onStepDrop(i)"
@@ -308,31 +374,35 @@ onMounted(() => {
             <span class="mod-step-tool">{{ s.tool }}</span>
             <input
               v-model="s.input"
-              class="input mod-step-input"
+              class="mod-step-input"
               :placeholder="s.input ? '' : '（可选参数）'"
             />
-            <button class="btn ghost step-btn" title="上移" @click="moveModule(i, -1)">↑</button>
-            <button class="btn ghost step-btn" title="下移" @click="moveModule(i, 1)">↓</button>
-            <button class="btn ghost step-btn del" title="删除" @click="removeModule(i)">✕</button>
+            <button class="step-btn" type="button" title="上移这一步" @click="moveModule(i, -1)">上移</button>
+            <button class="step-btn" type="button" title="下移这一步" @click="moveModule(i, 1)">下移</button>
+            <button class="step-btn danger" type="button" title="删除这一步" @click="removeModule(i)">删除</button>
           </div>
-          <p v-if="moduleSteps.length === 0" class="hint">还没有步骤，从上方模块库点一下或拖一个过来吧～</p>
+          <p v-if="moduleSteps.length === 0" class="hint center">还没有步骤，从上方模块库点一下，或拖一个过来。</p>
         </div>
       </div>
 
       <div class="field">
-        <label>执行完铃说的话（可选）</label>
-        <input v-model="say" class="input" placeholder="如：晚安，主人～" />
+        <label class="field-label" for="qc-say">执行完铃说的话（可选）</label>
+        <AppInput id="qc-say" v-model="say" placeholder="如：晚安，主人～" />
       </div>
-      <div class="row">
-        <button class="btn primary" @click="saveCmd">{{ editingId ? '保存修改' : '新增指令' }}</button>
-        <button class="btn ghost" @click="newCmd">清空</button>
+
+      <div class="form-actions">
+        <AppButton variant="primary" @click="saveCmd">{{ editingId ? '保存修改' : '新增指令' }}</AppButton>
+        <AppButton variant="text" @click="newCmd">清空</AppButton>
       </div>
-    </section>
+    </AppCard>
 
     <!-- 列表区 -->
-    <section class="card">
-      <div class="card-title">已保存的指令</div>
-      <p v-if="store.commands.length === 0" class="hint">还没有快捷指令，先在上方创建一个吧。</p>
+    <AppCard title="已保存的指令" :hint="store.commands.length ? `${store.commands.length} 条` : ''">
+      <AppEmpty
+        v-if="store.commands.length === 0"
+        text="还没有快捷指令"
+        hint="在上方填好名称与步骤，保存后就会出现在这里。"
+      />
       <div v-for="c in store.commands" :key="c.id" class="qc-item">
         <div class="qc-main">
           <div class="qc-name">{{ c.name }}</div>
@@ -340,144 +410,334 @@ onMounted(() => {
           <div v-if="c.say" class="qc-say">铃：{{ c.say }}</div>
         </div>
         <div class="qc-actions">
-          <button class="btn primary" :disabled="running" @click="runCmd(c)">执行</button>
-          <button class="btn ghost" @click="editCmd(c)">编辑</button>
-          <button class="btn danger" @click="delCmd(c.id)">删除</button>
+          <AppButton size="sm" :disabled="running" @click="runCmd(c)">
+            <TheIcon name="send" :size="13" />执行
+          </AppButton>
+          <AppButton size="sm" variant="text" @click="editCmd(c)">编辑</AppButton>
+          <AppButton size="sm" variant="text" class="danger" @click="delCmd(c.id)">删除</AppButton>
         </div>
       </div>
-    </section>
+    </AppCard>
 
     <!-- 执行反馈 -->
-    <section v-if="runMsg" class="card">
-      <div class="card-title">执行结果</div>
-      <p class="hint">{{ runMsg }}</p>
+    <AppCard v-if="runMsg" title="执行结果">
+      <p class="hint run-msg" role="status">{{ runMsg }}</p>
       <ul v-if="runResults.length" class="qc-results">
         <li v-for="(r, i) in runResults" :key="i">{{ r }}</li>
       </ul>
-      <p v-if="runSay" class="qc-say-result">{{ runSay }}</p>
-    </section>
+      <p v-if="runSay" class="qc-say-result">铃：{{ runSay }}</p>
+    </AppCard>
   </div>
 </template>
 
 <style scoped>
-/* 统一继承全局字体，避免浏览器默认字体差异 */
-section, .card-title, label, .input, .hint, .btn, p, ul, li {
-  font-family: inherit;
+/* 设置页内容区里的整列：纵向排列、不产生横向滚动 */
+.qc-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-3);
+  min-width: 0;
+  font-size: var(--ui-fs-13);
+  color: var(--ui-text);
 }
-/* 与全局其他面板（SyncPanel/PluginManager 等）保持一致的卡片样式 */
-.card {
-  background: var(--bg-bar, rgba(34, 32, 36, 0.85));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 14px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
+
+.hint {
+  margin: 0 0 var(--ui-sp-2);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
 }
-.card-title { font-weight: 600; font-size: var(--fs-14); margin-bottom: 8px; }
-.hint { font-size: var(--fs-12); color: var(--text-secondary); margin: 0 0 8px; line-height: 1.6; }
-.row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.field label { font-size: var(--fs-12); color: var(--text-secondary); }
-.input {
-  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--input-bg); color: var(--text-main); font-size: var(--fs-13);
+.hint.center {
+  text-align: center;
+  color: var(--ui-text-3);
 }
-.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-13); }
-.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
-.btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
-.btn.danger { background: var(--danger-bg); color: var(--danger); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.area {
+.hint:last-child {
+  margin-bottom: 0;
+}
+
+/* —— 表单 —— */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-1);
+  margin-bottom: var(--ui-sp-2);
+  min-width: 0;
+}
+.field-label {
+  display: block;
+  margin: 0;
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
+}
+.qc-textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  padding: var(--ui-sp-2);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--ui-fs-13);
+  line-height: var(--ui-line);
   resize: vertical;
-  min-height: 90px;
-  font-family: inherit;
-  line-height: 1.6;
 }
-.qc-item {
+.qc-textarea:focus {
+  border-color: var(--ui-accent);
+}
+.qc-textarea::placeholder {
+  color: var(--ui-text-3);
+}
+.form-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(128, 128, 128, 0.1);
-  margin-bottom: 8px;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-3);
+  flex-wrap: wrap;
 }
-.qc-main { flex: 1; min-width: 0; }
-.qc-name { font-size: var(--fs-14); font-weight: 600; }
-.qc-steps { font-size: var(--fs-12); color: var(--text-secondary); margin-top: 2px; word-break: break-all; }
-.qc-say { font-size: var(--fs-12); color: var(--accent, #ff7a94); margin-top: 2px; }
-.qc-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.qc-results { margin: 6px 0; padding-left: 18px; font-size: var(--fs-12); color: var(--text-secondary); line-height: 1.7; }
 
-/* —— moon12-3 模块化编辑样式 —— */
-.mode-switch { display: flex; gap: 8px; margin-bottom: 10px; }
-.mode-btn { padding: 5px 14px; border-radius: 8px; }
-.mode-btn.on { border: 1px solid var(--accent); color: var(--accent); background: var(--accent-bg, rgba(255, 122, 148, 0.12)); }
-.field-label { font-size: var(--fs-12); color: var(--text-secondary); display: block; margin-bottom: 6px; }
-.module-editor { margin-bottom: 10px; }
-.mod-lib {
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 10px;
-  padding: 10px;
-  background: rgba(128, 128, 128, 0.06);
-  margin-bottom: 12px;
-  max-height: 260px;
-  overflow-y: auto;
+/* —— 模式切换 —— */
+.mode-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  margin-bottom: var(--ui-sp-3);
+  flex-wrap: wrap;
 }
-.mod-cat { margin-bottom: 8px; }
-.mod-cat:last-child { margin-bottom: 0; }
-.mod-cat-title { font-size: var(--fs-11); color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; }
-.mod-cat-items { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* —— 模块库 —— */
+.module-editor {
+  margin-bottom: var(--ui-sp-2);
+  min-width: 0;
+}
+.mod-lib {
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: var(--ui-sp-3);
+  padding: var(--ui-sp-2);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+}
+.mod-cat + .mod-cat {
+  margin-top: var(--ui-sp-2);
+}
+.mod-cat-title {
+  margin-bottom: var(--ui-sp-1);
+  font-size: var(--ui-fs-11);
+  font-weight: 600;
+  color: var(--ui-text-3);
+}
+.mod-cat-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-1);
+}
 .mod-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  background: var(--bg-bar, rgba(34, 32, 36, 0.85));
+  gap: var(--ui-sp-1);
+  max-width: 100%;
+  padding: var(--ui-sp-1) var(--ui-sp-2);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-pill);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
   cursor: grab;
-  font-size: var(--fs-12);
-  color: var(--text-main);
-  transition: all 0.15s;
   user-select: none;
+  transition: border-color var(--ui-dur-1) var(--ui-ease), color var(--ui-dur-1) var(--ui-ease),
+    background var(--ui-dur-1) var(--ui-ease);
 }
-.mod-chip:hover { border-color: var(--accent); color: var(--accent); }
-.mod-chip:active { cursor: grabbing; }
-.mod-icon { font-size: var(--fs-13); }
-.mod-add { color: var(--accent); font-weight: 700; opacity: 0.7; }
+.mod-chip:hover {
+  background: var(--ui-hover);
+  border-color: var(--ui-accent-line);
+  color: var(--ui-accent);
+}
+.mod-chip:active {
+  cursor: grabbing;
+}
+.mod-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mod-add {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ui-accent);
+  opacity: 0.75;
+}
+
+/* —— 已选步骤（可拖入 / 拖动排序）—— */
 .mod-steps {
-  border: 1px dashed var(--border, rgba(255, 255, 255, 0.2));
-  border-radius: 10px;
-  padding: 8px;
-  min-height: 60px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ui-sp-1);
+  min-height: 60px;
+  padding: var(--ui-sp-2);
+  background: var(--ui-bg);
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: var(--ui-r-md);
 }
 .mod-step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.1);
+  flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  min-width: 0;
+  padding: var(--ui-sp-1) var(--ui-sp-2);
+  background: var(--ui-raised);
+  border: 1px solid transparent;
+  border-radius: var(--ui-r-sm);
   cursor: grab;
 }
-.mod-step.over { border: 1px solid var(--accent); background: var(--accent-bg, rgba(255, 122, 148, 0.12)); }
+.mod-step.over {
+  border-color: var(--ui-accent-line);
+  background: var(--ui-accent-soft);
+}
 .mod-step-idx {
-  width: 20px; height: 20px;
-  border-radius: 50%;
-  background: var(--accent, #ff7a94);
-  color: var(--text-user);
-  font-size: var(--fs-11);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  flex: none;
+  width: var(--ui-sp-5);
+  height: var(--ui-sp-5);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+  font-size: var(--ui-fs-11);
+  line-height: 1;
 }
-.mod-step-tool { font-weight: 600; font-size: var(--fs-12); min-width: 90px; }
-.mod-step-input { flex: 1; min-width: 120px; padding: 4px 8px; font-size: var(--fs-12); }
-.step-btn { padding: 2px 8px; font-size: var(--fs-12); flex-shrink: 0; }
-.step-btn.del { color: var(--danger); }
-.qc-say-result { font-size: var(--fs-13); color: var(--accent, #ff7a94); margin-top: 6px; }
+.mod-step-tool {
+  flex: none;
+  max-width: 100%;
+  font-size: var(--ui-fs-12);
+  font-weight: 600;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+.mod-step-input {
+  flex: 1 1 120px;
+  min-width: 0;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-2);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  font-size: var(--ui-fs-12);
+}
+.mod-step-input:focus {
+  border-color: var(--ui-accent);
+}
+.mod-step-input::placeholder {
+  color: var(--ui-text-3);
+}
+.step-btn {
+  flex: none;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-2);
+  background: var(--ui-raised);
+  color: var(--ui-text-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  font-size: var(--ui-fs-11);
+  transition: background var(--ui-dur-1) var(--ui-ease), color var(--ui-dur-1) var(--ui-ease);
+}
+.step-btn:hover {
+  background: var(--ui-hover);
+  color: var(--ui-text);
+}
+.step-btn.danger {
+  color: var(--ui-err);
+}
+.step-btn.danger:hover {
+  background: color-mix(in srgb, var(--ui-err) 14%, transparent);
+  color: var(--ui-err);
+}
+
+/* —— 已保存的指令 —— */
+.qc-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  min-width: 0;
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+}
+.qc-item + .qc-item {
+  margin-top: var(--ui-sp-2);
+}
+.qc-main {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.qc-name {
+  font-size: var(--ui-fs-14);
+  font-weight: 600;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+.qc-steps {
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
+}
+.qc-say {
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-accent);
+  overflow-wrap: anywhere;
+}
+.qc-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  flex: none;
+  flex-wrap: wrap;
+}
+/* 覆盖 AppButton 的文字色：删除是危险操作 */
+.qc-actions :deep(.app-btn.danger) {
+  color: var(--ui-err);
+}
+.qc-actions :deep(.app-btn.danger:hover:not(:disabled)) {
+  color: var(--ui-err);
+  background: color-mix(in srgb, var(--ui-err) 14%, transparent);
+}
+
+/* —— 执行结果 —— */
+.run-msg {
+  margin-bottom: 0;
+}
+.qc-results {
+  margin: var(--ui-sp-2) 0 0;
+  padding-left: var(--ui-sp-5);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+}
+.qc-results li {
+  overflow-wrap: anywhere;
+}
+.qc-say-result {
+  margin: var(--ui-sp-2) 0 0;
+  font-size: var(--ui-fs-13);
+  color: var(--ui-accent);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
+}
 </style>

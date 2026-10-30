@@ -1,10 +1,14 @@
-<!-- 《铃·记忆体》插件市场概念验证（AI-5，可选模块）
-     初期硬编码示例插件列表，点击"安装"调用后端安装命令（本地目录需先存在于磁盘） -->
+<!-- 《铃·记忆体》插件市场（基础版）
+     真实市场服务接入前，这里只展示硬编码示例插件；安装按钮给出本地目录说明
+     皮肤：全部走 --ui-* 令牌；图标走 TheIcon，不再用 emoji -->
 <script setup lang="ts">
 import { ref } from 'vue'
 import { usePluginStore } from '../stores/pluginStore'
 import { openUrl } from '../utils/tauri'
 import { toastErr } from '../utils/toast'
+import TheIcon from './TheIcon.vue'
+import AppButton from './ui/AppButton.vue'
+import AppStatusDot from './ui/AppStatusDot.vue'
 
 const store = usePluginStore()
 const installing = ref<string>('')
@@ -60,93 +64,125 @@ function openExternal(url: string) {
 
 <template>
   <div class="store">
-    <div v-if="msg" class="store-msg">{{ msg }}</div>
-    <div v-for="item in marketItems" :key="item.id" class="store-card">
+    <p v-if="msg" class="store-notice" role="status">{{ msg }}</p>
+
+    <article v-for="item in marketItems" :key="item.id" class="store-item">
       <div class="store-info">
-        <div class="store-name">
-          {{ item.name }}
-          <span v-if="isInstalled(item.id)" class="store-tag">已安装</span>
+        <div class="store-head">
+          <span class="store-icon"><TheIcon name="plugin" :size="15" /></span>
+          <span class="store-name">{{ item.name }}</span>
+          <AppStatusDot v-if="isInstalled(item.id)" state="ok" text="已安装" />
         </div>
-        <div class="store-meta">v{{ item.version }} · {{ item.author }}</div>
+        <div class="store-meta">版本 {{ item.version }} · {{ item.author }}</div>
         <div class="store-desc">{{ item.description }}</div>
       </div>
-      <button
-        class="primary-btn small"
+      <AppButton
+        size="sm"
+        :variant="isInstalled(item.id) ? 'text' : 'ghost'"
         :disabled="installing === item.id"
         @click="onInstall(item)"
       >
         {{ isInstalled(item.id) ? '已安装' : '安装' }}
-      </button>
+      </AppButton>
+    </article>
+
+    <p class="store-tip">当前为示例列表：在线插件市场服务会在后续版本接入。</p>
+
+    <div class="store-foot">
+      <AppButton size="sm" @click="openExternal('https://hermes-agent.nousresearch.com/docs/reference/skills-catalog')">
+        <TheIcon name="search" :size="14" />浏览 Hermes 技能目录
+      </AppButton>
     </div>
-    <p class="store-tip">💡 概念验证：在线插件市场服务将在后续版本接入，当前列表为示例。</p>
-    <button class="more-btn" @click="openExternal('https://hermes-agent.nousresearch.com/docs/reference/skills-catalog')">🔗 浏览 Hermes 技能目录</button>
   </div>
 </template>
 
 <style scoped>
+/* 插件抽屉的「市场」页内容列（父级滚动区已有内边距） */
 .store {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--ui-sp-3);
+  min-width: 0;
+  font-size: var(--ui-fs-13);
+  color: var(--ui-text);
 }
-.store-card {
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
-  border-radius: 10px;
-  padding: 10px;
+
+/* 安装提示：与卡片区分的浅色提示条 */
+.store-notice {
+  margin: 0;
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  background: color-mix(in srgb, var(--ui-warn) 12%, transparent);
+  border-left: 3px solid var(--ui-warn);
+  border-radius: var(--ui-r-sm);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.store-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  background: var(--bg-main, rgba(255, 255, 255, 0.5));
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  min-width: 0;
+  padding: var(--ui-sp-3);
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+}
+
+.store-info {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.store-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  min-width: 0;
+}
+.store-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ui-accent);
+  flex: none;
 }
 .store-name {
+  min-width: 0;
+  font-size: var(--ui-fs-14);
   font-weight: 600;
-  font-size: var(--fs-13);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.store-tag {
-  font-size: var(--fs-10);
-  background: var(--success-bg);
-  color: var(--success);
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-weight: 400;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
 }
 .store-meta {
-  font-size: var(--fs-11);
-  opacity: 0.6;
-  margin-top: 2px;
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
 }
 .store-desc {
-  font-size: var(--fs-12);
-  opacity: 0.8;
-  margin-top: 4px;
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
 }
-.store-msg {
-  background: rgba(255, 193, 7, 0.15);
-  color: var(--warning);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: var(--fs-12);
-  white-space: pre-line;
-}
+
 .store-tip {
-  font-size: var(--fs-11);
-  opacity: 0.6;
+  margin: 0;
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
   text-align: center;
 }
-.more-btn {
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.4));
-  background: transparent;
-  color: var(--accent, #ff7a94);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: var(--fs-12);
-  cursor: pointer;
-}
-.more-btn:hover {
-  background: rgba(255, 182, 193, 0.12);
+
+.store-foot {
+  display: flex;
+  justify-content: center;
 }
 </style>

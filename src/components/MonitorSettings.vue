@@ -1,7 +1,17 @@
-<!-- 《铃·记忆体》屏幕监测设置（AI-6 任务 5 / 4.3，挂在设置页）
-     总开关 / 监测频率 / 规则表格（应用名|触发回复|冷却|启用|编辑|删除）/ 添加规则 / 导入模板 -->
+<!-- 《铃·记忆体》屏幕监测设置（AI-6 任务 5 / 4.3，挂在设置页「监测」分区）
+     总开关 / 监测频率 / 规则列表（应用名 · 触发回复 · 冷却 · 启用 · 编辑 · 删除）/ 添加规则 / 导入模板
+     样式全部走 src/styles/tokens.css 的 --ui-* 令牌；图标用 TheIcon、状态用 AppStatusDot，无 emoji。 -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import TheIcon from './TheIcon.vue'
+import AppButton from './ui/AppButton.vue'
+import AppCard from './ui/AppCard.vue'
+import AppEmpty from './ui/AppEmpty.vue'
+import AppField from './ui/AppField.vue'
+import AppStatusDot from './ui/AppStatusDot.vue'
+import AppSwitch from './ui/AppSwitch.vue'
+import { confirmDialog } from '../utils/dialog'
+import { toastErr, toastOk } from '../utils/toast'
 import { useDesktopStore } from '../stores/desktopStore'
 import type { ScreenMonitorRule } from '../types'
 
@@ -25,8 +35,8 @@ onMounted(() => {
   desktop.loadMonitorRules()
 })
 
-async function onToggleEnabled() {
-  const ok = await desktop.toggleMonitoring(!desktop.isMonitoring)
+async function onToggleEnabled(enabled: boolean) {
+  const ok = await desktop.toggleMonitoring(enabled)
   if (!ok) {
     errorMsg.value = '屏幕监测不可用，请检查系统权限（已自动禁用）'
     setTimeout(() => (errorMsg.value = ''), 4000)
@@ -70,13 +80,34 @@ async function saveRule() {
   try {
     await desktop.updateMonitorRule({ ...r, cooldown_seconds: Math.max(0, r.cooldown_seconds || 0) })
     showEditor.value = false
+    toastOk('规则已保存')
   } catch (e) {
     editorError.value = String(e)
   }
 }
 
+/** 单条规则的启停（写入仍走 updateMonitorRule，失败给提示，不静默吞掉） */
+async function toggleRule(rule: ScreenMonitorRule, enabled: boolean) {
+  try {
+    await desktop.updateMonitorRule({ ...rule, enabled })
+  } catch (e) {
+    toastErr(`保存失败：${e}`)
+  }
+}
+
 async function removeRule(rule: ScreenMonitorRule) {
-  await desktop.removeMonitorRule(rule.id)
+  const ok = await confirmDialog(`确定删除规则「${rule.app_name}」吗？删除后无法恢复。`, {
+    title: '删除规则',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await desktop.removeMonitorRule(rule.id)
+    toastOk('规则已删除')
+  } catch (e) {
+    toastErr(`删除失败：${e}`)
+  }
 }
 
 // —— 导入模板 ——
@@ -91,102 +122,112 @@ const TEMPLATES: Record<string, ScreenMonitorRule[]> = {
   ],
 }
 
-function importTemplate(name: string) {
+async function importTemplate(name: string) {
   const rules = TEMPLATES[name]
-  rules.forEach((r) => desktop.updateMonitorRule(r))
+  try {
+    await Promise.all(rules.map((r) => desktop.updateMonitorRule(r)))
+    toastOk(`已导入「${name}」模板：${rules.length} 条规则`)
+  } catch (e) {
+    toastErr(`导入失败：${e}`)
+  }
 }
 </script>
 
 <template>
-  <div class="monitor-settings">
-    <div class="section-title">👁️ 屏幕监测</div>
-
+  <div class="page">
     <!-- 总开关 + 频率 -->
-    <div class="row">
-      <label class="switch-wrap">
-        <span class="label">开启监测</span>
-        <input
-          type="checkbox"
-          class="switch"
-          :checked="desktop.isMonitoring"
-          :disabled="!desktop.monitoringAvailable"
-          @change="onToggleEnabled"
-        />
-      </label>
-      <label class="interval-wrap">
-        <span class="label">监测频率</span>
-        <select :value="desktop.monitorInterval" @change="onIntervalChange">
+    <AppCard title="屏幕监测">
+      <AppSwitch
+        :model-value="desktop.isMonitoring"
+        label="开启监测"
+        hint="关闭后铃不再主动观察窗口，已配置的规则会保留"
+        :disabled="!desktop.monitoringAvailable"
+        @update:model-value="onToggleEnabled"
+      />
+      <AppField label="监测频率" hint="间隔越短越及时，但更耗电也更占 CPU">
+        <select class="select" :value="desktop.monitorInterval" @change="onIntervalChange">
           <option v-for="iv in INTERVALS" :key="iv" :value="iv">{{ iv }} 秒</option>
         </select>
-      </label>
-    </div>
+      </AppField>
 
-    <div v-if="!desktop.monitoringAvailable" class="unavailable">
-      ⚠️ 屏幕监测不可用，请检查系统权限；仍可手动配置规则作为备选
-    </div>
-    <div v-if="errorMsg" class="unavailable">{{ errorMsg }}</div>
+      <p v-if="!desktop.monitoringAvailable" class="notice">
+        <AppStatusDot state="warn" />
+        <span class="notice-text">屏幕监测不可用，请检查系统权限；仍可手动配置规则作为备选</span>
+      </p>
+      <p v-if="errorMsg" class="notice err">
+        <AppStatusDot state="err" />
+        <span class="notice-text">{{ errorMsg }}</span>
+      </p>
+    </AppCard>
 
-    <!-- 操作按钮 -->
-    <div class="actions">
-      <button class="btn primary" @click="openAdd">＋ 添加规则</button>
-      <button class="btn ghost" @click="importTemplate('游戏模式')">导入：游戏模式</button>
-      <button class="btn ghost" @click="importTemplate('工作模式')">导入：工作模式</button>
-    </div>
+    <!-- 规则列表 -->
+    <AppCard title="监测规则" :hint="`共 ${desktop.monitorRules.length} 条`">
+      <template #actions>
+        <AppButton variant="primary" size="sm" @click="openAdd">
+          <TheIcon name="add" :size="14" />
+          添加规则
+        </AppButton>
+      </template>
 
-    <!-- 规则表格 -->
-    <table class="rule-table">
-      <thead>
-        <tr>
-          <th>应用名</th>
-          <th>触发回复</th>
-          <th>冷却(秒)</th>
-          <th>启用</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="rule in desktop.monitorRules" :key="rule.id">
-          <td><code class="app-name">{{ rule.app_name }}</code></td>
-          <td class="reply-cell">{{ rule.trigger_reply }}</td>
-          <td>{{ rule.cooldown_seconds }}</td>
-          <td>
-            <input
-              type="checkbox"
-              :checked="rule.enabled"
-              @change="desktop.updateMonitorRule({ ...rule, enabled: !rule.enabled })"
+      <div class="toolbar">
+        <AppButton size="sm" @click="importTemplate('游戏模式')">导入：游戏模式</AppButton>
+        <AppButton size="sm" @click="importTemplate('工作模式')">导入：工作模式</AppButton>
+      </div>
+
+      <AppEmpty
+        v-if="desktop.monitorRules.length === 0 && !desktop.monitoringLoading"
+        text="还没有规则"
+        hint="点右上角「添加规则」配一条，或直接导入现成的模板。"
+        action-label="添加规则"
+        @action="openAdd"
+      />
+
+      <ul v-else class="rule-list">
+        <li v-for="rule in desktop.monitorRules" :key="rule.id" class="rule" :class="{ off: !rule.enabled }">
+          <div class="rule-head">
+            <code class="app-name">{{ rule.app_name }}</code>
+            <span class="rule-meta">冷却 {{ rule.cooldown_seconds }} 秒</span>
+            <span class="spacer" />
+            <AppSwitch
+              class="rule-switch"
+              :model-value="rule.enabled"
+              label="启用"
+              @update:model-value="(v) => toggleRule(rule, v)"
             />
-          </td>
-          <td class="ops">
-            <button class="op-btn" title="编辑" @click="openEdit(rule)">✏️</button>
-            <button class="op-btn" title="删除" @click="removeRule(rule)">🗑️</button>
-          </td>
-        </tr>
-        <tr v-if="desktop.monitorRules.length === 0 && !desktop.monitoringLoading">
-          <td colspan="5" class="empty">还没有规则，点“添加规则”配置一个吧~</td>
-        </tr>
-      </tbody>
-    </table>
+            <button type="button" class="icon-btn" title="编辑规则" aria-label="编辑规则" @click="openEdit(rule)">
+              <TheIcon name="edit" :size="14" />
+            </button>
+            <button type="button" class="icon-btn" title="删除规则" aria-label="删除规则" @click="removeRule(rule)">
+              <TheIcon name="delete" :size="14" />
+            </button>
+          </div>
+          <p class="reply">{{ rule.trigger_reply }}</p>
+        </li>
+      </ul>
+    </AppCard>
 
     <!-- 规则编辑弹窗 -->
     <div v-if="showEditor" class="modal-mask" @click.self="showEditor = false">
-      <div class="modal">
-        <div class="modal-title">{{ editingRule.app_name && editingRule.trigger_reply ? '编辑规则' : '添加规则' }}</div>
-        <label class="field">
-          <span>应用名（支持通配符，如 chrome* / notepad.exe）</span>
-          <input v-model="editingRule.app_name" placeholder="chrome*" />
-        </label>
-        <label class="field">
-          <span>触发回复</span>
-          <textarea v-model="editingRule.trigger_reply" rows="2" placeholder="铃会说的话…" />
-        </label>
-        <label class="field">
-          <span>冷却时间（秒）</span>
-          <input v-model.number="editingRule.cooldown_seconds" type="number" min="0" />
-        </label>
-        <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="规则编辑">
+        <div class="modal-title">
+          {{ editingRule.app_name && editingRule.trigger_reply ? '编辑规则' : '添加规则' }}
+        </div>
+        <AppField label="应用名" hint="支持通配符，如 chrome* / notepad.exe">
+          <AppInput v-model="editingRule.app_name" placeholder="chrome*" />
+        </AppField>
+        <AppField label="触发回复" hint="铃会说的话，按你平时跟她说话的口吻写就好">
+          <textarea v-model="editingRule.trigger_reply" rows="2" class="input textarea" placeholder="铃会说的话…" />
+        </AppField>
+        <AppField label="冷却时间（秒）" hint="同一条规则两次触发之间的最短间隔">
+          <input v-model.number="editingRule.cooldown_seconds" type="number" min="0" class="input" />
+        </AppField>
+        <p v-if="editorError" class="notice err">
+          <AppStatusDot state="err" />
+          <span class="notice-text">{{ editorError }}</span>
+        </p>
         <div class="modal-actions">
-          <button class="btn cancel" @click="showEditor = false">取消</button>
-          <button class="btn confirm" @click="saveRule">保存</button>
+          <AppButton @click="showEditor = false">取消</AppButton>
+          <AppButton variant="primary" @click="saveRule">保存</AppButton>
         </div>
       </div>
     </div>
@@ -194,169 +235,179 @@ function importTemplate(name: string) {
 </template>
 
 <style scoped>
-.monitor-settings {
-  color: var(--text-main, #eee6e7);
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-3);
+  padding-bottom: var(--ui-sp-4);
 }
-.section-title {
-  font-weight: 600;
-  font-size: var(--fs-15);
-  margin-bottom: 14px;
+
+/* ---------- 频率选择 ---------- */
+.select {
+  width: auto;
+  max-width: 100%;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-2);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
 }
-.row {
+.select:focus-visible {
+  border-color: var(--ui-accent);
+}
+
+/* ---------- 提示条 ---------- */
+.notice {
   display: flex;
   align-items: center;
-  gap: 28px;
-  margin-bottom: 12px;
+  gap: var(--ui-sp-2);
+  margin: var(--ui-sp-2) 0 0;
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  background: color-mix(in srgb, var(--ui-warn) 12%, transparent);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
 }
-.switch-wrap,
-.interval-wrap {
+.notice.err {
+  background: color-mix(in srgb, var(--ui-err) 12%, transparent);
+}
+.notice-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 规则列表 ---------- */
+.toolbar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.label {
-  font-size: var(--fs-13);
-  color: var(--text-secondary, #9a9294);
-}
-.switch {
-  width: 40px;
-  height: 20px;
-  accent-color: var(--accent, #ff7a94);
-}
-select {
-  padding: 5px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--input-bg);
-  color: var(--text-main);
-}
-.unavailable {
-  margin-bottom: 10px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgba(255, 160, 60, 0.15);
-  color: var(--warning);
-  font-size: var(--fs-12);
-}
-.actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
   flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  margin-bottom: var(--ui-sp-2);
 }
-.btn {
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  font-size: var(--fs-13);
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
-.btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
-.rule-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-12);
+.rule {
+  min-width: 0;
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-panel);
 }
-.rule-table th {
-  text-align: left;
-  padding: 6px 8px;
-  color: var(--text-secondary, #9a9294);
-  border-bottom: 1px solid var(--border);
-  font-weight: 500;
+.rule.off {
+  opacity: 0.62;
 }
-.rule-table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  vertical-align: middle;
+.rule-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  min-width: 0;
 }
 .app-name {
-  background: rgba(128, 128, 128, 0.15);
-  padding: 2px 6px;
-  border-radius: 5px;
-  font-size: var(--fs-11);
+  min-width: 0;
+  padding: 1px var(--ui-sp-2);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-hover);
+  color: var(--ui-text);
+  font-family: var(--font-mono);
+  font-size: var(--ui-fs-12);
+  overflow-wrap: anywhere;
 }
-.reply-cell {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.rule-meta {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
 }
-.ops {
-  white-space: nowrap;
+.spacer {
+  flex: 1 1 0;
+  min-width: 0;
 }
-.op-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: var(--fs-14);
-  padding: 2px 4px;
-  opacity: 0.8;
+.rule-switch {
+  flex: none;
 }
-.op-btn:hover { opacity: 1; }
-.empty {
-  text-align: center;
-  color: var(--text-secondary, #9a9294);
-  padding: 18px 0;
+.reply {
+  margin: var(--ui-sp-1) 0 0;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-13);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
 }
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+}
+.icon-btn:hover {
+  border-color: var(--ui-border);
+  background: var(--ui-hover);
+  color: var(--ui-text);
+}
+
+/* ---------- 编辑弹窗 ---------- */
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 600;
-  padding: 16px;
-  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: var(--ui-sp-4);
+  background: color-mix(in srgb, var(--ui-bg) 62%, transparent);
+  backdrop-filter: blur(3px);
 }
 .modal {
-  width: 340px;
+  width: min(420px, 100%);
   max-height: 88vh;
   overflow-y: auto;
-  box-sizing: border-box;
-  background: var(--bg-bar, #262328);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
-  border-radius: 14px;
-  padding: 18px;
+  padding: var(--ui-sp-4);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-lg);
+  background: var(--ui-raised);
+  box-shadow: var(--ui-shadow);
 }
 .modal-title {
+  margin-bottom: var(--ui-sp-2);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-14);
   font-weight: 600;
-  margin-bottom: 14px;
 }
-.field {
-  display: block;
-  margin-bottom: 12px;
-}
-.field span {
-  display: block;
-  font-size: var(--fs-12);
-  color: var(--text-secondary, #9a9294);
-  margin-bottom: 4px;
-}
-.field input,
-.field textarea {
+.input {
   width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
-  background: var(--input-bg, #2a272b);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-13);
-  resize: vertical;
+  min-width: 0;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-3);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
 }
-.editor-error {
-  color: var(--danger);
-  font-size: var(--fs-12);
-  margin-bottom: 10px;
+.input:focus {
+  border-color: var(--ui-accent);
+}
+.textarea {
+  height: auto;
+  min-height: 60px;
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  line-height: var(--ui-line);
+  resize: vertical;
 }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-3);
 }
-.btn.cancel { background: rgba(128, 128, 128, 0.2); color: var(--text-main); }
-.btn.confirm { background: var(--accent, #ff7a94); color: var(--text-user); }
 </style>
