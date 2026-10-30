@@ -1,1688 +1,192 @@
-<!-- 《铃·记忆体》设置页（AI-7 4.1）完整实现：9 个标签页
-     通用 / 模型 / 记忆 / 监测 / 个性化 / 插件 / 同步 / 赞助 / 诊断 -->
+<!-- 《铃·记忆体》设置页外框
+     左侧分区导航 + 右侧内容。只保留「标签切换」和跨分页共享状态（配置文件加载、工具箱面板开关），
+     各分区的内容都在 src/components/settings/ 下，一页一个组件，样式统一走 design tokens。 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, provide, ref, type Component } from 'vue'
+import TheIcon from '../components/TheIcon.vue'
+import ToolboxPanel from '../components/ToolboxPanel.vue'
 import DiagnosticView from '../components/DiagnosticView.vue'
 import MonitorSettings from '../components/MonitorSettings.vue'
 import PluginManager from '../components/PluginManager.vue'
 import QuickCommandPanel from '../components/QuickCommandPanel.vue'
 import SyncPanel from '../components/SyncPanel.vue'
-import VBILSettings from './VBILSettings.vue'
-import ToolboxPanel from '../components/ToolboxPanel.vue'
-import { useSettingStore } from '../stores/settingStore'
+import GeneralSettings from '../components/settings/GeneralSettings.vue'
+import ModelSettings from '../components/settings/ModelSettings.vue'
+import MemorySettings from '../components/settings/MemorySettings.vue'
+import PersonaSettings from '../components/settings/PersonaSettings.vue'
+import SponsorSettings from '../components/settings/SponsorSettings.vue'
+import { SETTINGS_TOOLBOX } from '../components/settings/shared'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { MODEL_MODE_LABEL } from '../types'
-import type { ModelSlot } from '../types'
-import TheIcon from '../components/TheIcon.vue'
-import { networkDiagnostic } from '../utils/tauri'
-import { detectGpuVram, detectOllama, getAutostart, isAdmin, openUrl, pullModel, registerHotkey, restartAsAdmin, saveUiImage, setAutostart, setOllamaModelsPath, testApiConnection, checkVectorModelStatus, scanModelFiles, installModel, type ModelCandidate, nativePetStatus, nativePetSync, nativePetRestart, type NativePetStatus } from '../utils/tauri'
+import { useSettingStore } from '../stores/settingStore'
+
+interface NavItem {
+  key: string
+  label: string
+  icon: string
+  page: Component
+}
+
+// 分区顺序沿用旧版标签顺序；「监测 / 插件 / 指令 / 同步 / 诊断」是既有组件的整页嵌入，直接引用不动它们
+const NAV: NavItem[] = [
+  { key: 'general', label: '通用', icon: 'settings', page: GeneralSettings },
+  { key: 'model', label: '模型', icon: 'command', page: ModelSettings },
+  { key: 'memory', label: '记忆', icon: 'memory', page: MemorySettings },
+  { key: 'monitor', label: '监测', icon: 'monitor', page: MonitorSettings },
+  { key: 'style', label: '形象', icon: 'customize', page: PersonaSettings },
+  { key: 'plugin', label: '插件', icon: 'plugin', page: PluginManager },
+  { key: 'quick', label: '指令', icon: 'command', page: QuickCommandPanel },
+  { key: 'sync', label: '同步', icon: 'sync', page: SyncPanel },
+  { key: 'sponsor', label: '赞助', icon: 'sponsor', page: SponsorSettings },
+  { key: 'diag', label: '诊断', icon: 'diagnostic', page: DiagnosticView },
+]
+
+const active = ref('general')
+const current = computed(() => NAV.find((item) => item.key === active.value) ?? NAV[0])
+
+// 工具箱面板挂在外框上：切分区时不跟着「通用」卸载，行为与旧版一致
+const toolboxOpen = ref(false)
+provide(SETTINGS_TOOLBOX, {
+  open: toolboxOpen,
+  toggle: () => {
+    toolboxOpen.value = !toolboxOpen.value
+  },
+})
 
 const setting = useSettingStore()
 const milestone = useMilestoneStore()
 
-// —— P3 日记：1-3 天一组，折叠摘要行 + 15-40 字正文 ——
-const diaryOpen = ref<number | null>(null)
-const showBadges = ref(false)
-function toggleDiary(i: number) {
-  diaryOpen.value = diaryOpen.value === i ? null : i
-}
-// 按 1-3 天分组合并（倒序 daily → 正序处理 → 每 3 天一组）
-interface DiaryGroup {
-  end: string
-  days: number
-  chat: number
-  tools: number
-  topics: string[]
-  summary: string
-  body: string
-}
-const diaryGroups = computed<DiaryGroup[]>(() => {
-  // daily 已倒序（最新在前），翻转成时间正序后每 3 天一组
-  const days = [...milestone.daily].reverse()
-  const groups: DiaryGroup[] = []
-  for (let i = 0; i < days.length; i += 3) {
-    const chunk = days.slice(i, i + 3)
-    const chat = chunk.reduce((s, d) => s + d.chat_count, 0)
-    const tools = chunk.reduce((s, d) => s + d.tool_count, 0)
-    const topics = [...new Set(chunk.flatMap((d) => d.topics))].slice(0, 3)
-    const end = chunk[chunk.length - 1].date.slice(5) // mm-dd
-    const start = chunk[0].date.slice(5)
-    const dayLabel = chunk.length > 1 ? `${start}~${end}` : end
-    // 摘要行：mm-dd · 聊了x句 · 用了x次工具 · 话题：xx
-    const summary = `${dayLabel} · 聊了${chat}句 · 用了${tools}次工具${topics.length ? ' · 话题：' + topics.join('、') : ''}`
-    // 正文（15-40 字，铃的语气）
-    const body = buildDiaryBody(chunk.length, chat, tools, topics)
-    groups.push({ end: dayLabel, days: chunk.length, chat, tools, topics, summary, body })
-  }
-  return groups.reverse() // 最新在前
-})
-function buildDiaryBody(dayCount: number, chat: number, tools: number, topics: string[]): string {
-  const t = topics.length ? topics.join('、') : ''
-  if (chat === 0 && tools === 0) return `这天没什么记录，但铃记得，主人出现过～`
-  if (chat === 0) return `主人这一天让铃帮忙用了${tools}次工具，忙忙碌碌的，但能帮上忙铃就很开心～`
-  const topicPart = t ? `聊了「${t}」` : '聊了些家常'
-  if (dayCount >= 2) return `这几天${topicPart}，共${chat}句、${tools}次工具。和主人待在一起，日子都暖暖的～`
-  return `今天${topicPart}，聊了${chat}句${tools ? `、用了${tools}次工具` : ''}。铃把这些都记在日记里啦～`
-}
-
-const tabs = [
-  { key: 'general', label: '通用', icon: 'settings' },
-    { key: 'model', label: '模型', icon: 'command' },
-    { key: 'memory', label: '记忆', icon: 'memory' },
-    { key: 'monitor', label: '监测', icon: 'monitor' },
-    { key: 'style', label: '形象', icon: 'customize' },
-    { key: 'plugin', label: '插件', icon: 'plugin' },
-  { key: 'quick', label: '指令', icon: 'command' },
-  { key: 'sync', label: '同步', icon: 'sync' },
-  { key: 'sponsor', label: '赞助', icon: 'sponsor' },
-  { key: 'diag', label: '诊断', icon: 'diagnostic' },
-]
-const activeTab = ref('general')
-
-// —— 快捷键（AI-6 复用）——
-const hotkey = ref('Ctrl+Alt+L')
-const hotkeyMsg = ref('')
-// —— 自启动 ——
-const autostart = ref(false)
-const autostartMsg = ref('')
-// —— 工具箱悬浮窗 ——
-const showToolbox = ref(false)
-// —— 通用反馈 ——
-const generalMsg = ref('')
-const exportPath = ref('')
-
-// —— 模型/加密 ——
-const modelMode = ref<'script' | 'api' | 'local'>('script')
-const apiBaseUrl = ref('')
-type ModelDraft = ModelSlot & { keyInput: string }
-const modelSlots = ref<ModelDraft[]>([])
-const savingModels = ref(false)
-const aiRouter = ref(false)
-const apiKeyInput = ref('')
-const depth = ref(2)
-// 离线语义检索模型（bge, 方案3）状态
-const vectorModelStatus = ref<{ available: boolean; message: string } | null>(null)
-const vectorCandidates = ref<ModelCandidate[]>([])
-const vectorScanning = ref(false)
-const vectorInstalling = ref(false)
-const vectorMsg = ref('')
-// 检查离线语义检索模型
-async function checkVectorModel() {
-  try {
-    vectorModelStatus.value = await checkVectorModelStatus()
-  } catch (e) {
-    vectorModelStatus.value = null
-    vectorMsg.value = `检测失败：${e}`
-  }
-}
-// 扫描本地常见位置的模型候选
-async function scanVectorModels() {
-  vectorScanning.value = true
-  vectorMsg.value = ''
-  try {
-    vectorCandidates.value = await scanModelFiles()
-    if (!vectorCandidates.value.length) {
-      vectorMsg.value = '未在常见位置找到模型，请手动放入 ~/.铃记忆体/models/'
-    }
-  } catch (e) {
-    vectorMsg.value = `扫描失败：${e}`
-  } finally {
-    vectorScanning.value = false
-  }
-}
-// 一键安装选中的模型
-async function doInstallVectorModel(path: string) {
-  vectorInstalling.value = true
-  vectorMsg.value = ''
-  try {
-    await installModel(path)
-    await checkVectorModel()
-    vectorMsg.value = '✅ 模型安装成功，方案3（语义检索）已可用'
-  } catch (e) {
-    vectorMsg.value = `安装失败：${e}`
-  } finally {
-    vectorInstalling.value = false
-  }
-}
-// 思考档位人话标签（P1：深度 1-4 → 快速/平衡/深入/认真思考）
-const DEPTH_LABEL: Record<number, string> = {
-  1: '⚡ 快速',
-  2: '⚖️ 平衡',
-  3: '🧠 深入',
-  4: '🔥 认真思考',
-}
-// 快速选择（P1：人话分层，一键填入推荐配置）
-function pickQuick(kind: 'deepseek' | 'openai' | 'local' | 'script') {
-  if (kind === 'deepseek') {
-    modelMode.value = 'api'
-    apiBaseUrl.value = 'https://api.deepseek.com'
-    setMainModel('deepseek-chat')
-  } else if (kind === 'openai') {
-    modelMode.value = 'api'
-    if (!apiBaseUrl.value) apiBaseUrl.value = 'https://api.openai.com/v1'
-    if (!modelSlots.value.some((slot) => slot.roles.includes('main') && slot.name.trim())) setMainModel('gpt-4o-mini')
-  } else if (kind === 'local') {
-    modelMode.value = 'local'
-  } else {
-    modelMode.value = 'script'
-  }
-}
-const masterPwd = ref('')
-const masterPwd2 = ref('')
-const unlockPwd = ref('')
-const cryptoMsg = ref('')
-const testMsg = ref('')
-const testing = ref(false)
-const proxyEnabled = ref(false)
-const proxyUrl = ref('')
-const networkMsg = ref('')
-const savingNetwork = ref(false)
-const diagnosingNetwork = ref(false)
-
-async function saveNetwork(): Promise<boolean> {
-  savingNetwork.value = true
-  try {
-    await setting.update({ proxy_enabled: proxyEnabled.value, proxy_url: proxyUrl.value.trim() || null })
-    networkMsg.value = '网络设置已保存'
-    return true
-  } catch {
-    networkMsg.value = '网络设置保存失败，请重试'
-    return false
-  } finally {
-    savingNetwork.value = false
-  }
-}
-
-async function diagnoseNetwork() {
-  diagnosingNetwork.value = true
-  try {
-    if (!(await saveNetwork())) return
-    networkMsg.value = '正在诊断网络…'
-    networkMsg.value = await networkDiagnostic()
-  } catch {
-    networkMsg.value = '网络诊断失败，请检查网络设置后重试'
-  } finally {
-    diagnosingNetwork.value = false
-  }
-}
-// 管理员权限状态（null 检测中 / true 已管理员 / false 普通）
-const adminState = ref<boolean | null>(null)
-// —— 一键本地部署 AI ——
-const ollama = ref<{ installed: boolean; models: string[] }>({ installed: false, models: [] })
-const ollamaChecked = ref(false)
-const pullModelName = ref('qwen2.5:3b')
-const localAiMsg = ref('')
-const gpuVram = ref<{ name: string; vram_mb: number }[]>([])
-const modelsPath = ref('')
-const pathMsg = ref('')
-
-async function detectLocalAI() {
-  try {
-    ollama.value = await detectOllama()
-  } catch {
-    ollama.value = { installed: false, models: [] }
-  }
-  ollamaChecked.value = true
-  await detectVramOnly()
-}
-async function detectVramOnly() {
-  try { gpuVram.value = await detectGpuVram() } catch { gpuVram.value = [] }
-}
-// 部署前检查显存，不合适弹温馨提示（含「我偏不」强制继续按钮）
-const vramWarn = ref(false)
-const vramWarnText = ref('')
-const vramForceOk = ref(false)
-async function checkVram(): Promise<boolean> {
-  try {
-    const gpus = await detectGpuVram()
-    gpuVram.value = gpus
-    if (gpus.length === 0) return true
-    const maxVram = Math.max(...gpus.map((g) => g.vram_mb))
-    if (maxVram < 4000 && !vramForceOk.value) {
-      vramWarnText.value = `你的显卡显存只有 ${(maxVram / 1024).toFixed(1)}GB，跑本地 AI 会比较吃力哦 😿`
-      vramWarn.value = true
-      return false
-    }
-    return true
-  } catch {
-    return true
-  }
-}
-function vramIgnore() {
-  vramForceOk.value = true
-  vramWarn.value = false
-  doPullModel()
-}
-async function doPullModel() {
-  if (!pullModelName.value.trim()) return
-  if (!(await checkVram())) return
-  localAiMsg.value = `⏳ 正在拉取 ${pullModelName.value.trim()}…（首次可能需几分钟，取决于网速）`
-  try {
-    const r = await pullModel(pullModelName.value.trim())
-    localAiMsg.value = `✅ ${r}`
-    await detectLocalAI()
-  } catch (e) {
-    localAiMsg.value = `✗ ${e}`
-  }
-}
-async function doSaveModelsPath() {
-  if (!modelsPath.value.trim()) return
-  try {
-    pathMsg.value = await setOllamaModelsPath(modelsPath.value.trim())
-  } catch (e) {
-    pathMsg.value = `✗ ${e}`
-  }
-}
-
-// 常见 OpenAI 兼容模型预设（可下拉选择，也可手填自定义）
-const MODEL_PRESETS = [
-  'deepseek-chat',
-  'deepseek-reasoner',
-  'qwen-plus',
-  'qwen-max',
-  'qwen-turbo',
-  'gpt-4o-mini',
-  'gpt-4o',
-  'gpt-3.5-turbo',
-  'moonshot-v1-8k',
-  'moonshot-v1-32k',
-  'glm-4',
-  'glm-4-plus',
-  'kimi-latest',
-]
-
-// —— 个性化 ——
-const mixRate = ref(8)
-const selfName = ref('铃')
-const userName = ref('主人')
-
-// —— 能力面板（大项目）：当前模型与能力矩阵 ——
-// 已知模型视觉能力表（未知模型显示"未知"）
-const VISION_MODELS = ['vision', 'vl', '4v', '4o', '4.1', 'llava', 'gemini', 'gpt-4', 'claude', 'image', 'omni', '看图', '视觉']
-// 能力矩阵（computed，跟随当前模式/模型实时变化）
-const abilityMatrix = computed(() => {
-  const mode = setting.modelMode
-  const model = (mode === 'api' ? setting.apiModel : mode === 'local' ? (ollama.value.models[0] || '') : '').toLowerCase()
-  const isVision = VISION_MODELS.some((k) => model.includes(k))
-  return {
-    modeLabel: MODEL_MODE_LABEL[mode] || mode,
-    modelName: mode === 'api' ? (setting.apiModel || '未设置') : mode === 'local' ? (ollama.value.models[0] || '未拉取模型') : '内置回复库',
-    rows: [
-      { name: '文字对话', ok: true, detail: '基础能力，始终可用' },
-      { name: '图片理解', ok: mode === 'script' ? false : isVision, unknown: mode !== 'script' && !isVision && mode === 'api', detail: mode === 'script' ? '离线模式不支持' : isVision ? `「${model}」支持视觉` : '当前模型不支持' },
-      { name: '联网能力', ok: mode !== 'script', detail: mode === 'script' ? '完全离线' : mode === 'local' ? '模型本地，联网可选' : '云端调用，需联网' },
-      { name: '记忆存储', ok: true, detail: '铃的本体能力，所有模式可用' },
-      { name: '工具箱', ok: true, detail: '44 个工具，所有模式可用' },
-      { name: '离线可用', ok: mode !== 'api', detail: mode === 'api' ? '云端模式需联网' : '完全离线可用' },
-    ],
-  }
-})
-
-function syncFromStore() {
-  modelMode.value = setting.modelMode
-  apiBaseUrl.value = setting.apiBaseUrl ?? ''
-  proxyEnabled.value = setting.proxyEnabled ?? false
-  proxyUrl.value = setting.proxyUrl ?? ''
-  modelSlots.value = setting.models.map((slot) => ({ ...slot, roles: [...slot.roles], keyInput: '' }))
-  aiRouter.value = setting.aiRouter
-  depth.value = setting.depth
-  mixRate.value = setting.languageMixRate
-  selfName.value = setting.selfName
-  userName.value = setting.userName
-  hotkey.value = setting.hotkey
-}
-
 onMounted(async () => {
   if (!setting.loaded) await setting.loadConfig()
-  syncFromStore()
   // P3：确保陪伴记录已加载（防 App.vue 未加载完成）
-  if (!milestone.loaded) await milestone.load().catch(() => {})
-  autostart.value = setting.autostart
-  try {
-    const res = await getAutostart()
-    autostart.value = res.enabled
-  } catch { /* 忽略 */ }
-  // 检测管理员权限
-  try { adminState.value = await isAdmin() } catch { adminState.value = false }
-  // 检测本地 Ollama
-  await detectLocalAI()
-  // 检测离线语义检索模型（方案3）
-  await checkVectorModel()
-  // 原生桌宠状态（有没有随安装包装进来、现在在不在跑）
-  await refreshNativePet()
+  if (!milestone.loaded) await milestone.load()
 })
-
-// 以管理员权限重启
-async function requestAdmin() {
-  if (!confirm('将以管理员权限重启应用（会弹出 UAC 提示）。重启后可正常使用：电源模式切换、深度清理内存等特殊工具。')) return
-  try {
-    await restartAsAdmin()
-    alert('已请求管理员权限启动。请在弹出的 UAC 窗口点击「是」，然后关闭当前窗口，使用新的管理员窗口。')
-  } catch (e) {
-    alert(`启动失败：${e}`)
-  }
-}
-
-// 切换「始终以管理员运行」（用户自选，持久化）
-async function toggleRunAsAdmin() {
-  setting.runAsAdmin = !setting.runAsAdmin
-  await setting.update({ run_as_admin: setting.runAsAdmin })
-  generalMsg.value = setting.runAsAdmin
-    ? '✓ 已开启：下次启动将以管理员身份运行（会弹一次 UAC 确认）'
-    : '已关闭：将以普通权限启动'
-}
-
-// —— 通用 ——
-async function toggleAutostart() {
-  try {
-    await setAutostart(autostart.value)
-    await setting.update({ autostart: autostart.value })
-    autostartMsg.value = autostart.value ? '✓ 已开启开机自启动' : '✓ 已关闭开机自启动'
-  } catch (e) {
-    autostartMsg.value = `✗ ${e}`
-  }
-  setTimeout(() => (autostartMsg.value = ''), 4000)
-}
-async function saveHotkey() {
-  hotkeyMsg.value = ''
-  try {
-    const res = await registerHotkey(hotkey.value)
-    await setting.update({ hotkey: hotkey.value })
-    hotkeyMsg.value = res.registered ? `✓ 快捷键已生效：${res.accelerator}` : '✗ 注册失败'
-  } catch (e) {
-    hotkeyMsg.value = `✗ ${e}`
-  }
-  setTimeout(() => (hotkeyMsg.value = ''), 4000)
-}
-async function doReset() {
-  if (!confirm('确定恢复所有设置为默认值吗？（保留主密码与已加密密钥）')) return
-  await setting.resetAll()
-  syncFromStore()
-  generalMsg.value = '✓ 已重置为默认设置'
-}
-async function doExportConfig() {
-  const res = await setting.exportToFile()
-  exportPath.value = res.success ? `✓ 已导出：${res.path}` : `✗ ${res.error}`
-}
-async function doImportConfig() {
-  const p = prompt('请输入要导入的 JSON 配置文件完整路径：')
-  if (!p) return
-  try {
-    await setting.importFromFile(p)
-    syncFromStore()
-    generalMsg.value = `✓ 已从 ${p} 导入`
-  } catch (e) {
-    generalMsg.value = `✗ 导入失败：${e}`
-  }
-}
-async function saveDataPath() {
-  await setting.update({ data_path: setting.dataPath })
-  generalMsg.value = '✓ 数据路径已更新（记忆将保存到新路径）'
-}
-
-// —— 模型 ——
-function addModel() {
-  modelSlots.value.push({ id: '', name: '', base_url: null, roles: [], enabled: true, keyInput: '' })
-}
-function setMainModel(name: string) {
-  let main = modelSlots.value.find((slot) => slot.roles.includes('main'))
-  if (!main) {
-    addModel()
-    main = modelSlots.value[modelSlots.value.length - 1]
-    main.roles = ['main']
-  }
-  main.name = name
-}
-async function saveModel(): Promise<boolean> {
-  if (modelMode.value === 'api' && !modelSlots.value.some((slot) => slot.enabled && slot.roles.includes('main'))) {
-    generalMsg.value = '请至少启用一个勾选了「主力」的模型'
-    return false
-  }
-  if (modelSlots.value.some((slot) => !slot.name.trim())) {
-    generalMsg.value = '请填写每个模型的名称'
-    return false
-  }
-  savingModels.value = true
-  try {
-    await setting.update({
-      model_mode: modelMode.value,
-      api_base_url: apiBaseUrl.value.trim() || null,
-      models: modelSlots.value.map((slot) => ({
-        id: slot.id, name: slot.name.trim(), base_url: slot.base_url?.trim() || null,
-        roles: [...slot.roles], enabled: slot.enabled,
-      })),
-      ai_router: aiRouter.value,
-      depth: depth.value,
-    })
-    modelSlots.value.forEach((slot, index) => {
-      slot.id = setting.models[index].id
-      slot.has_api_key = setting.models[index].has_api_key
-    })
-    generalMsg.value = '模型设置已保存'
-    return true
-  } catch {
-    generalMsg.value = '模型设置保存失败，请检查配置'
-    return false
-  } finally {
-    savingModels.value = false
-  }
-}
-async function saveSlotKey(index: number) {
-  const slot = modelSlots.value[index]
-  const plain = slot.keyInput
-  if (!slot.id && !(await saveModel())) return
-  savingModels.value = true
-  try {
-    await setting.saveSlotKey(slot.id, plain)
-    slot.keyInput = ''
-    slot.has_api_key = setting.models.find((saved) => saved.id === slot.id)?.has_api_key ?? false
-    generalMsg.value = plain ? '模型密钥已保存' : '模型密钥已清除，将沿用全局密钥'
-  } catch {
-    generalMsg.value = '模型密钥保存失败，请检查主密码是否已解锁'
-  } finally {
-    savingModels.value = false
-  }
-}
-async function saveApiKey() {
-  try {
-    await setting.saveApiKey(apiKeyInput.value)
-    apiKeyInput.value = ''
-    generalMsg.value = setting.hasMasterPassword ? '全局密钥已加密保存' : '全局密钥已保存（明文，建议设置主密码）'
-  } catch {
-    generalMsg.value = '全局密钥保存失败，请检查主密码是否已解锁'
-  }
-}
-
-async function testConnection() {
-  const main = modelSlots.value.find((slot) => slot.enabled && slot.roles.includes('main'))
-  const baseUrl = main?.base_url?.trim() || apiBaseUrl.value.trim()
-  if (!baseUrl) {
-    testMsg.value = '请先填写模型地址或全局地址'
-    return
-  }
-  testing.value = true
-  testMsg.value = '正在测试连接…'
-  try {
-    const networkChanged = proxyEnabled.value !== (setting.proxyEnabled ?? false)
-      || (proxyUrl.value.trim() || null) !== (setting.proxyUrl ?? null)
-    if (networkChanged && !(await saveNetwork())) {
-      testMsg.value = '网络设置保存失败，请重试'
-      return
-    }
-    const keyInput = main?.keyInput.trim() || (main?.has_api_key ? '' : apiKeyInput.value.trim())
-    const res = await testApiConnection(baseUrl, keyInput, main?.id || undefined)
-    testMsg.value = res.message
-  } catch {
-    testMsg.value = '测试失败，请检查地址与主密码解锁状态'
-  } finally {
-    testing.value = false
-  }
-}
-// 打开外部链接（复用后端 open_url，用系统默认浏览器）
-function openExternal(url: string) {
-  openUrl(url).catch((e) => alert(`打开链接失败：${e}`))
-}
-// —— 主密码 ——
-async function doSetupMaster() {
-  if (!masterPwd.value) return
-  if (masterPwd.value !== masterPwd2.value) {
-    cryptoMsg.value = '✗ 两次输入不一致'
-    return
-  }
-  try {
-    await setting.setupMasterPassword(masterPwd.value)
-    masterPwd.value = ''
-    masterPwd2.value = ''
-    cryptoMsg.value = '✓ 主密码已设置并解锁'
-  } catch (e) {
-    cryptoMsg.value = `✗ ${e}`
-  }
-}
-async function doUnlock() {
-  try {
-    await setting.unlockVault(unlockPwd.value)
-    unlockPwd.value = ''
-    cryptoMsg.value = '✓ 已解锁'
-  } catch (e) {
-    cryptoMsg.value = `✗ ${e}`
-  }
-}
-
-// —— 个性化 ——
-async function savePersona() {
-  await setting.update({
-    language_mix_rate: mixRate.value,
-    self_name: selfName.value,
-    user_name: userName.value,
-  })
-  generalMsg.value = '✓ 个性化设置已保存'
-}
-
-// —— 悬浮球设置 ——
-async function saveBallSettings() {
-  await setting.update({
-    floating_ball_mode: setting.floatingBallMode,
-    floating_ball_size: setting.floatingBallSize,
-    floating_ball_opacity: setting.floatingBallOpacity,
-    floating_ball_breathing: setting.floatingBallBreathing,
-    floating_ball_flash: setting.floatingBallFlash,
-    floating_ball_chatter: setting.floatingBallChatter,
-  })
-  generalMsg.value = '✓ 悬浮球设置已保存'
-}
-async function resetBallPosition() {
-  await setting.update({ floating_ball_position: [0, 0] })
-  generalMsg.value = '✓ 位置已重置（下次启动生效）'
-}
-
-// —— 原生桌宠（随安装包分发的 pet-native.exe，Live2D 独立进程）——
-const nativePet = ref<NativePetStatus | null>(null)
-const nativePetMsg = ref('')
-async function refreshNativePet() {
-  try {
-    nativePet.value = await nativePetStatus()
-  } catch {
-    nativePet.value = null
-  }
-}
-async function saveNativePet() {
-  await setting.update({ native_pet_enabled: setting.nativePetEnabled })
-  try {
-    nativePet.value = await nativePetSync()
-    nativePetMsg.value = nativePet.value?.message ?? ''
-  } catch (e) {
-    nativePetMsg.value = `操作失败：${e}`
-  }
-}
-async function restartNativePet() {
-  try {
-    nativePet.value = await nativePetRestart()
-    nativePetMsg.value = nativePet.value?.message ?? ''
-  } catch (e) {
-    nativePetMsg.value = `重启失败：${e}`
-  }
-}
-
-// —— 外观自定义 ——
-async function saveUiCustom() {
-  await setting.update({
-    accent_color: setting.accentColor || null,
-    danger_color: setting.dangerColor || null,
-    bg_color: setting.bgColor || null,
-    bg_image: setting.bgImage || null,
-    bubble_user_color: setting.bubbleUserColor || null,
-    bubble_suzu_color: setting.bubbleSuzuColor || null,
-    avatar_suzu: setting.avatarSuzu || null,
-    avatar_user: setting.avatarUser || null,
-    ui_radius: setting.uiRadius ?? null,
-  })
-  generalMsg.value = '✓ 外观自定义已保存'
-  // P3：第一次自定义外观里程碑（幂等）
-  milestone.record('first_custom', '第一次自定义外观').catch(() => {})
-}
-
-// —— 自定义主题组合 ——
-const presetName = ref('')
-async function savePreset() {
-  const name = presetName.value.trim()
-  if (!name) {
-    generalMsg.value = '⚠️ 请先给这套风格起个名字'
-    return
-  }
-  await setting.saveThemePreset(name)
-  generalMsg.value = `✓ 已保存主题组合「${name}」，可一键切换`
-  presetName.value = ''
-}
-
-// —— 软件内选择图片（背景图 / 头像）——
-const bgFileInput = ref<HTMLInputElement | null>(null)
-const avatarFileInput = ref<HTMLInputElement | null>(null)
-const userAvatarFileInput = ref<HTMLInputElement | null>(null)
-function fileToDataUrl(f: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader()
-    r.onload = () => res(r.result as string)
-    r.onerror = () => rej(new Error('读取图片失败'))
-    r.readAsDataURL(f)
-  })
-}
-function pickImage(kind: 'bg' | 'avatar' | 'user') {
-  const el = kind === 'bg' ? bgFileInput.value : kind === 'avatar' ? avatarFileInput.value : userAvatarFileInput.value
-  el?.click()
-}
-async function onBgFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  if (!f) return
-  try {
-    const path = await saveUiImage(await fileToDataUrl(f), 'bg')
-    setting.bgImage = path
-    generalMsg.value = '背景图已选择，点击「应用自定义外观」生效'
-  } catch (err) {
-    generalMsg.value = `选择失败：${err}`
-  } finally {
-    input.value = '' // 重置，允许下次选同一文件也触发
-  }
-}
-async function onAvatarFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  if (!f) return
-  try {
-    const path = await saveUiImage(await fileToDataUrl(f), 'avatar')
-    setting.avatarSuzu = path
-    generalMsg.value = '头像已选择，点击「应用自定义外观」生效'
-  } catch (err) {
-    generalMsg.value = `选择失败：${err}`
-  } finally {
-    input.value = ''
-  }
-}
-async function onUserAvatarFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  if (!f) return
-  try {
-    const path = await saveUiImage(await fileToDataUrl(f), 'user')
-    setting.avatarUser = path
-    generalMsg.value = '你的头像已选择，点击「应用自定义外观」生效'
-  } catch (err) {
-    generalMsg.value = `选择失败：${err}`
-  } finally {
-    input.value = ''
-  }
-}
-// —— Emoji 显示模式（默认关闭）——
-async function setEmojiMode(m: 'off' | 'partial' | 'all') {
-  setting.emojiMode = m
-  await setting.update({ emoji_mode: m })
-  generalMsg.value = `Emoji 显示已设为：${m === 'off' ? '关闭' : m === 'partial' ? '局部' : '全部'}`
-}
-// —— AI 调用工具箱（默认关闭）——
-async function toggleAiToolbox() {
-  setting.aiToolbox = !setting.aiToolbox
-  await setting.update({ ai_toolbox: setting.aiToolbox })
-  generalMsg.value = setting.aiToolbox ? '✓ 已开启：铃可直接执行工具箱工具' : '已关闭：铃不调用工具箱'
-}
 </script>
 
 <template>
-  <div class="setting-view">
-    <h3 class="page-title">⚙️ 设置</h3>
+  <div class="settings-view">
+    <nav class="side" role="tablist" aria-label="设置分区">
+      <button
+        v-for="item in NAV"
+        :key="item.key"
+        type="button"
+        role="tab"
+        class="side-btn"
+        :class="{ on: active === item.key }"
+        :aria-selected="active === item.key"
+        @click="active = item.key"
+      >
+        <TheIcon :name="item.icon" :size="15" />
+        <span class="side-label">{{ item.label }}</span>
+      </button>
+    </nav>
 
-    <!-- 标签导航 -->
-    <div class="tabs">
-      <div v-for="t in tabs" :key="t.key" class="tab" :class="{ active: activeTab === t.key }" @click="activeTab = t.key">
-        <TheIcon :name="t.icon" :size="14" class="tab-icon" />
-        {{ t.label }}
+    <div class="main">
+      <header class="head">
+        <h3 class="head-title">设置</h3>
+        <span class="head-sub">{{ current.label }}</span>
+      </header>
+      <div class="content">
+        <component :is="current.page" :key="current.key" />
       </div>
     </div>
 
-    <div class="tab-content">
-      <!-- ============ 通用 ============ -->
-      <div v-if="activeTab === 'general'">
-        <!-- P3：与铃的日记（陪伴记录）置顶显示 -->
-        <section class="card diary-card">
-          <div class="card-title">📖 与铃的日记</div>
-          <template v-if="milestone.days > 0">
-            <p class="diary-days">
-              <span class="diary-num">{{ milestone.days }}</span>
-              <span class="diary-days-label">天</span>
-              <span class="diary-sub">与铃相遇{{ milestone.firstDate ? '于 ' + milestone.firstDate : '' }}</span>
-            </p>
-            <!-- 每日日记（1-3 天一组，折叠显示摘要行） -->
-            <div class="diary-list">
-              <div
-                v-for="(g, gi) in diaryGroups"
-                :key="g.end"
-                class="diary-entry"
-                :class="{ open: diaryOpen === gi }"
-              >
-                <div class="diary-row" @click="toggleDiary(gi)">
-                  <span class="diary-date">{{ g.end }}</span>
-                  <span class="diary-summary">{{ g.summary }}</span>
-                  <span class="diary-arrow">{{ diaryOpen === gi ? '▴' : '▾' }}</span>
-                </div>
-                <div v-if="diaryOpen === gi" class="diary-body">{{ g.body }}</div>
-              </div>
-              <div v-if="diaryGroups.length === 0" class="diary-empty">
-                第一天，故事从一句"你好"开始～
-              </div>
-            </div>
-            <!-- 里程碑（纪念章，折叠） -->
-            <div v-if="milestone.items.length > 0" class="diary-badges">
-              <div class="badges-head" @click="showBadges = !showBadges">
-                <span>🎖️ 纪念章（{{ milestone.items.length }}）</span>
-                <span>{{ showBadges ? '▴' : '▾' }}</span>
-              </div>
-              <div v-if="showBadges" class="badges-body">
-                <div v-for="m in milestone.items" :key="m.key" class="diary-item">
-                  <span class="diary-check">✓</span>
-                  <span class="diary-label">{{ m.label }}</span>
-                  <span class="diary-date">{{ m.date }}</span>
-                </div>
-              </div>
-            </div>
-          </template>
-          <p v-else class="diary-empty">铃正在等你开启第一段对话…</p>
-        </section>
-
-        <!-- 能力面板（大项目）：当前模型与能力矩阵 -->
-        <section class="card">
-          <div class="card-title">🪄 铃的能力</div>
-          <p class="cap-mode">
-            <span class="cap-mode-tag">{{ abilityMatrix.modeLabel }}</span>
-            <span class="cap-mode-model">{{ abilityMatrix.modelName }}</span>
-          </p>
-          <div class="ability-list">
-            <div v-for="r in abilityMatrix.rows" :key="r.name" class="ability-row">
-              <span class="ability-name">{{ r.name }}</span>
-              <span class="ability-state" :class="r.ok ? 'ok' : r.unknown ? 'unknown' : 'no'">
-                {{ r.ok ? '✓' : r.unknown ? '?' : '✕' }}
-              </span>
-              <span class="ability-detail">{{ r.detail }}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">管理员权限</div>
-          <p class="hint">
-            当前状态：{{ adminState === null ? '检测中…' : adminState ? '✅ 已以管理员权限运行' : '普通权限（电源模式切换 / 深度清理内存等特殊工具需管理员）' }}
-          </p>
-          <label class="switch-wrap">
-            <input type="checkbox" :checked="setting.runAsAdmin" @change="toggleRunAsAdmin" class="switch" />
-            <span class="label">启动时始终以管理员运行（自动提权）</span>
-          </label>
-          <p class="hint">开启后每次启动自动提权（弹一次 UAC 确认），适合常需要管理员工具的深度用户；无需可关闭。</p>
-          <label class="switch-wrap" style="margin-top:10px">
-            <input type="checkbox" :checked="setting.aiToolbox" @change="toggleAiToolbox" class="switch" />
-            <span class="label">允许 AI 调用工具箱工具</span>
-          </label>
-          <p class="hint">开启后，铃可直接执行工具箱工具（如清理内存、ping、截图、查 IP 等），默认关闭。</p>
-          <div v-if="adminState === false" class="row">
-            <button class="btn primary" @click="requestAdmin">以管理员权限重启</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">Agent 权限</div>
-          <p class="hint">长期目标的自动推进默认关闭，在「目标」面板逐个开启。仅在应用进程运行时按间隔推进，退出应用即停止。每次约消耗 1 次 API 调用（工具、规划与自检可能增加调用），按当前配置模型计费；推进次数和超时上限始终生效。</p>
-          <p class="hint">以下操作会改动系统或文件，请确认你信任后再开启。</p>
-          <label class="switch-wrap">
-            <input type="checkbox" :checked="setting.agentAllowDownload" class="switch"
-              @change="setting.agentAllowDownload = !setting.agentAllowDownload; setting.update({ agent_allow_download: setting.agentAllowDownload })" />
-            <span class="label">允许下载文件</span>
-          </label>
-          <p class="hint" style="margin-left:48px">开启后铃可以下载文件到本地</p>
-          <!-- 任务完成自检：不是权限，是 Agent 的自律开关，所以放在权限开关前面 -->
-          <label class="switch-wrap" style="margin-top:8px">
-            <input type="checkbox" :checked="setting.selfCheckEnabled" class="switch"
-              @change="setting.selfCheckEnabled = !setting.selfCheckEnabled; setting.update({ self_check_enabled: setting.selfCheckEnabled })" />
-            <span class="label">任务完成后自检</span>
-          </label>
-          <p class="hint" style="margin-left:48px">
-            铃动手做完事后，额外让模型核对一遍「是不是真的做成了」；没做成会自动再补一轮。只对动手的任务生效，纯聊天不额外花钱。
-          </p>
-          <!-- 先规划后执行：把拆好的步骤先摆出来，主人可改再跑 -->
-          <label class="switch-wrap" style="margin-top:8px">
-            <input type="checkbox" :checked="setting.agentPlanConfirm" class="switch"
-              @change="setting.agentPlanConfirm = !setting.agentPlanConfirm; setting.update({ agent_plan_confirm: setting.agentPlanConfirm })" />
-            <span class="label">执行前先给我看计划</span>
-          </label>
-          <p class="hint" style="margin-left:48px">
-            多步任务拆完后先弹一张计划卡：步骤可以改、可以删、可以加，确认后铃再动手；不操作 120 秒后自动按原计划开始。只对 2 步以上的任务生效。
-          </p>
-          <label class="switch-wrap" style="margin-top:8px">
-            <input type="checkbox" :checked="setting.agentAllowSoftware" class="switch"
-              @change="setting.agentAllowSoftware = !setting.agentAllowSoftware; setting.update({ agent_allow_software: setting.agentAllowSoftware })" />
-            <span class="label">允许安装/卸载软件</span>
-          </label>
-          <p class="hint" style="margin-left:48px">开启后铃可以用 winget 安装或卸载软件</p>
-          <label class="switch-wrap" style="margin-top:8px">
-            <input type="checkbox" :checked="setting.agentAllowFileWrite" class="switch"
-              @change="setting.agentAllowFileWrite = !setting.agentAllowFileWrite; setting.update({ agent_allow_file_write: setting.agentAllowFileWrite })" />
-            <span class="label">允许写入/删除文件</span>
-          </label>
-          <p class="hint" style="margin-left:48px">开启后铃可以生成文件、创建文件夹、删除文件</p>
-          <!-- 执行命令权限：能力最强也最危险，单独放最后 -->
-          <label class="switch-wrap" style="margin-top:8px">
-            <input type="checkbox" :checked="setting.agentAllowShell" class="switch"
-              @change="setting.agentAllowShell = !setting.agentAllowShell; setting.update({ agent_allow_shell: setting.agentAllowShell })" />
-            <span class="label">允许执行命令</span>
-          </label>
-          <p class="hint" style="margin-left:48px">开启后铃可以执行系统命令（能力最强，也最危险，请谨慎开启）</p>
-          <label class="switch-wrap" style="margin-top:8px">
-            <input type="checkbox" :checked="setting.agentAllowToolForge" class="switch"
-              @change="setting.agentAllowToolForge = !setting.agentAllowToolForge; setting.update({ agent_allow_tool_forge: setting.agentAllowToolForge })" />
-            <span class="label">允许 Agent 自己编写小工具</span>
-          </label>
-          <p class="hint" style="margin-left:48px">
-            默认关闭。开启后 Agent 可以自己写小工具（Python / PowerShell / Node）来扩展能力，写完先试跑，源码随时可在「工具箱 → 自制工具」里查看、禁用、删除。
-            <br />
-            <strong>注意：这是关键字过滤 + 独立临时目录 + 超时限制，不是操作系统级隔离。</strong>请只在你信任的脚本上开启这个开关。
-          </p>
-        </section>
-
-        <section class="card">
-          <div class="card-title">长期记忆</div>
-          <div class="field">
-            <label>每次注入条数</label>
-            <input v-model.number="setting.longTermMemoryLimit" type="range" min="0" max="20" step="1" class="range"
-              @change="setting.update({ long_term_memory_limit: setting.longTermMemoryLimit })" />
-            <span class="label">
-              当前：{{ setting.longTermMemoryLimit }} 条{{ setting.longTermMemoryLimit === 0 ? '（已关闭长期记忆）' : '' }}
-            </span>
-            <p class="hint">
-              铃会按「跟你这句话的相关性」，从过往记忆里挑出最相关的几条一起送进对话。条数越多越不容易忘事，但也更费 token；设为 0 则完全不注入长期记忆（当前会话的聊天记录不受影响，照旧连续）。
-            </p>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">开机自启动</div>
-          <label class="switch-wrap">
-            <input v-model="autostart" type="checkbox" class="switch" @change="toggleAutostart" />
-            <span class="label">{{ autostart ? '已开启' : '已关闭' }}</span>
-          </label>
-          <div v-if="autostartMsg" class="msg">{{ autostartMsg }}</div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">全局快捷键</div>
-          <div class="row">
-            <input v-model="hotkey" class="input" placeholder="Ctrl+Alt+L" />
-            <button class="btn primary" @click="saveHotkey">应用</button>
-          </div>
-          <div v-if="hotkeyMsg" class="msg">{{ hotkeyMsg }}</div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">数据路径</div>
-          <div class="row">
-            <input v-model="setting.dataPath" class="input long" placeholder="记忆存储路径" />
-            <button class="btn primary" @click="saveDataPath">保存</button>
-          </div>
-          <p class="hint">当前：{{ setting.dataPath || '（未设置，默认文档/铃记忆体）' }}</p>
-        </section>
-
-        <section class="card">
-          <div class="card-title">配置备份</div>
-          <div class="row">
-            <button class="btn ghost" @click="doExportConfig">导出配置 JSON</button>
-            <button class="btn ghost" @click="doImportConfig">导入配置</button>
-          </div>
-          <div v-if="exportPath" class="msg">{{ exportPath }}</div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">重置</div>
-          <button class="btn danger" @click="doReset">恢复默认设置</button>
-        </section>
-
-        <section class="card">
-          <div class="card-title">工具箱</div>
-          <button class="btn primary" @click="showToolbox = !showToolbox">
-            {{ showToolbox ? '收起工具箱' : '打开工具箱' }}
-          </button>
-        </section>
-      </div>
-
-      <!-- ============ 模型 ============ -->
-      <div v-else-if="activeTab === 'model'">
-        <!-- 快速接入向导（3 步） -->
-        <section class="card">
-          <div class="card-title">快速接入向导</div>
-          <div class="steps">
-            <span class="step" :class="{ on: modelMode !== 'script' }">① 选运行模式</span>
-            <span class="arrow">→</span>
-            <span class="step" :class="{ on: modelMode === 'api' && !!apiBaseUrl }">② 填地址与模型</span>
-            <span class="arrow">→</span>
-            <span class="step" :class="{ on: testMsg.includes('✅') }">③ 测试连接</span>
-          </div>
-          <p class="hint">
-            {{ modelMode === 'script' ? '当前：脚本模式（开箱即用，预设回复库，无需联网）' :
-               modelMode === 'api' ? '当前：API 模式（接入 OpenAI 兼容大模型，如 DeepSeek / Qwen / GPT）' :
-               '当前：本地模式（需自行安装 Ollama 并下载模型）' }}
-          </p>
-        </section>
-
-        <!-- 快速选择（P1：人话分层，点卡片自动填推荐配置） -->
-        <section class="card">
-          <div class="card-title">选择铃的运行方式</div>
-          <div class="quick-modes">
-            <div class="qmode" :class="{ sel: modelMode === 'api' && apiBaseUrl.includes('deepseek') }" @click="pickQuick('deepseek')">
-              <div class="qmode-icon">☁️</div>
-              <div class="qmode-name">DeepSeek<span class="qmode-tag">推荐</span></div>
-              <div class="qmode-desc">云端智能，性价比高，中文好</div>
-            </div>
-            <div class="qmode" :class="{ sel: modelMode === 'local' }" @click="pickQuick('local')">
-              <div class="qmode-icon">💻</div>
-              <div class="qmode-name">本地 AI</div>
-              <div class="qmode-desc">模型跑在自己电脑，离线可用</div>
-            </div>
-            <div class="qmode" :class="{ sel: modelMode === 'script' }" @click="pickQuick('script')">
-              <div class="qmode-icon">📴</div>
-              <div class="qmode-name">离线模式</div>
-              <div class="qmode-desc">零配置，内置回复库，即开即用</div>
-            </div>
-          </div>
-          <p class="hint">点击卡片会自动切换模式并填入推荐配置；下方「运行模式」可手调高级参数。</p>
-          <p class="hint" style="margin-top:6px;color:var(--text-secondary)">
-            💡 OpenAI 兼容：支持任意 OpenAI 兼容服务（中转站 / Qwen / 混元等）。在下方「运行模式」填 API 地址即可；DeepSeek 卡片已填好官方示例，无需联网的海外 OpenAI 官方（需翻墙+付费 key）不做默认推荐。
-          </p>
-        </section>
-
-        <section class="card">
-          <div class="card-title">网络</div>
-          <fieldset class="model-slot" :disabled="savingNetwork || diagnosingNetwork || testing">
-            <label><input v-model="proxyEnabled" type="checkbox" /> 使用代理（默认关闭：国内 API 直连；要用国外 API 时才需要开）</label>
-            <div class="field">
-              <label for="network-proxy-url">代理地址</label>
-              <input id="network-proxy-url" v-model="proxyUrl" class="input long" :disabled="!proxyEnabled" placeholder="http://127.0.0.1:7890" autocomplete="off" />
-            </div>
-            <p class="hint">Clash / FlClash 之类的本地代理一般就是 http://127.0.0.1:7890。默认直连，完全忽略系统代理。</p>
-            <div class="row">
-              <button class="btn primary" @click="saveNetwork">保存网络设置</button>
-              <button class="btn ghost" @click="diagnoseNetwork">网络诊断</button>
-            </div>
-          </fieldset>
-          <div v-if="networkMsg" class="msg network-msg" role="status">{{ networkMsg }}</div>
-          <div class="card-title">运行模式<span class="card-sub">高级参数</span></div>
-          <div class="modes">
-            <div class="mode" :class="{ sel: modelMode === 'script' }" @click="modelMode = 'script'">离线</div>
-            <div class="mode" :class="{ sel: modelMode === 'api' }" @click="modelMode = 'api'">云端</div>
-            <div class="mode" :class="{ sel: modelMode === 'local' }" @click="modelMode = 'local'">本地 AI</div>
-          </div>
-          <template v-if="modelMode === 'api'">
-            <div class="row">
-              <div class="card-title">模型列表</div>
-              <button class="btn ghost" :disabled="savingModels" @click="addModel">+ 添加模型</button>
-            </div>
-            <fieldset v-for="(slot, index) in modelSlots" :key="slot.id || index" class="model-slot" :disabled="savingModels">
-              <div class="row">
-                <label :for="'model-name-' + index">模型 {{ index + 1 }}</label>
-                <input :id="'model-name-' + index" v-model="slot.name" class="input" list="model-presets" placeholder="模型名" />
-                <span>用途：</span>
-                <label><input v-model="slot.roles" type="checkbox" value="main" /> 主力</label>
-                <label><input v-model="slot.roles" type="checkbox" value="cheap" /> 便宜</label>
-                <label><input v-model="slot.roles" type="checkbox" value="vision" /> 视觉</label>
-                <label><input v-model="slot.enabled" type="checkbox" /> 启用</label>
-                <button class="btn danger" @click="modelSlots.splice(index, 1)">删除</button>
-              </div>
-              <div class="field">
-                <label :for="'model-url-' + index">地址</label>
-                <input :id="'model-url-' + index" v-model="slot.base_url" class="input long" placeholder="留空 = 用下面的全局地址" />
-              </div>
-              <div class="field">
-                <label :for="'model-key-' + index">密钥</label>
-                <div class="row">
-                  <input :id="'model-key-' + index" v-model="slot.keyInput" type="password" autocomplete="new-password" class="input long" placeholder="留空 = 沿用全局密钥" />
-                  <button class="btn primary" @click="saveSlotKey(index)">保存密钥</button>
-                </div>
-                <p class="hint">{{ slot.has_api_key ? '已保存独立密钥（不回显）；留空保存可清除' : '未保存独立密钥，沿用全局密钥' }}</p>
-              </div>
-            </fieldset>
-            <datalist id="model-presets">
-              <option v-for="model in MODEL_PRESETS" :key="model" :value="model" />
-            </datalist>
-            <div class="field">
-              <label>全局地址（OpenAI 兼容，带/不带 /v1 均可）</label>
-              <input v-model="apiBaseUrl" class="input long" placeholder="https://api.deepseek.com" />
-            </div>
-            <div class="field">
-              <label>全局密钥</label>
-              <div class="row">
-                <input v-model="apiKeyInput" type="password" autocomplete="new-password" class="input long" placeholder="输入新密钥（不回显）" />
-                <button class="btn primary" @click="saveApiKey">保存</button>
-              </div>
-              <p class="hint">{{ setting.hasApiKey ? '已保存全局密钥' : '未保存全局密钥' }}；主密码：{{ setting.hasMasterPassword ? (setting.unlocked ? '已解锁' : '未解锁，请先解锁再保存密钥') : '未设置，密钥将明文存储' }}</p>
-            </div>
-            <div class="field">
-              <label><input v-model="aiRouter" type="checkbox" /> 用 AI 判断难度</label>
-              <p class="hint">需要主力与便宜槽位的 id、模型名均不同且类型相同；便宜槽位轮询使用自己的地址和密钥。失败时回退本地判断。</p>
-            </div>
-            <div class="row">
-              <button class="btn ghost" :disabled="testing" @click="testConnection">{{ testing ? '测试中…' : '测试连接' }}</button>
-            </div>
-            <div v-if="testMsg" class="msg">{{ testMsg }}</div>
-          </template>
-          <template v-if="modelMode !== 'script'">
-            <div class="field">
-              <label>回复速度</label>
-              <input v-model.number="depth" type="range" min="1" max="4" step="1" class="range" />
-              <div class="depth-labels">
-                <span>⚡ 快速</span><span>⚖️ 平衡</span><span>🧠 深入</span><span>🔥 认真思考</span>
-              </div>
-              <span class="label">当前：{{ DEPTH_LABEL[depth as keyof typeof DEPTH_LABEL] ?? depth }}</span>
-            </div>
-            <button class="btn primary" :disabled="savingModels" @click="saveModel">保存模型设置</button>
-
-          </template>
-        </section>
-
-        <!-- 一键本地部署 AI -->
-        <section class="card">
-          <div class="card-title">一键本地部署 AI（Ollama）</div>
-          <p class="hint">
-            {{ !ollamaChecked ? '检测中…' : ollama.installed ? `✅ Ollama 已安装（${ollama.models.length} 个模型）` : '❌ 未检测到 Ollama，需先安装' }}
-            <button v-if="ollamaChecked" class="btn ghost" style="margin-left:8px;padding:2px 10px" @click="detectLocalAI">重新检测</button>
-          </p>
-          <template v-if="ollamaChecked && ollama.installed">
-            <p v-if="ollama.models.length" class="hint">已装模型：{{ ollama.models.join('、') }}</p>
-            <p v-else class="hint">还没有模型，下拉一个开始用：</p>
-            <p v-if="gpuVram.length" class="hint">🖥️ 显卡：{{ gpuVram.map((g) => `${g.name}（${(g.vram_mb / 1024).toFixed(1)}GB）`).join('、') }}</p>
-            <div class="row">
-              <input v-model="pullModelName" class="input long" placeholder="qwen2.5:3b" />
-              <button class="btn primary" @click="doPullModel">⬇️ 一键拉取模型</button>
-            </div>
-            <div v-if="localAiMsg" class="msg">{{ localAiMsg }}</div>
-
-            <!-- 显存不足弹窗（含「我偏不」强制继续） -->
-            <div v-if="vramWarn" class="modal-mask" @click.self="vramWarn = false">
-              <div class="modal vram-modal">
-                <div class="modal-title">🖥️ 显存不足提醒</div>
-                <p class="modal-body">{{ vramWarnText }}</p>
-                <p class="modal-tip">建议改用轻量模型（qwen2.5:3b 或更小），或切换 API 模式更流畅。</p>
-                <div class="modal-actions">
-                  <button class="btn ghost" @click="vramWarn = false">改用 API 模式</button>
-                  <button class="btn primary" @click="vramIgnore">我偏不，老子电脑很牛逼 🔥</button>
-                </div>
-              </div>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <input v-model="modelsPath" class="input long" placeholder="模型存储路径（可选，如 D:\ollama-models）" />
-              <button class="btn ghost" @click="doSaveModelsPath">保存路径</button>
-            </div>
-            <div v-if="pathMsg" class="msg">{{ pathMsg }}</div>
-          </template>
-          <template v-else-if="ollamaChecked && !ollama.installed">
-            <div class="row">
-              <button class="btn primary" @click="openExternal('https://ollama.com/download')">🌐 打开 Ollama 官网下载</button>
-            </div>
-            <p class="hint" style="margin-top:6px">安装 Ollama 后回到本页点「重新检测」，再一键拉取模型。推荐 <b>qwen2.5:3b</b>（轻量）或 <b>qwen2.5:7b</b>（均衡）。</p>
-          </template>
-        </section>
-
-        <!-- 离线语义检索模型（方案3） -->
-        <section class="card">
-          <div class="card-title">离线语义检索模型（bge）</div>
-          <p class="hint">离线模式下让「铃」更聪明地选回复（语义匹配，比关键词更懂你）。模型约 91MB，完整版内置；轻量版可一键检索安装。</p>
-          <div v-if="vectorModelStatus" class="hint">
-            {{ vectorModelStatus.available ? '✅ ' + vectorModelStatus.message : '❌ ' + vectorModelStatus.message }}
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button class="btn ghost" :disabled="vectorScanning" @click="scanVectorModels">
-              {{ vectorScanning ? '⏳ 检索中…' : '🔍 检索模型' }}
-            </button>
-          </div>
-          <div v-if="vectorCandidates.length" class="card" style="margin-top:8px;background:var(--input-bg)">
-            <div v-for="c in vectorCandidates" :key="c.path" class="row" style="margin-top:6px">
-              <span class="hint" style="flex:1">{{ c.filename }}（{{ (c.size_mb).toFixed(1) }}MB）</span>
-              <button v-if="c.exists_in_target" class="btn ghost" disabled>已安装</button>
-              <button v-else class="btn primary" :disabled="vectorInstalling" @click="doInstallVectorModel(c.path)">
-                {{ vectorInstalling ? '安装中…' : '一键安装' }}
-              </button>
-            </div>
-          </div>
-          <div v-if="vectorMsg" class="msg">{{ vectorMsg }}</div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">主密码与加密</div>
-          <p class="hint">
-            主密码状态：{{ setting.hasMasterPassword ? (setting.unlocked ? '已设置 · 已解锁 ✅' : '已设置 · 未解锁') : '未设置 ⚠️（密钥将明文存储，建议设置主密码加密）' }}
-          </p>
-
-          <div class="field" style="margin-top: 12px">
-            <label>主密码</label>
-            <template v-if="!setting.hasMasterPassword">
-              <div class="row">
-                <input v-model="masterPwd" type="password" class="input" placeholder="设置主密码" />
-                <input v-model="masterPwd2" type="password" class="input" placeholder="确认主密码" />
-                <button class="btn primary" @click="doSetupMaster">设置</button>
-              </div>
-            </template>
-            <template v-else-if="!setting.unlocked">
-              <div class="row">
-                <input v-model="unlockPwd" type="password" class="input" placeholder="输入主密码解锁" />
-                <button class="btn primary" @click="doUnlock">解锁</button>
-              </div>
-            </template>
-            <template v-else>
-              <div class="row">
-                <input v-model="masterPwd" type="password" class="input" placeholder="新主密码（修改）" />
-                <input v-model="masterPwd2" type="password" class="input" placeholder="确认新主密码" />
-                <button class="btn ghost" @click="doSetupMaster">修改</button>
-              </div>
-            </template>
-          </div>
-          <div v-if="cryptoMsg" class="msg">{{ cryptoMsg }}</div>
-        </section>
-      </div>
-
-      <!-- ============ 记忆 ============ -->
-      <div v-else-if="activeTab === 'memory'">
-        <section class="card">
-          <div class="card-title">记忆存储</div>
-          <p class="hint">记忆文件保存在：{{ setting.dataPath }}</p>
-          <p class="hint">记忆集管理与详情请使用主界面「记忆」面板（由 AI-4 实现）。</p>
-          <div class="row">
-            <button class="btn ghost" @click="doExportConfig">导出记忆配置</button>
-            <button class="btn ghost" @click="doImportConfig">导入记忆配置</button>
-          </div>
-        </section>
-      </div>
-
-      <!-- ============ 监测 ============ -->
-      <div v-else-if="activeTab === 'monitor'">
-        <MonitorSettings />
-      </div>
-
-      <!-- ============ 形象（VBIL + 个性化 + 悬浮球 + 外观风格） ============ -->
-            <div v-else-if="activeTab === 'style'">
-              <VBILSettings />
-
-              <section class="card">
-                <div class="card-title">个性化</div>
-                <div class="field">
-                  <label>日语修饰词浓度（0-30）</label>
-                  <input v-model.number="mixRate" type="range" min="0" max="30" class="range" />
-                  <span class="label">当前：{{ mixRate }}（{{ mixRate < 5 ? '低' : mixRate < 15 ? '中' : '高' }}）</span>
-                </div>
-                <div class="row">
-                  <div class="field">
-                    <label>自称</label>
-                    <input v-model="selfName" class="input" />
-                  </div>
-                  <div class="field">
-                    <label>对您的称呼</label>
-                    <input v-model="userName" class="input" />
-                  </div>
-                </div>
-                <button class="btn primary" @click="savePersona">保存个性化</button>
-              </section>
-
-              <section class="card">
-                <div class="card-title">桌宠（悬浮球）</div>
-                <p class="hint">桌面上陪你工作的小铃：会自己动一动、偶尔说话，点一下有反应，摸头会长呼噜，拖动可以被拎起来。</p>
-                <p class="hint">
-                  已知问题：在高缩放（如 150%）屏幕上，小铃的画面可能偏出窗口一角 —— 这是 Tauri 透明窗口 + WebView2 的渲染问题，正在处理。
-                </p>
-                <div class="field">
-                  <label class="switch-wrap">
-                    <span class="label">显示桌宠</span>
-                    <input type="checkbox" class="switch" v-model="setting.floatingBallEnabled" @change="saveBallSettings" />
-                  </label>
-                </div>
-                <div v-if="setting.floatingBallEnabled" class="field">
-                  <label>形象</label>
-                  <select v-model="setting.floatingBallMode" @change="saveBallSettings">
-                    <option value="avatar">头像（推荐）</option>
-                    <option value="simple">纯文字</option>
-                    <option value="live2d">Live2D（实验）</option>
-                  </select>
-                  <p class="hint" v-if="setting.floatingBallMode === 'live2d'">
-                    Live2D 形象是实验功能：在 150% 等高缩放屏幕上，模型可能比窗口大、被裁掉一部分。显示不对就切回头像。
-                  </p>
-                </div>
-                <div v-if="setting.floatingBallEnabled" class="field">
-                  <label>大小</label>
-                  <div class="size-btns">
-                                <button v-for="s in [80, 100, 120, 160, 200]" :key="s" class="size-btn" :class="{ active: setting.floatingBallSize === s }" @click="setting.floatingBallSize = s; saveBallSettings()">{{ s }}</button>
-                              </div>
-                </div>
-                <div v-if="setting.floatingBallEnabled" class="field">
-                  <label>透明度</label>
-                  <div class="size-btns">
-                    <button v-for="o in [1, 0.8, 0.6, 0.4]" :key="o" class="size-btn" :class="{ active: Math.abs(setting.floatingBallOpacity - o) < 0.01 }" @click="setting.floatingBallOpacity = o; saveBallSettings()">{{ o * 100 }}%</button>
-                  </div>
-                </div>
-                <div v-if="setting.floatingBallEnabled" class="row">
-                  <label class="switch-wrap">
-                    <span class="label">呼吸动画</span>
-                    <input type="checkbox" class="switch" v-model="setting.floatingBallBreathing" @change="saveBallSettings" />
-                  </label>
-                  <label class="switch-wrap">
-                    <span class="label">消息闪烁</span>
-                    <input type="checkbox" class="switch" v-model="setting.floatingBallFlash" @change="saveBallSettings" />
-                  </label>
-                </div>
-                <div v-if="setting.floatingBallEnabled" class="row">
-                  <label class="switch-wrap">
-                    <span class="label">偶尔自言自语</span>
-                    <input type="checkbox" class="switch" v-model="setting.floatingBallChatter" @change="saveBallSettings" />
-                  </label>
-                  <span class="hint">关掉后只有动作，不冒气泡</span>
-                </div>
-                <div v-if="setting.floatingBallEnabled" class="actions">
-                  <button class="btn ghost" @click="resetBallPosition">重置位置</button>
-                </div>
-              </section>
-
-              <section class="card">
-                <div class="card-title">桌面伙伴（原生桌宠）</div>
-                <p class="hint">
-                  随安装包一起装到电脑上的独立小铃：不经过网页内核，透明背景、Live2D 动作，能拖动、摸头、说话，还能自己掉到屏幕底。
-                  在桌面双击「铃桌宠」也能单独启动，不会和这里重复开出两只。
-                </p>
-                <div class="field">
-                  <label class="switch-wrap">
-                    <span class="label">随应用启动</span>
-                    <input type="checkbox" class="switch" v-model="setting.nativePetEnabled" @change="saveNativePet" />
-                  </label>
-                </div>
-                <p class="hint" v-if="nativePet && !nativePet.found">
-                  没找到桌宠程序 pet\pet-native.exe：这份安装包里可能没带上它（开发版常见），用正式安装包装一次就有。
-                </p>
-                <template v-else>
-                  <p class="hint">状态：{{ nativePet?.running ? '运行中' : '未运行' }}{{ nativePetMsg ? '　' + nativePetMsg : '' }}</p>
-                  <div class="actions">
-                    <button class="btn ghost" @click="restartNativePet" :disabled="!setting.nativePetEnabled">重启桌宠</button>
-                  </div>
-                </template>
-              </section>
-
-              <section class="card">
-                <div class="card-title">外观</div>
-                <div class="row">
-                  <span class="label">主题</span>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'dark' }" @click="setting.setTheme('dark')">深色</button>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'light' }" @click="setting.setTheme('light')">亮色</button>
-                </div>
-                <div class="row theme-row">
-                  <span class="label">风格</span>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'win10' }" @click="setting.setTheme('win10')">Win10</button>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'edge' }" @click="setting.setTheme('edge')">微软浏览器</button>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'minimal' }" @click="setting.setTheme('minimal')">极简文字</button>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'ios-flat' }" @click="setting.setTheme('ios-flat')">iOS 扁平</button>
-                  <button class="btn ghost" :class="{ on: setting.theme === 'ios-glass' }" @click="setting.setTheme('ios-glass')">iOS 毛玻璃</button>
-                </div>
-                <div class="row theme-row">
-                  <span class="label">Emoji</span>
-                  <button class="btn ghost" :class="{ on: setting.emojiMode === 'off' }" @click="setEmojiMode('off')">关闭</button>
-                  <button class="btn ghost" :class="{ on: setting.emojiMode === 'partial' }" @click="setEmojiMode('partial')">局部</button>
-                  <button class="btn ghost" :class="{ on: setting.emojiMode === 'all' }" @click="setEmojiMode('all')">全部</button>
-                </div>
-                <div class="ui-custom">
-                  <div class="field">
-                    <label>主色</label>
-                    <div class="row">
-                      <input v-model="setting.accentColor" class="input" placeholder="#ff7a94" style="flex:1" />
-                      <input type="color" v-model="setting.accentColor" class="color-swatch" />
-                    </div>
-                    <p class="hint" style="margin-top:2px">设置主色后，铃的气泡/危险按钮自动跟随（可单独覆盖）</p>
-                  </div>
-                  <div class="field">
-                    <label>危险色（删除/错误按钮）</label>
-                    <div class="row">
-                      <input v-model="setting.dangerColor" class="input" placeholder="留空则跟随主色" style="flex:1" />
-                      <input type="color" v-model="setting.dangerColor" class="color-swatch" />
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label>背景色</label>
-                    <div class="row">
-                      <input v-model="setting.bgColor" class="input" placeholder="#1d1b1f" style="flex:1" />
-                      <input type="color" v-model="setting.bgColor" class="color-swatch" />
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label>背景图（选填）</label>
-                    <div class="row">
-                      <input v-model="setting.bgImage" class="input long" placeholder="C:\Users\...\bg.jpg" style="flex:1" />
-                      <button class="btn ghost" @click="pickImage('bg')">选择图片</button>
-                    </div>
-                    <input ref="bgFileInput" type="file" accept="image/*" style="display:none" @change="onBgFile" />
-                  </div>
-                  <div class="field">
-                    <label>铃的头像（emoji / 文字 / 图片）</label>
-                    <div class="row">
-                      <input v-model="setting.avatarSuzu" class="input" placeholder="铃" style="flex:1" />
-                      <button class="btn ghost" @click="pickImage('avatar')">选头像图</button>
-                    </div>
-                    <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="onAvatarFile" />
-                  </div>
-                  <div class="field">
-                    <label>你的头像（选填）</label>
-                    <div class="row">
-                      <input v-model="setting.avatarUser" class="input" placeholder="（留空则不显示）" style="flex:1" />
-                      <button class="btn ghost" @click="pickImage('user')">选头像图</button>
-                    </div>
-                    <input ref="userAvatarFileInput" type="file" accept="image/*" style="display:none" @change="onUserAvatarFile" />
-                  </div>
-                  <div class="field">
-                    <label>圆角：{{ setting.uiRadius ?? 12 }}px</label>
-                    <input v-model.number="setting.uiRadius" type="range" min="0" max="24" class="range" />
-                  </div>
-                  <div class="field">
-                    <label>你的气泡颜色</label>
-                    <div class="row">
-                      <input v-model="setting.bubbleUserColor" class="input" placeholder="#2d2d2d" style="flex:1" />
-                      <input type="color" v-model="setting.bubbleUserColor" class="color-swatch" />
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label>铃的气泡颜色</label>
-                    <div class="row">
-                      <input v-model="setting.bubbleSuzuColor" class="input" placeholder="#3a3438" style="flex:1" />
-                      <input type="color" v-model="setting.bubbleSuzuColor" class="color-swatch" />
-                    </div>
-                  </div>
-                  <button class="btn primary" @click="saveUiCustom">应用自定义外观</button>
-                  <div class="theme-presets">
-                    <div class="row">
-                      <input v-model="presetName" class="input" placeholder="给这套风格起个名字" style="flex:1" />
-                      <button class="btn primary" @click="savePreset">保存组合</button>
-                    </div>
-                    <p class="hint">保存后一键切换你的专属风格，无需复制粘贴</p>
-                    <div v-if="setting.uiThemes && setting.uiThemes.length" class="preset-list">
-                      <div v-for="t in setting.uiThemes" :key="t.name" class="preset-item">
-                        <span class="preset-name">{{ t.name }}</span>
-                        <button class="btn ghost" @click="setting.switchThemePreset(t.name)">切换</button>
-                        <button class="btn ghost" @click="setting.deleteThemePreset(t.name)">删除</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-      <!-- ============ 插件 ============ -->
-      <div v-else-if="activeTab === 'plugin'">
-        <PluginManager />
-      </div>
-
-      <!-- ============ 同步 ============ -->
-      <div v-else-if="activeTab === 'sync'">
-        <SyncPanel />
-      </div>
-
-      <!-- ============ 快捷指令（AI-9） ============ -->
-      <div v-else-if="activeTab === 'quick'">
-        <QuickCommandPanel />
-      </div>
-
-      <!-- ============ 赞助 ============ -->
-      <div v-else-if="activeTab === 'sponsor'">
-        <section class="card">
-          <div class="card-title">赞助</div>
-          <p class="hint">支持铃·记忆体开源项目。赞助渠道、目标进度、赞助者名单在此展示（预留）。</p>
-          <div class="row">
-            <button class="btn primary" @click="openExternal('https://github.com/Zang7311')">访问 GitHub 主页</button>
-            <button class="btn ghost" @click="openExternal('https://github.com/Zang7311/-Memoria')">项目仓库</button>
-          </div>
-        </section>
-      </div>
-
-      <!-- ============ 诊断 ============ -->
-      <div v-else-if="activeTab === 'diag'">
-        <DiagnosticView />
-      </div>
-    </div>
-
-    <div v-if="generalMsg" class="msg global">{{ generalMsg }}</div>
-
-    <!-- 工具箱悬浮窗（AI-6） -->
-    <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
+    <ToolboxPanel v-if="toolboxOpen" @close="toolboxOpen = false" />
   </div>
 </template>
 
 <style scoped>
-.model-slot {
-  min-width: 0;
-  margin: 12px 0;
-  padding: 12px;
-  border: 1px solid var(--border, #555);
-  border-radius: var(--radius, 12px);
-}
-.setting-view {
-  padding: 20px 24px;
-  max-width: 820px;
-  color: var(--text-main, #eee6e7);
-  overflow-y: auto;
+.settings-view {
+  display: flex;
   height: 100%;
-  box-sizing: border-box;
+  min-height: 0;
+  background: var(--ui-bg);
+  color: var(--ui-text);
 }
-.page-title { margin: 0 0 16px; font-size: var(--fs-18); }
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-.tab {
-  padding: 7px 13px; border-radius: 20px; cursor: pointer; font-size: var(--fs-13);
-  background: rgba(128, 128, 128, 0.12); color: var(--text-secondary);
-  transition: all 0.15s;
-}
-.tab.active { background: var(--accent, #ff7a94); color: var(--text-user); }
-.tab-icon { margin-right: 3px; }
-.tab-content { display: flex; flex-direction: column; gap: 4px; }
-.card {
-  background: var(--bg-bar, rgba(34, 32, 36, 0.85));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 14px; padding: 16px; margin-bottom: 12px;
-}
-.card-title { font-weight: 600; font-size: var(--fs-14); margin-bottom: 10px; }
-.hint { font-size: var(--fs-12); color: var(--text-secondary); margin: 0 0 8px; line-height: 1.6; }
-.row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-.label { font-size: var(--fs-13); color: var(--text-secondary); }
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.field label { font-size: var(--fs-12); color: var(--text-secondary); }
-.input {
-  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--input-bg); color: var(--text-main); font-size: var(--fs-13);
-}
-.input.long { flex: 1; min-width: 220px; }
-.range { width: 100%; accent-color: var(--accent, #ff7a94); }
-.size-btns { display: flex; gap: 8px; margin-top: 6px; }
-.size-btn {
-  flex: 1;
-  padding: 6px 0;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--input-bg);
-  color: var(--text-main);
-  font-size: var(--fs-13);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.size-btn.active {
-  background: var(--accent, #ff7a94);
-  color: var(--text-user);
-  border-color: transparent;
-}
-.depth-labels {
+
+/* ---------- 左侧分区导航 ---------- */
+.side {
+  flex: none;
+  width: 168px;
   display: flex;
-  justify-content: space-between;
-  font-size: var(--fs-10);
-  color: var(--text-secondary);
-  margin-top: 2px;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ui-sp-3) var(--ui-sp-2);
+  border-right: 1px solid var(--ui-border);
+  overflow-y: auto;
 }
-.modes { display: flex; gap: 8px; margin-bottom: 12px; }
-/* —— 快速选择（P1）样式 —— */
-.quick-modes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.qmode {
-  border: 2px solid var(--border, rgba(128, 128, 128, 0.25));
-  border-radius: 12px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: all 0.15s;
+.side-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-2);
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--ui-sp-2);
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-13);
+  line-height: 1;
   text-align: left;
-  background: var(--input-bg, transparent);
+  transition: background var(--ui-dur-1) var(--ui-ease), color var(--ui-dur-1) var(--ui-ease);
 }
-.qmode:hover { border-color: var(--accent, #ff7a94); }
-.qmode.sel { border-color: var(--accent, #ff7a94); background: rgba(255, 122, 148, 0.08); }
-.qmode-icon { font-size: var(--fs-18); }
-.qmode-name { font-weight: 700; font-size: var(--fs-13); margin: 2px 0; }
-.qmode-tag {
-  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 7px;
-  font-size: var(--fs-10); font-weight: 600; background: var(--accent, #ff7a94); color: #fff;
-  vertical-align: 1px;
+.side-btn:hover {
+  background: var(--ui-hover);
+  color: var(--ui-text);
 }
-.qmode-desc { font-size: var(--fs-10); color: var(--text-secondary); }
-.card-sub { font-size: var(--fs-10); color: var(--text-secondary); font-weight: 400; margin-left: 6px; }
-/* 密钥位置引导（P1）：小字 + 向下箭头 */
-.key-guide {
-  margin-top: 8px;
-  font-size: var(--fs-11);
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.side-btn.on {
+  background: var(--ui-active);
+  color: var(--ui-text);
 }
-/* —— P3：与铃的日记样式 —— */
-.diary-card { background: linear-gradient(160deg, rgba(255, 122, 148, 0.06), rgba(201, 228, 255, 0.06)); }
-.diary-days { display: flex; align-items: baseline; gap: 6px; margin: 6px 0 10px; }
-.diary-num { font-size: var(--fs-30); font-weight: 800; color: var(--accent, #ff7a94); line-height: 1; }
-.diary-days-label { font-size: var(--fs-14); color: var(--text-main); font-weight: 600; }
-.diary-sub { font-size: var(--fs-11); color: var(--text-secondary); }
-.diary-list { display: flex; flex-direction: column; gap: 4px; }
-/* —— 能力面板（大项目）样式 —— */
-.cap-mode {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+.side-btn.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 2px;
+  height: 16px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-accent);
 }
-.cap-mode-tag {
-  font-size: var(--fs-11);
-  font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 10px;
-  background: var(--accent, #ff7a94);
-  color: #fff;
-}
-.cap-mode-model {
-  font-size: var(--fs-11);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  word-break: break-all;
-}
-.ability-list { display: flex; flex-direction: column; gap: 2px; }
-.ability-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  font-size: var(--fs-11);
-}
-.ability-row:hover { background: rgba(128, 128, 128, 0.08); }
-.ability-name { width: 70px; color: var(--text-main); flex-shrink: 0; }
-.ability-state {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-10);
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.ability-state.ok { background: rgba(76, 175, 80, 0.15); color: var(--success, #4caf50); }
-.ability-state.no { background: rgba(217, 83, 79, 0.15); color: var(--danger, #d9534f); }
-.ability-state.unknown { background: rgba(240, 173, 78, 0.15); color: var(--warning, #f0ad4e); }
-.ability-detail { color: var(--text-secondary); flex: 1; }
-/* —— 每日日记条目（折叠） —— */
-.diary-entry {
-  border-radius: 10px;
-  background: rgba(128, 128, 128, 0.08);
-  overflow: hidden;
-}
-.diary-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: var(--fs-12);
-  user-select: none;
-}
-.diary-row:hover { background: rgba(128, 128, 128, 0.08); }
-.diary-date { font-weight: 700; color: var(--accent, #ff7a94); flex-shrink: 0; }
-.diary-summary {
-  flex: 1;
+.side-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-main);
 }
-.diary-arrow { font-size: var(--fs-10); color: var(--text-secondary); flex-shrink: 0; }
-.diary-body {
-  padding: 6px 10px 8px;
-  font-size: var(--fs-11);
-  color: var(--text-secondary);
-  line-height: 1.7;
-  border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.2));
-}
-/* —— 纪念章（折叠） —— */
-.diary-badges { margin-top: 8px; border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.25)); padding-top: 6px; }
-.badges-head {
+
+/* ---------- 右侧内容 ---------- */
+.main {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  font-size: var(--fs-11);
-  color: var(--text-secondary);
-  user-select: none;
-  padding: 2px 4px;
+  flex-direction: column;
 }
-.badges-body { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
-.diary-item {
+.head {
+  flex: none;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  font-size: var(--fs-12);
+  align-items: baseline;
+  gap: var(--ui-sp-2);
+  height: var(--ui-head-h);
+  padding: 0 var(--ui-sp-5);
+  padding-right: calc(var(--ui-sp-6) + var(--ui-sp-5));
+  border-bottom: 1px solid var(--ui-border);
 }
-.diary-check { color: var(--success, #4caf50); font-weight: 700; }
-.diary-label { flex: 1; color: var(--text-main); }
-.diary-date { font-size: var(--fs-10); color: var(--text-secondary); }
-.diary-empty { font-size: var(--fs-12); color: var(--text-secondary); padding: 8px 0; }
-.key-guide-arrow {
-  color: var(--accent, #ff7a94);
-  font-size: var(--fs-14);
-  animation: key-bounce 1.6s ease-in-out infinite;
+.head-title {
+  margin: 0;
+  font-size: var(--ui-fs-16);
+  font-weight: 600;
+  color: var(--ui-text);
 }
-@keyframes key-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(3px); }
+.head-sub {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-3);
 }
-.steps { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-.step { font-size: var(--fs-12); padding: 3px 9px; border-radius: 12px; background: rgba(128, 128, 128, 0.14); color: var(--text-secondary); }
-.step.on { background: var(--accent, #ff7a94); color: var(--text-user); }
-.arrow { color: var(--text-secondary); font-size: var(--fs-12); }
-.mode {
-  padding: 8px 16px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border);
-  font-size: var(--fs-13); background: transparent;
+.content {
+  flex: 1;
+  min-height: 0;
+  padding: var(--ui-sp-4) var(--ui-sp-5);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
-.mode.sel { border-color: var(--accent); background: var(--accent); color: var(--text-user); }
-.vram-modal { width: 360px; text-align: left; }
-.modal-body { font-size: var(--fs-13); line-height: 1.6; margin: 0 0 8px; }
-.modal-tip { font-size: var(--fs-12); color: var(--text-secondary, #999); margin: 0 0 14px; line-height: 1.6; }
-.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-13); }
-.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
-.btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
-.btn.on { border: 1px solid var(--accent); color: var(--accent); }
-.theme-row { flex-wrap: wrap; gap: 6px; }
-.ui-custom { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border, rgba(128,128,128,0.25)); }
-.color-swatch { width: 42px; height: 34px; padding: 0; border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 6px; background: transparent; cursor: pointer; }
-.theme-presets { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border, rgba(128,128,128,0.25)); display: flex; flex-direction: column; gap: 8px; }
-.preset-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
-.preset-item { display: flex; align-items: center; gap: 8px; background: rgba(128,128,128,0.1); padding: 6px 10px; border-radius: 8px; }
-.preset-name { flex: 1; font-size: var(--fs-13); color: var(--text-main); }
-.btn.danger { background: var(--danger-bg); color: var(--danger, #ff6b6b); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.switch-wrap { display: flex; align-items: center; gap: 8px; }
-.switch { width: 40px; height: 20px; accent-color: var(--accent, #ff7a94); }
-.msg { font-size: var(--fs-12); margin-top: 6px; color: var(--accent, #ff7a94); }
-.msg.global { margin-top: 12px; }
-.network-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
-#network-proxy-url:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
