@@ -20,6 +20,7 @@ import { useDesktopStore } from '../stores/desktopStore'
 import { useSyncStore } from '../stores/syncStore'
 import { useChatStore } from '../stores/chatStore'
 import { assetUrl, isImagePath } from '../utils/tauri'
+import { broadcastDrop, installWindowFileDrop } from '../utils/fileDrop'
 import { listen } from '@tauri-apps/api/event'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 
@@ -79,13 +80,20 @@ function routeLabel(r: { source: string; easy: boolean; needs_vision: boolean; m
   return `${src} · ${kind} · ${r.model}`
 }
 
+/** 桌面文件拖到窗口上时的提示层 */
+const dropActive = ref(false)
+let uninstallDrop: (() => void) | null = null
+
 watch(
   () => chat.activeSessionId,
   (id) => {
     if (id) goals.remind()
   },
 )
-onUnmounted(() => goals.dispose())
+onUnmounted(() => {
+  goals.dispose()
+  uninstallDrop?.()
+})
 
 onMounted(() => {
   goals.init().catch((reason) => {
@@ -104,6 +112,17 @@ onMounted(() => {
   listen('floating-open-settings', () => {
     showSettings.value = true
   }).catch(() => {})
+  // 桌面拖文件进窗口 → 高亮提示 + 交给输入框当附件
+  installWindowFileDrop(
+    (active) => {
+      dropActive.value = active
+    },
+    (result) => broadcastDrop(result),
+  )
+    .then((un) => {
+      uninstallDrop = un
+    })
+    .catch(() => {})
 })
 
 async function onDeleteSession(id: string) {
@@ -285,6 +304,14 @@ async function onPersonaChange(e: Event) {
     <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
     <GoalsPanel v-if="showGoals" @close="showGoals = false" />
     <AuditPanel v-if="showAudit" @close="showAudit = false" />
+
+    <!-- 桌面文件拖进窗口时的提示层 -->
+    <div v-if="dropActive" class="drop-layer">
+      <div class="drop-card">
+        <span class="drop-title">松开就加进附件</span>
+        <span class="drop-hint">图片 5MB 内 / 文本 1MB 内，一次最多 5 个</span>
+      </div>
+    </div>
 
     <!-- 设置页 -->
     <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
@@ -588,6 +615,38 @@ async function onPersonaChange(e: Event) {
   height: 100%;
   border: 0;
   background: transparent;
+}
+
+/* ---------- 拖放提示层 ---------- */
+.drop-layer {
+  position: fixed;
+  inset: var(--ui-sp-3);
+  z-index: 600;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 2px dashed var(--ui-accent-line);
+  border-radius: var(--ui-r-lg);
+  background: color-mix(in srgb, var(--ui-bg) 72%, transparent);
+}
+.drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  padding: var(--ui-sp-4) var(--ui-sp-5);
+  border-radius: var(--ui-r-md);
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-border-strong);
+  box-shadow: var(--ui-shadow);
+}
+.drop-title {
+  font-size: var(--ui-fs-14);
+  color: var(--ui-text);
+}
+.drop-hint {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-3);
 }
 
 /* ---------- 设置页 ---------- */

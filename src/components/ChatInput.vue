@@ -1,12 +1,13 @@
 <!-- 《铃·记忆体》输入栏：textarea + 纸飞机发送按钮
      任务 4：Enter 发送、Shift+Enter 换行、发送中禁用、清空输入 -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '../stores/chatStore'
 import { useStreamRender } from '../composables/useStreamRender'
 import { useSettingStore } from '../stores/settingStore'
 import { ATTACHMENT_ACCEPT, readAttachment } from '../utils/attachments'
+import { DROP_EVENT, type DropResult } from '../utils/fileDrop'
 import type { Attachment } from '../types'
 
 const chat = useChatStore()
@@ -18,6 +19,20 @@ const fileRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<Attachment[]>([])
 const attachmentError = ref('')
 const readingFiles = ref(false)
+
+// 桌面文件拖进窗口：后端读完内容后广播过来，这里追加到待发附件（跟「选择文件」同一个列表）
+function onDroppedFiles(event: Event) {
+  const result = (event as CustomEvent<DropResult>).detail
+  if (!result) return
+  for (const file of result.ok) {
+    if (!attachments.value.some((a) => a.name === file.name && a.size === file.size)) {
+      attachments.value.push(file)
+    }
+  }
+  attachmentError.value = result.failed.length ? result.failed.join('；') : ''
+}
+onMounted(() => window.addEventListener(DROP_EVENT, onDroppedFiles))
+onUnmounted(() => window.removeEventListener(DROP_EVENT, onDroppedFiles))
 
 async function selectFiles(event: Event) {
   const input = event.target as HTMLInputElement

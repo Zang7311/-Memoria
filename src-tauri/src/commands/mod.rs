@@ -68,3 +68,5 @@ pub mod search_mode;
 // —— 应用生命周期 ——
 pub mod app_lifecycle;
 pub mod goals;
+// —— 拖放附件：把拖进窗口的文件路径读成附件 ——
+pub mod read_dropped_file;
