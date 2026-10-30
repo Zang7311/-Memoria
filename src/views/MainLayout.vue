@@ -12,6 +12,9 @@ import ToolboxPanel from '../components/ToolboxPanel.vue'
 import GoalsPanel from '../components/GoalsPanel.vue'
 import AuditPanel from '../components/AuditPanel.vue'
 import AppStatusDot from '../components/ui/AppStatusDot.vue'
+import AppToast from '../components/ui/AppToast.vue'
+import AppDialog from '../components/ui/AppDialog.vue'
+import { confirmDialog } from '../utils/dialog'
 import TheIcon from '../components/TheIcon.vue'
 import SettingView from './SettingView.vue'
 import { useGoalStore } from '../stores/goalStore'
@@ -166,9 +169,8 @@ onMounted(() => {
 })
 
 async function onDeleteSession(id: string) {
-  if (confirm('删除该会话？此操作不可恢复。')) {
-    await chat.deleteSession(id).catch(() => {})
-  }
+  const ok = await confirmDialog('删除该会话？此操作不可恢复。', { danger: true, confirmText: '删除' })
+  if (ok) await chat.deleteSession(id).catch(() => {})
 }
 
 async function toggleFloatingBall() {
@@ -435,6 +437,10 @@ async function onPersonaChange(e: Event) {
         <SettingView />
       </div>
     </div>
+
+    <!-- 全局提示与确认框（替代 alert/confirm） -->
+    <AppToast />
+    <AppDialog />
   </div>
 </template>
 
