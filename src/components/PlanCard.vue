@@ -1,10 +1,14 @@
-<!-- 4️⃣ 先规划后执行：计划确认卡
+<!-- 四、先规划后执行：计划确认卡（AppCard 重画）
      后端拆出多步计划后推上来，这里先给主人看、可改/可删/可加，确认后才真正开跑。
      不操作的话倒计时结束自动按当前步骤继续（后端另有 120 秒兜底，两边都不会把任务卡死）。 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatStore } from '../stores/chatStore'
 import { agentPlanRespond } from '../utils/tauri'
+import AppCard from './ui/AppCard.vue'
+import AppButton from './ui/AppButton.vue'
+import AppInput from './ui/AppInput.vue'
+import TheIcon from './TheIcon.vue'
 
 const chat = useChatStore()
 // 编辑副本：不直接改 store 里的计划，取消时原计划仍完整
@@ -86,154 +90,109 @@ onUnmounted(stopTimer)
 </script>
 
 <template>
-  <div v-if="plan" class="plan-card" role="region" aria-label="执行计划确认">
-    <div class="plan-head">
-      <span class="plan-title">铃打算这么做</span>
-      <span class="plan-countdown">{{ remain }} 秒后自动开始</span>
-    </div>
-    <p class="plan-hint">步骤可以改、可以删、可以加；确认后铃就按这个执行。</p>
-    <div class="plan-steps">
-      <div v-for="(_step, index) in goals" :key="index" class="plan-step">
-        <span class="step-no">{{ index + 1 }}</span>
-        <input
+  <AppCard
+    v-if="plan"
+    class="plan"
+    role="region"
+    aria-label="执行计划确认"
+    title="铃打算这么做"
+    :hint="remain + ' 秒后自动开始'"
+  >
+    <p class="hint">步骤可以改、可以删、可以加；确认后铃就按这个执行。</p>
+
+    <div class="steps">
+      <div v-for="(_step, index) in goals" :key="index" class="step">
+        <span class="no">{{ index + 1 }}</span>
+        <AppInput
           v-model="goals[index]"
           class="step-input"
           :aria-label="'第 ' + (index + 1) + ' 步'"
           placeholder="这一步要做什么"
           :disabled="busy"
         />
-        <button class="step-del" title="删除这一步" :disabled="busy" @click="removeStep(index)">×</button>
+        <AppButton
+          variant="text"
+          size="sm"
+          class="del"
+          title="删除这一步"
+          aria-label="删除这一步"
+          :disabled="busy"
+          @click="removeStep(index)"
+        >
+          <TheIcon name="close" :size="12" />
+        </AppButton>
       </div>
     </div>
-    <button class="add-step" :disabled="busy" @click="addStep">＋ 加一步</button>
-    <p v-if="notice" class="plan-notice">{{ notice }}</p>
-    <div class="plan-actions">
-      <button class="btn-ghost" :disabled="busy" @click="settle(false)">取消任务</button>
-      <button class="btn-primary" :disabled="busy || !canConfirm" @click="settle(true)">按计划执行</button>
+
+    <AppButton variant="text" size="sm" class="add" :disabled="busy" @click="addStep">
+      <TheIcon name="add" :size="12" />
+      <span>加一步</span>
+    </AppButton>
+
+    <p v-if="notice" class="notice">{{ notice }}</p>
+
+    <div class="actions">
+      <AppButton variant="ghost" :disabled="busy" @click="settle(false)">取消任务</AppButton>
+      <AppButton variant="primary" :disabled="busy || !canConfirm" @click="settle(true)">按计划执行</AppButton>
     </div>
-  </div>
+  </AppCard>
 </template>
 
 <style scoped>
-.plan-card {
-  margin: 8px 16px 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
-  border-left: 3px solid var(--accent, #ff7a94);
-  border-radius: var(--radius-ui, 12px);
-  background: var(--bg-bar, rgba(34, 32, 36, 0.9));
-  color: var(--text-main, #eee6e7);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+.plan {
+  margin-top: var(--ui-sp-3);
 }
-.plan-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.hint {
+  margin: 0 0 var(--ui-sp-3);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
 }
-.plan-title {
-  font-size: var(--fs-14, 14px);
-  font-weight: 600;
-}
-.plan-countdown {
-  font-size: var(--fs-11, 11px);
-  color: var(--text-secondary, #9a9294);
-  white-space: nowrap;
-}
-.plan-hint {
-  margin: 6px 0 8px;
-  font-size: var(--fs-12, 12px);
-  color: var(--text-secondary, #9a9294);
-}
-.plan-steps {
+.steps {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ui-sp-2);
 }
-.plan-step {
+.step {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-sp-2);
+  min-width: 0;
 }
-.step-no {
+.no {
+  flex: none;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-11, 11px);
-  background: color-mix(in srgb, var(--accent, #ff7a94) 25%, transparent);
-  color: var(--text-main, #eee6e7);
+  display: grid;
+  place-items: center;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+  font-size: var(--ui-fs-11);
+  line-height: 1;
 }
-.step-input {
+/* AppInput 根元素带本组件作用域，直接吃掉剩余宽度 */
+.step .step-input {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
-  border-radius: calc(var(--radius-ui, 12px) - 6px);
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
-  background: var(--input-bg, #2a272b);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-13, 13px);
-  font-family: inherit;
-  outline: none;
 }
-.step-input:focus {
-  border-color: var(--accent, #ff7a94);
+.del,
+.add {
+  flex: none;
 }
-.step-del,
-.add-step {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary, #9a9294);
-  cursor: pointer;
-  font-size: var(--fs-13, 13px);
-  flex-shrink: 0;
+.add {
+  margin-top: var(--ui-sp-2);
 }
-.step-del:hover {
-  color: var(--danger, #ff6b6b);
+.notice {
+  margin: var(--ui-sp-2) 0 0;
+  font-size: var(--ui-fs-12);
+  color: var(--ui-warn);
+  line-height: var(--ui-line);
 }
-.add-step {
-  margin-top: 8px;
-  padding: 2px 0;
-}
-.add-step:hover {
-  color: var(--accent, #ff7a94);
-}
-.plan-notice {
-  margin: 8px 0 0;
-  font-size: var(--fs-12, 12px);
-  color: var(--text-secondary, #9a9294);
-}
-.plan-actions {
+.actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 10px;
-}
-.btn-ghost,
-.btn-primary {
-  padding: 6px 12px;
-  border-radius: calc(var(--radius-ui, 12px) - 6px);
-  font-size: var(--fs-12, 12px);
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn-ghost {
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
-  background: transparent;
-  color: var(--text-secondary, #9a9294);
-}
-.btn-primary {
-  border: none;
-  background: var(--accent, #ff7a94);
-  color: #fff;
-  font-weight: 600;
-}
-.btn-ghost:disabled,
-.btn-primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-3);
 }
 </style>

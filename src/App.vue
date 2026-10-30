@@ -36,6 +36,9 @@ const customStyle = computed<Record<string, string>>(() => {
   if (setting.uiRadius != null) s['--radius-ui'] = `${setting.uiRadius}px`
   if (setting.bubbleUserColor) s['--bubble-user-bg'] = setting.bubbleUserColor
   if (setting.bubbleSuzuColor) s['--bubble-suzu-bg'] = setting.bubbleSuzuColor
+  // 新聊天界面的气泡色：默认铃无底色、主人用 raised；用户设置过才覆盖（旧 --bubble-*-bg 留给悬浮球/气泡窗口）
+  if (setting.bubbleUserColor) s['--ui-bubble-user'] = setting.bubbleUserColor
+  if (setting.bubbleSuzuColor) s['--ui-bubble-suzu'] = setting.bubbleSuzuColor
   return s
 })
 

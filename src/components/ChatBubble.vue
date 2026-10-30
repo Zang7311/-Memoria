@@ -1,5 +1,5 @@
-<!-- 《铃·记忆体》对话气泡：用户（右/深色）/ 铃（左/浅渐变+猫爪）
-     任务 2：支持流式光标闪烁、中断提示、时间戳 -->
+<!-- 《铃·记忆体》对话消息：铃（头像 + 正文 + 时间，无气泡底）/ 主人（右对齐，raised 底 + 大圆角）
+     保留流式光标、生成中断提示、子任务折叠卡、附件行 -->
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Message } from '../types'
@@ -28,7 +28,7 @@ const time = computed(() => {
 const isUser = computed(() => props.message.role === 'user')
 // 铃的头像：用户自定义图片则显示，否则用内置猫娘头像
 const avatarImg = computed(() => (isImagePath(setting.avatarSuzu) ? assetUrl(setting.avatarSuzu!) : suzuAvatar))
-// 用户头像：图片路径则显示图片，否则 emoji/文字
+// 用户头像：图片路径则显示图片，否则文字占位
 const userAvatarImg = computed(() => (isImagePath(setting.avatarUser) ? assetUrl(setting.avatarUser!) : null))
 
 // 显示文本：聊天气泡不渲染 Markdown，裸的星号/井号很丑
@@ -60,132 +60,180 @@ const displayContent = computed(() => {
 </script>
 
 <template>
-  <div class="bubble-row" :class="isUser ? 'row-user' : 'row-suzu'">
-    <!-- 铃的头像（猫娘） -->
+  <div class="row" :class="isUser ? 'row-user' : 'row-suzu'">
+    <!-- 铃的头像 -->
     <div v-if="!isUser" class="avatar">
-      <img v-if="avatarImg" :src="avatarImg" class="avatar-img" />
-      <template v-else>{{ setting.avatarSuzu || '铃' }}</template>
+      <img v-if="avatarImg" :src="avatarImg" class="avatar-img" alt="铃" />
+      <span v-else class="avatar-text">{{ setting.avatarSuzu || '铃' }}</span>
     </div>
 
-    <div class="bubble" :class="isUser ? 'bubble-user' : 'bubble-suzu'">
+    <div class="msg" :class="isUser ? 'msg-user' : 'msg-suzu'">
       <span class="content">{{ displayContent }}</span>
-      <details v-for="result in chat.subAgentResults[message.id]" :key="result.sub_id" class="sub-agent-card">
+
+      <!-- 子任务折叠卡 -->
+      <details v-for="result in chat.subAgentResults[message.id]" :key="result.sub_id" class="sub-agent">
         <summary>{{ result.goal }} · {{ result.status }}</summary>
-        <div class="content sub-agent-summary">{{ result.summary || '正在处理子任务…' }}</div>
+        <p class="sub-agent-body">{{ result.summary || '正在处理子任务…' }}</p>
       </details>
-      <div v-for="(attachment, index) in message.attachments" :key="index" class="content">
+
+      <!-- 附件行 -->
+      <p v-for="(attachment, index) in message.attachments" :key="index" class="attach">
         [{{ attachment.kind === 'image' ? '图片' : '附件' }}: {{ attachment.name }}]
-      </div>
-      <!-- 流式光标：闪烁 -->
-      <span v-if="isStreaming" class="cursor">▍</span>
-      <!-- 中断提示 -->
-      <span v-if="isInterrupted" class="error-tip">（生成中断，请重试）</span>
-      <div class="time">{{ time }}</div>
+      </p>
+
+      <!-- 流式光标：2px 竖线闪烁 -->
+      <span v-if="isStreaming" class="cursor" aria-hidden="true" />
+
+      <!-- 生成中断提示 -->
+      <p v-if="isInterrupted" class="interrupt">生成中断，请重试</p>
+
+      <time class="time">{{ time }}</time>
+
       <!-- 离线增强方案入口：仅在离线模式最后一条铃消息下显示 -->
       <SearchModePanel v-if="!isUser && isLast && setting.modelMode === 'script'" />
     </div>
 
+    <!-- 主人头像 -->
     <div v-if="isUser" class="avatar avatar-user">
-      <img v-if="userAvatarImg" :src="userAvatarImg" class="avatar-img" />
-      <template v-else>{{ setting.avatarUser || '🧑' }}</template>
+      <img v-if="userAvatarImg" :src="userAvatarImg" class="avatar-img" alt="主人" />
+      <span v-else class="avatar-text">{{ setting.avatarUser || '我' }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sub-agent-card {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-color, #7775);
-  border-radius: 8px;
-  font-size: var(--fs-12);
-}
-.sub-agent-card summary {
-  cursor: pointer;
-  overflow-wrap: anywhere;
-}
-.sub-agent-summary {
-  margin-top: 8px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.bubble-row {
+.row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin: 12px 0;
+  gap: var(--ui-sp-2);
   width: 100%;
+  min-width: 0;
 }
 .row-user {
   justify-content: flex-end;
 }
-.row-suzu {
-  justify-content: flex-start;
-}
+
+/* 头像：26px 圆形 */
 .avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--bubble-suzu-bg, linear-gradient(135deg, #ffe4e1, #fff0f5));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-18);
-  flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  width: 26px;
+  height: 26px;
+  margin-top: var(--ui-sp-1);
+  flex: none;
+  display: grid;
+  place-items: center;
   overflow: hidden;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-hover);
 }
-.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-user {
-  background: var(--bubble-user-bg, #2d2d2d);
+  background: var(--ui-accent-soft);
 }
-.bubble {
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.avatar-text {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  line-height: 1;
+  user-select: none;
+}
+.avatar-user .avatar-text {
+  color: var(--ui-accent);
+}
+
+/* 消息主体：铃默认无底色（--ui-bubble-suzu 是 transparent），客人自己设了气泡色才显色 */
+.msg {
   max-width: 72%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  font-size: var(--fs-14);
-  line-height: 1.6;
-  position: relative;
-  word-break: break-word;
-  white-space: pre-wrap;
+  min-width: 0;
+  font-size: var(--ui-fs-14);
+  line-height: var(--ui-line);
+  color: var(--ui-text);
+  padding-top: var(--ui-sp-1);
 }
-.bubble-user {
-  background: var(--bubble-user-bg, #2d2d2d);
-  color: var(--text-user, #fff);
-  border-bottom-right-radius: 4px;
+.msg-suzu {
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  background: var(--ui-bubble-suzu);
+  border-radius: var(--ui-r-lg);
 }
-.bubble-suzu {
-  background: var(--bubble-suzu-bg, linear-gradient(135deg, #ffe4e1, #fff0f5));
-  color: var(--text-suzu, #5b3a63);
-  border-bottom-left-radius: 4px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+.msg-user {
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  background: var(--ui-bubble-user);
+  border-radius: var(--ui-r-lg);
 }
+
+/* 正文：允许换行 */
 .content {
+  display: inline;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
-/* 闪烁光标 */
+
+/* 子任务折叠卡 */
+.sub-agent {
+  margin-top: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+}
+.sub-agent summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.sub-agent-body {
+  margin: var(--ui-sp-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: var(--ui-line);
+}
+
+/* 附件行 */
+.attach {
+  margin: var(--ui-sp-1) 0 0;
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
+  overflow-wrap: anywhere;
+  line-height: var(--ui-line);
+}
+
+/* 流式光标：2px 竖线闪烁 */
 .cursor {
   display: inline-block;
-  margin-left: 2px;
-  color: inherit;
-  animation: blink 0.9s steps(2, start) infinite;
+  width: 2px;
+  height: 1em;
+  margin-left: var(--ui-sp-1);
+  vertical-align: text-bottom;
+  background: var(--ui-accent);
+  animation: cursor-blink 1s steps(2, start) infinite;
 }
-@keyframes blink {
+@keyframes cursor-blink {
   to {
-    visibility: hidden;
+    opacity: 0;
   }
 }
-.error-tip {
-  display: block;
-  margin-top: 4px;
-  font-size: var(--fs-12);
-  color: var(--danger, #d9534f);
-  opacity: 0.85;
+
+/* 生成中断 */
+.interrupt {
+  margin: var(--ui-sp-1) 0 0;
+  font-size: var(--ui-fs-12);
+  color: var(--ui-err);
+  line-height: var(--ui-line);
 }
+
+/* 时间 */
 .time {
-  margin-top: 6px;
-  font-size: var(--fs-11);
+  display: block;
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: 1;
+}
+.msg-user .time {
   text-align: right;
-  opacity: 0.55;
 }
 </style>

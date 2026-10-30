@@ -84,6 +84,10 @@
   /* 语义上必须是「纯白」的地方（像素画布、开关滑块），集中在这里声明 */
   --ui-canvas: #ffffff;
 
+  /* 聊天气泡：铃默认无底色，主人在 raised 底上；用户在设置里自定义颜色时由 App.vue 覆盖 */
+  --ui-bubble-suzu: transparent;
+  --ui-bubble-user: var(--input-bg, #2a272b);
+
   /* 阴影 */
   --ui-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   --ui-shadow-drawer: -8px 0 24px rgba(0, 0, 0, 0.16);
