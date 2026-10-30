@@ -28,7 +28,7 @@ async function loadInfo() {
     const res = await getSystemInfo()
     info.value = res.info
   } catch (e) {
-    logMsg.value = `✗ 系统信息获取失败：${e}`
+    logMsg.value = `系统信息获取失败：${e}`
   } finally {
     loadingInfo.value = false
   }
@@ -40,23 +40,23 @@ async function loadLogs() {
     logs.value = res.logs
     total.value = res.total
   } catch (e) {
-    logMsg.value = `✗ 日志获取失败：${e}`
+    logMsg.value = `日志获取失败：${e}`
   }
 }
 
 async function doExport() {
   try {
     const res = await exportDiagnostic({ include_logs: true, include_config: true, include_system_info: true })
-    logMsg.value = res.success ? `✓ 诊断包已导出：${res.file_path}` : `✗ 导出失败：${res.error}`
+    logMsg.value = res.success ? `诊断包已导出：${res.file_path}` : `导出失败：${res.error}`
   } catch (e) {
-    logMsg.value = `✗ 导出失败：${e}`
+    logMsg.value = `导出失败：${e}`
   }
 }
 
 async function doClear() {
   await clearLogs()
   await loadLogs()
-  logMsg.value = '✓ 日志已清空'
+  logMsg.value = '日志已清空'
 }
 
 onMounted(() => {
@@ -69,7 +69,7 @@ onMounted(() => {
   <div class="diag">
     <!-- 系统信息 -->
     <div class="card">
-      <div class="card-title">🖥️ 系统信息</div>
+      <div class="card-title">系统信息</div>
       <div v-if="loadingInfo" class="hint">加载中…</div>
       <table v-else-if="info" class="info-table">
         <tr><td>应用版本</td><td>{{ info.app_version }}</td></tr>
@@ -85,7 +85,7 @@ onMounted(() => {
 
     <!-- 日志查看器 -->
     <div class="card">
-      <div class="card-title">📋 日志查看器（共 {{ total }} 条）</div>
+      <div class="card-title">日志查看器（共 {{ total }} 条）</div>
       <div class="log-toolbar">
         <select v-model="levelFilter" class="input" @change="loadLogs">
           <option :value="undefined">全部级别</option>
@@ -107,7 +107,7 @@ onMounted(() => {
 
     <!-- 导出诊断包 -->
     <div class="card">
-      <div class="card-title">📦 一键导出诊断包</div>
+      <div class="card-title">一键导出诊断包</div>
       <p class="hint">打包（脱敏配置 + 全部日志 + 系统信息）为 zip，保存到数据目录下 diagnostics/</p>
       <button class="btn primary" @click="doExport">导出诊断包</button>
       <div v-if="logMsg" class="msg">{{ logMsg }}</div>
@@ -116,32 +116,51 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.diag { display: flex; flex-direction: column; gap: 14px; }
+.diag { display: flex; flex-direction: column; gap: var(--ui-sp-3); }
 .card {
-  background: var(--bg-bar, rgba(34, 32, 36, 0.85));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 14px; padding: 16px;
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-sp-3);
 }
-.card-title { font-weight: 600; font-size: var(--fs-14); margin-bottom: 10px; }
-.hint { font-size: var(--fs-12); color: var(--text-secondary); margin: 0 0 10px; }
-.info-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
-.info-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
-.info-table td:first-child { color: var(--text-secondary); width: 120px; white-space: nowrap; }
-.log-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.card-title { font-weight: 600; font-size: var(--ui-fs-14); margin-bottom: var(--ui-sp-2); color: var(--ui-text); }
+.hint { font-size: var(--ui-fs-12); color: var(--ui-text-2); margin: 0 0 var(--ui-sp-2); line-height: var(--ui-line); }
+.info-table { width: 100%; border-collapse: collapse; font-size: var(--ui-fs-13); color: var(--ui-text); }
+.info-table td { padding: var(--ui-sp-1) var(--ui-sp-2); border-bottom: 1px solid var(--ui-border); }
+.info-table td:first-child { color: var(--ui-text-2); width: 120px; white-space: nowrap; }
+.log-toolbar { display: flex; gap: var(--ui-sp-2); margin-bottom: var(--ui-sp-2); flex-wrap: wrap; }
 .input {
-  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--input-bg); color: var(--text-main); font-size: var(--fs-12);
+  padding: var(--ui-sp-1) var(--ui-sp-2);
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
 }
 .log-list {
-  max-height: 260px; overflow-y: auto; background: rgba(0, 0, 0, 0.25);
-  border-radius: 8px; padding: 8px; font-family: Consolas, monospace; font-size: var(--fs-11);
+  max-height: 260px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--ui-bg) 55%, transparent);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  padding: var(--ui-sp-2);
+  font-family: Consolas, monospace;
+  font-size: var(--ui-fs-11);
 }
-.log-line { padding: 2px 4px; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
-.log-line.err { color: var(--danger); }
-.log-line.warn { color: var(--warning); }
-.log-line.info { color: var(--info); }
-.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: var(--fs-12); }
-.btn.primary { background: var(--accent, #ff7a94); color: var(--text-user); }
-.btn.ghost { background: rgba(128, 128, 128, 0.18); color: var(--text-main); }
-.msg { font-size: var(--fs-12); margin-top: 8px; color: var(--accent); word-break: break-all; }
+.log-line { padding: 2px var(--ui-sp-1); white-space: pre-wrap; word-break: break-all; color: var(--ui-text-2); }
+.log-line.err { color: var(--ui-err); }
+.log-line.warn { color: var(--ui-warn); }
+.log-line.info { color: var(--ui-accent); }
+.btn {
+  padding: var(--ui-sp-1) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border);
+  cursor: pointer;
+  font-size: var(--ui-fs-12);
+  background: transparent;
+  color: var(--ui-text);
+}
+.btn.primary { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
+.btn.ghost { background: var(--ui-hover); color: var(--ui-text); }
+.msg { font-size: var(--ui-fs-12); margin-top: var(--ui-sp-2); color: var(--ui-accent); word-break: break-all; }
 </style>

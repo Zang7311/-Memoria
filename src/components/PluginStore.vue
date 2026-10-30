@@ -4,6 +4,7 @@
 import { ref } from 'vue'
 import { usePluginStore } from '../stores/pluginStore'
 import { openUrl } from '../utils/tauri'
+import { toastErr } from '../utils/toast'
 
 const store = usePluginStore()
 const installing = ref<string>('')
@@ -53,7 +54,7 @@ async function onInstall(item: (typeof marketItems)[number]) {
 
 // 打开外部链接（跳转 Hermes 官方技能目录）
 function openExternal(url: string) {
-  openUrl(url).catch((e) => alert(`打开链接失败：${e}`))
+  openUrl(url).catch((e) => toastErr(`打开链接失败：${e}`))
 }
 </script>
 

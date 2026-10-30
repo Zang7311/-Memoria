@@ -14,6 +14,7 @@ import { useMilestoneStore } from '../stores/milestoneStore'
 import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute, onSubAgentStarted, onSubAgentFinished, onAgentPlanRequest } from '../utils/tauri'
 import type { AgentPlanRequest, Attachment, ChatRouteInfo, ChatUsage, QuickCommand, SubAgentEvent } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
+import { confirmDialog } from '../utils/dialog'
 
 // 是否使用 mock 事件（默认关闭，走真实后端；仅当显式设置 VITE_USE_MOCK=1 时开启，用于无后端演示）
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1'
@@ -202,7 +203,10 @@ export function useStreamRender() {
     if (intent) {
       // AI 危险操作确认：不可逆/系统级操作需用户确认后才能执行
       if (DANGEROUS_TOOLS.has(intent.id)) {
-        const ok = confirm(`⚠️ 即将执行「${intent.id}」，此操作可能影响系统或无法恢复，是否继续？`)
+        const ok = await confirmDialog(`即将执行「${intent.id}」，此操作可能影响系统或无法恢复，是否继续？`, {
+          danger: true,
+          confirmText: '继续执行',
+        })
         if (!ok) {
           handleChunk(`已取消执行「${intent.id}」`)
           handleEnd()
@@ -227,7 +231,10 @@ export function useStreamRender() {
     if (matchedQc) {
       const dangerous = matchedQc.steps.filter((s) => DANGEROUS_QC_TOOLS.has(s.tool)).map((s) => s.tool)
       if (dangerous.length > 0) {
-        const ok = confirm(`「${matchedQc.name}」包含危险操作（${dangerous.join('、')}），可能影响系统或无法恢复，是否继续？`)
+        const ok = await confirmDialog(
+          `「${matchedQc.name}」包含危险操作（${dangerous.join('、')}），可能影响系统或无法恢复，是否继续？`,
+          { danger: true, confirmText: '继续执行' },
+        )
         if (!ok) {
           handleChunk(`已取消执行「${matchedQc.name}」`)
           handleEnd()
@@ -273,7 +280,7 @@ export function useStreamRender() {
   // mock 流式：拆分为 2~5 字片段，用定时器驱动（仅测试用途）
   function runMock(content: string) {
     return new Promise<void>((resolve) => {
-      const reply = `收到啦主人～关于「${content || '这件事'}」，铃已经在为你记忆并记录在本子里啦。😊`
+      const reply = `收到啦主人～关于「${content || '这件事'}」，铃已经在为你记忆并记录在本子里啦。`
       const pieces: string[] = []
       let i = 0
       while (i < reply.length) {

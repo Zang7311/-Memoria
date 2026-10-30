@@ -67,7 +67,7 @@ withDefaults(
 /* 主操作：粉底，一屏最多一个 */
 .is-primary {
   background: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-on-accent);
 }
 .is-primary:hover:not(:disabled) {
   filter: brightness(1.06);

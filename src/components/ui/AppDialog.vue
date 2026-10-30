@@ -78,7 +78,7 @@ import { dialogState, resolveDialog } from '../../utils/dialog'
 .btn.primary {
   border-color: var(--ui-accent);
   background: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-on-accent);
 }
 .btn.primary.danger {
   border-color: var(--ui-err);

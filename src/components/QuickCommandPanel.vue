@@ -5,6 +5,8 @@ import { computed, onMounted, ref } from 'vue'
 import type { QuickCommand, QuickCommandStep } from '../types'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useDesktopStore } from '../stores/desktopStore'
+import { confirmDialog } from '../utils/dialog'
+import { toastErr } from '../utils/toast'
 
 const store = useQuickCommandStore()
 const desktop = useDesktopStore()
@@ -166,7 +168,7 @@ function onStepDrop(idx: number) {
 
 async function saveCmd() {
   if (!name.value.trim()) {
-    alert('请先填写指令名称')
+    toastErr('请先填写指令名称')
     return
   }
   // 模块模式下，先从模块列表同步步骤文本（保存统一走 steps）
@@ -175,7 +177,7 @@ async function saveCmd() {
   }
   const steps = parseSteps(stepsText.value)
   if (steps.length === 0) {
-    alert('请至少填写一个步骤（每行一个动作）')
+    toastErr('请至少填写一个步骤（每行一个动作）')
     return
   }
   const cmd: QuickCommand = {
@@ -189,7 +191,7 @@ async function saveCmd() {
 }
 
 async function delCmd(id: string) {
-  if (!confirm('确定删除这条快捷指令吗？')) return
+  if (!(await confirmDialog('确定删除这条快捷指令吗？', { danger: true, confirmText: '删除' }))) return
   await store.remove(id)
 }
 
@@ -197,7 +199,10 @@ async function runCmd(cmd: QuickCommand) {
   // 危险操作确认
   const dangerous = cmd.steps.filter((s) => DANGEROUS_TOOLS.has(s.tool)).map((s) => s.tool)
   if (dangerous.length > 0) {
-    const ok = confirm(`该指令包含危险操作（${dangerous.join('、')}），可能影响系统或无法恢复，是否继续？`)
+    const ok = await confirmDialog(
+      `该指令包含危险操作（${dangerous.join('、')}），可能影响系统或无法恢复，是否继续？`,
+      { danger: true, confirmText: '继续执行' },
+    )
     if (!ok) return
   }
   running.value = true

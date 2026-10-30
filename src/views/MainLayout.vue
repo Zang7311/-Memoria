@@ -12,8 +12,6 @@ import ToolboxPanel from '../components/ToolboxPanel.vue'
 import GoalsPanel from '../components/GoalsPanel.vue'
 import AuditPanel from '../components/AuditPanel.vue'
 import AppStatusDot from '../components/ui/AppStatusDot.vue'
-import AppToast from '../components/ui/AppToast.vue'
-import AppDialog from '../components/ui/AppDialog.vue'
 import { confirmDialog } from '../utils/dialog'
 import TheIcon from '../components/TheIcon.vue'
 import SettingView from './SettingView.vue'
@@ -437,10 +435,6 @@ async function onPersonaChange(e: Event) {
         <SettingView />
       </div>
     </div>
-
-    <!-- 全局提示与确认框（替代 alert/confirm） -->
-    <AppToast />
-    <AppDialog />
   </div>
 </template>
 
@@ -495,7 +489,7 @@ async function onPersonaChange(e: Event) {
   padding: 0 3px;
   border-radius: var(--ui-r-pill);
   background: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-on-accent);
   font-size: var(--ui-fs-11);
   line-height: 14px;
   text-align: center;
@@ -996,7 +990,7 @@ async function onPersonaChange(e: Event) {
 }
 .ov-card-x:hover {
   background: var(--ui-err);
-  color: #fff;
+  color: var(--ui-on-accent);
 }
 .ov-card-body {
   flex: 1;

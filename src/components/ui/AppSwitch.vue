@@ -95,7 +95,7 @@ function toggle() {
   width: 14px;
   height: 14px;
   border-radius: var(--ui-r-pill);
-  background: #fff;
+  background: var(--ui-canvas);
   transition: transform var(--ui-dur-1) var(--ui-ease);
 }
 .track.on .knob {

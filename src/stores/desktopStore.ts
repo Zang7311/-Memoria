@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { ScreenMonitorRule, ToolboxItem } from '../types'
+import { confirmDialog } from '../utils/dialog'
 import {
   deleteMonitorRule,
   deleteToolboxItem,
@@ -55,11 +56,13 @@ export const useDesktopStore = defineStore('desktop', () => {
   /** 执行工具箱命令，返回执行结果（null 表示失败）
    *  危险自定义命令（后端返回 needs_confirm）会弹确认框，确认后带 confirm=true 重试 */
   async function executeToolboxItem(id: string, input?: string): Promise<{ output?: string; error?: string } | null> {
-    const DANGER_CONFIRM_TEXT = '⚠️ 该自定义命令包含危险操作（可能影响系统或无法恢复），确定要继续执行吗？'
+    const DANGER_CONFIRM_TEXT = '该自定义命令包含危险操作（可能影响系统或无法恢复），确定要继续执行吗？'
     try {
       let res = await executeToolbox(id, input)
       if (!res.success && String(res.error || '').includes('needs_confirm')) {
-        if (!confirm(DANGER_CONFIRM_TEXT)) return { error: '已取消执行（危险操作未确认）' }
+        if (!(await confirmDialog(DANGER_CONFIRM_TEXT, { danger: true, confirmText: '继续执行' }))) {
+          return { error: '已取消执行（危险操作未确认）' }
+        }
         res = await executeToolbox(id, input, true)
       }
       if (!res.success) {
@@ -69,7 +72,9 @@ export const useDesktopStore = defineStore('desktop', () => {
     } catch (e) {
       const msg = String(e)
       if (msg.includes('needs_confirm')) {
-        if (!confirm(DANGER_CONFIRM_TEXT)) return { error: '已取消执行（危险操作未确认）' }
+        if (!(await confirmDialog(DANGER_CONFIRM_TEXT, { danger: true, confirmText: '继续执行' }))) {
+          return { error: '已取消执行（危险操作未确认）' }
+        }
         try {
           const res2 = await executeToolbox(id, input, true)
           return res2.success ? { output: res2.output } : { error: res2.error || '命令执行失败' }
