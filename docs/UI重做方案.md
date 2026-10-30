@@ -152,15 +152,17 @@ C 的中栏能到 840 以上，聊天读起来最舒服。会话列表放进抽�
 | 提示与弹窗 | 完成 | `AppToast` + `AppDialog` 挂在 App 根节点，全窗口共用；`useStreamRender` / `desktopStore` / 快捷指令 / 插件市场的 `alert`/`confirm` 全部替换 |
 | 聊天区 | 完成 | 铃无底色消息流（自定义气泡色用 `--ui-bubble-suzu` 承接，默认透明）、主人 raised 底气泡、composer 圆角容器、流式光标换 CSS 竖线 |
 | 工具箱 / 目标 / 执行记录 | 完成 | 去掉固定定位与自带标题栏，操作条 + 自适应网格/三列筛选，表情图标换成语义图标 |
-| 记忆 / 插件面板 | 进行中 | 同一套改法（子代理处理中） |
-| 设置页拆分 | 进行中 | 79 KB 单文件拆成分页组件（子代理处理中） |
-| 规范门禁 | 完成 | `scripts/ui-audit.test.mjs`：六条可 grep 的硬指标；新文件严格断言，旧文件记入待迁移清单并打印，迁移完从清单删除 |
+| 记忆 / 插件面板 | 进行中 | 同一套改法（子代理处理中，面板本体已改成流内布局） |
+| 设置页拆分 | 完成 | `SettingView.vue` 1688 行 / 79.6 KB → 190 行 / 5.7 KB（外框），新增 `components/settings/` 八个分页 + `shared.ts`；左侧图标导航，通知与确认走 toast / confirmDialog，导入路径不再用原生 prompt；顺手修掉接入向导第三步永远不亮的判断错误 |
+| 规范门禁 | 完成 | `scripts/ui-audit.test.mjs`：六条可 grep 的硬指标；新文件严格断言，旧文件记入待迁移清单并打印。第 5 条只允许弹窗遮罩用固定定位 |
+
+本轮顺手清掉的历史包袱：`SearchModePanel` / `StatusIndicator` / `TheIcon` / `VBILSettings` 的旧颜色回退值全部换成令牌；`settingStore` 里的主题预设默认色收进 `styles/theme-defaults.ts`（作为数据默认值单独豁免）；工具箱/执行记录/目标面板的原生 `alert`/`confirm` 换成统一组件，连「格式化硬盘」的双确认也走 `confirmDialog`。
 
 ### 未完成（下一批次）
 
-1. **记忆 / 插件面板**：等子代理交付后集成，确认 `:deep()` 过渡写法可以删除。
-2. **设置页**：拆分完成后统一令牌化，并把人格选择器从顶栏移进「形象」页。
-3. **待迁移清单**：`MonitorSettings` / `SyncPanel` / `QuickCommandPanel` / `PluginStore` / `RegexTester` 五个旧文件还留着旧配色与表情图标，属于下一批。
-4. **救援模式与引导页**：`RecoveryView` / `OnboardingView` 仍是旧样式（已列入结构性例外）。
+1. **记忆 / 插件面板**：等子代理交付后集成并清掉残留 `alert`/`confirm`，然后删除 `MainLayout` 里 `:deep()` 过渡写法。
+2. **待迁移清单**：`MonitorSettings` / `SyncPanel` / `QuickCommandPanel` / `PluginStore` / `RegexTester` 五个旧文件还留着旧配色与表情图标，属于下一批。
+3. **救援模式与引导页**：`RecoveryView` / `OnboardingView` 仍是旧样式（已列入结构性例外）。
+4. **人格选择器**：仍在顶栏右侧，计划移进设置页「形象」。
 5. **「铃的气泡只有时间」**：旧会话数据 `content` 为空导致，不是渲染 bug，无需改代码。
 
