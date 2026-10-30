@@ -30,17 +30,57 @@ const sync = useSyncStore()
 const chat = useChatStore()
 const goals = useGoalStore()
 
-/** 右侧抽屉当前页；空字符串 = 收起（一次只开一页，点同一个图标收起）
-    工具箱/目标/执行记录暂时还是浮层：它们自带 position:fixed，塞进抽屉会被撑满整窗，
-    等「各面板」批次统一改成本体内嵌后再收进来 */
-const dock = ref<'' | 'memory' | 'plugins'>('')
-const showGoals = ref(false)
-const showAudit = ref(false)
-const showToolbox = ref(false)
+/** 抽屉里的面板做成「标签页」：可以同时开多个，一次只显示一个。
+    交互参考三处：Windows 11 标签条（可关、可滚）、Edge 手机版标签总览、
+    iOS 清后台的卡片层（点卡片切换、卡片上 × 关闭）。 */
+type PanelKey = 'memory' | 'goals' | 'toolbox' | 'plugins' | 'audit'
+
+const PANELS: Record<PanelKey, { title: string; icon: string; width: number; desc: string }> = {
+  memory: { title: '记忆', icon: 'memory', width: 360, desc: '长期记忆、分类与搜索' },
+  goals: { title: '目标', icon: 'command', width: 460, desc: '铃自己推进的长期目标' },
+  toolbox: { title: '工具箱', icon: 'toolbox', width: 380, desc: '常用小工具与自定义指令' },
+  plugins: { title: '插件', icon: 'plugin', width: 400, desc: '插件的安装与管理' },
+  audit: { title: '执行记录', icon: 'diagnostic', width: 560, desc: '铃动过手的地方与结果' },
+}
+
+/** 已打开的标签（顺序＝标签条顺序） */
+const openTabs = ref<PanelKey[]>([])
+/** 当前显示哪一页；null = 抽屉收起 */
+const activeTab = ref<PanelKey | null>(null)
+/** 卡片总览（Edge 手机版 / iOS 清后台那一层） */
+const showOverview = ref(false)
+/** 标签条上的「+」菜单 */
+const showAddMenu = ref(false)
 const showSettings = ref(false)
 
-function openDock(view: 'memory' | 'plugins') {
-  dock.value = dock.value === view ? '' : view
+const activePanel = computed(() => (activeTab.value ? PANELS[activeTab.value] : null))
+const availablePanels = computed(() => (Object.keys(PANELS) as PanelKey[]).filter((k) => !openTabs.value.includes(k)))
+
+/** 左栏图标：没开就打开并激活，已激活再点一次就把抽屉收起来（标签不丢） */
+function openPanel(key: PanelKey) {
+  if (!openTabs.value.includes(key)) openTabs.value.push(key)
+  activeTab.value = activeTab.value === key ? null : key
+  showAddMenu.value = false
+  showOverview.value = false
+}
+
+function activateTab(key: PanelKey) {
+  activeTab.value = key
+  showOverview.value = false
+}
+
+/** 关掉一个标签：关的是当前页就退到相邻的一个，没有相邻就收起抽屉 */
+function closeTab(key: PanelKey) {
+  const index = openTabs.value.indexOf(key)
+  openTabs.value = openTabs.value.filter((k) => k !== key)
+  if (activeTab.value === key) {
+    activeTab.value = openTabs.value[index] ?? openTabs.value[index - 1] ?? null
+  }
+}
+
+function toggleOverview() {
+  if (!openTabs.value.length) return
+  showOverview.value = !showOverview.value
 }
 
 const theme = computed(() => setting.theme || 'dark')
@@ -151,42 +191,42 @@ async function onPersonaChange(e: Event) {
     <nav class="rail" aria-label="主导航">
       <button
         class="rbtn"
-        :class="{ on: dock === 'memory' }"
+        :class="{ on: activeTab === 'memory' }"
         title="记忆"
-        @click="openDock('memory')"
+        @click="openPanel('memory')"
       >
         <TheIcon name="memory" :size="18" />
       </button>
       <button
         class="rbtn"
-        :class="{ on: showGoals }"
+        :class="{ on: activeTab === 'goals' }"
         title="目标"
-        @click="showGoals = !showGoals"
+        @click="openPanel('goals')"
       >
         <TheIcon name="command" :size="18" />
         <span v-if="goals.attentionCount" class="rnum">{{ goals.attentionCount }}</span>
       </button>
       <button
         class="rbtn"
-        :class="{ on: showToolbox }"
+        :class="{ on: activeTab === 'toolbox' }"
         title="工具箱"
-        @click="showToolbox = !showToolbox"
+        @click="openPanel('toolbox')"
       >
         <TheIcon name="toolbox" :size="18" />
       </button>
       <button
         class="rbtn"
-        :class="{ on: dock === 'plugins' }"
+        :class="{ on: activeTab === 'plugins' }"
         title="插件"
-        @click="openDock('plugins')"
+        @click="openPanel('plugins')"
       >
         <TheIcon name="plugin" :size="18" />
       </button>
       <button
         class="rbtn"
-        :class="{ on: showAudit }"
+        :class="{ on: activeTab === 'audit' }"
         title="执行记录"
-        @click="showAudit = !showAudit"
+        @click="openPanel('audit')"
       >
         <TheIcon name="diagnostic" :size="18" />
       </button>
@@ -294,24 +334,97 @@ async function onPersonaChange(e: Event) {
       </div>
     </main>
 
-    <!-- ==================== 右侧抽屉 ==================== -->
-    <aside v-if="dock" class="dock">
-      <MemoryPanel v-if="dock === 'memory'" @close="dock = ''" />
-      <PluginManager v-else-if="dock === 'plugins'" @close="dock = ''" />
+    <!-- ==================== 右侧抽屉（标签页） ==================== -->
+    <aside v-if="activePanel" class="dock" :style="{ width: activePanel.width + 'px' }">
+      <!-- Windows 11 风格标签条：可横向滚动、可关闭，右侧「+」和「总览」 -->
+      <div class="tabs-bar">
+        <div class="tabs-scroll">
+          <button
+            v-for="key in openTabs"
+            :key="key"
+            class="tab"
+            :class="{ on: key === activeTab }"
+            :title="PANELS[key].title"
+            @click="activateTab(key)"
+          >
+            <span class="tab-title">{{ PANELS[key].title }}</span>
+            <span class="tab-close" title="关闭" @click.stop="closeTab(key)">
+              <TheIcon name="close" :size="10" />
+            </span>
+          </button>
+        </div>
+        <div class="tabs-actions">
+          <button class="tab-act" title="打开面板" @click.stop="showAddMenu = !showAddMenu">＋</button>
+          <button class="tab-act" title="所有面板" @click="toggleOverview">总览</button>
+        </div>
+
+        <!-- 「+」菜单：只列还没打开的面板 -->
+        <div v-if="showAddMenu" class="add-menu">
+          <button
+            v-for="key in availablePanels"
+            :key="key"
+            class="add-item"
+            @click="openPanel(key)"
+          >
+            <TheIcon :name="PANELS[key].icon" :size="14" />
+            <span>{{ PANELS[key].title }}</span>
+          </button>
+          <p v-if="!availablePanels.length" class="add-empty">都开着了</p>
+        </div>
+      </div>
+
+      <!-- 面板本体：v-show 切页，切换不丢各自的滚动位置和状态 -->
+      <div class="dock-body">
+        <div v-if="openTabs.includes('memory')" v-show="activeTab === 'memory'" class="pane">
+          <MemoryPanel @close="closeTab('memory')" />
+        </div>
+        <div v-if="openTabs.includes('goals')" v-show="activeTab === 'goals'" class="pane">
+          <GoalsPanel @close="closeTab('goals')" />
+        </div>
+        <div v-if="openTabs.includes('toolbox')" v-show="activeTab === 'toolbox'" class="pane">
+          <ToolboxPanel @close="closeTab('toolbox')" />
+        </div>
+        <div v-if="openTabs.includes('plugins')" v-show="activeTab === 'plugins'" class="pane">
+          <PluginManager @close="closeTab('plugins')" />
+        </div>
+        <div v-if="openTabs.includes('audit')" v-show="activeTab === 'audit'" class="pane">
+          <AuditPanel @close="closeTab('audit')" />
+        </div>
+      </div>
     </aside>
 
-    <!-- 工具箱 / 目标 / 执行记录：自带 position:fixed，暂时仍走浮层 -->
-    <ToolboxPanel v-if="showToolbox" @close="showToolbox = false" />
-    <GoalsPanel v-if="showGoals" @close="showGoals = false" />
-    <AuditPanel v-if="showAudit" @close="showAudit = false" />
-
-    <!-- 桌面文件拖进窗口时的提示层 -->
-    <div v-if="dropActive" class="drop-layer">
-      <div class="drop-card">
-        <span class="drop-title">松开就加进附件</span>
-        <span class="drop-hint">图片 5MB 内 / 文本 1MB 内，一次最多 5 个</span>
+    <!-- ==================== 卡片总览（Edge 手机版标签页 / iOS 清后台） ==================== -->
+    <Transition name="fade">
+      <div v-if="showOverview" class="overview" @click.self="showOverview = false">
+        <div class="ov-head">
+          <span class="ov-title">已打开 {{ openTabs.length }} 个面板</span>
+          <button class="ov-done" @click="showOverview = false">完成</button>
+        </div>
+        <TransitionGroup name="card" tag="div" class="ov-grid">
+          <div
+            v-for="key in openTabs"
+            :key="key"
+            class="ov-card"
+            :class="{ on: key === activeTab }"
+            @click="activateTab(key)"
+          >
+            <div class="ov-card-head">
+              <TheIcon :name="PANELS[key].icon" :size="16" />
+              <span class="ov-card-title">{{ PANELS[key].title }}</span>
+              <button class="ov-card-x" title="关闭" @click.stop="closeTab(key)">
+                <TheIcon name="close" :size="10" />
+              </button>
+            </div>
+            <div class="ov-card-body">
+              <span class="ov-card-desc">{{ PANELS[key].desc }}</span>
+            </div>
+          </div>
+        </TransitionGroup>
       </div>
-    </div>
+    </Transition>
+
+    <!-- 桌面文件拖进窗口时：只画一圈虚线框，不弹说明 -->
+    <div v-if="dropActive" class="drop-layer" />
 
     <!-- 设置页 -->
     <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
@@ -585,17 +698,19 @@ async function onPersonaChange(e: Event) {
   margin-right: auto;
 }
 
-/* ---------- 右侧抽屉 ---------- */
+/* ---------- 右侧抽屉（标签页容器） ---------- */
 .dock {
-  width: var(--ui-dock-w);
   flex: none;
-  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--ui-panel);
   border-left: 1px solid var(--ui-border);
   box-shadow: var(--ui-shadow-drawer);
   animation: dock-in var(--ui-dur-2) var(--ui-ease);
+  transition: width var(--ui-dur-2) var(--ui-ease);
 }
 @keyframes dock-in {
   from {
@@ -607,46 +722,319 @@ async function onPersonaChange(e: Event) {
     opacity: 1;
   }
 }
-/* 过渡期：现有面板自带固定宽度和标题栏，先让它们撑满抽屉，等「各面板」批次统一重做
-   注意：只对「非 position:fixed」的面板这样写，否则固定定位元素会被撑成整屏 */
-.dock :deep(.memory-panel),
-.dock :deep(.plugin-panel) {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: transparent;
-}
 
-/* ---------- 拖放提示层 ---------- */
-.drop-layer {
-  position: fixed;
-  inset: var(--ui-sp-3);
-  z-index: 600;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  border: 2px dashed var(--ui-accent-line);
-  border-radius: var(--ui-r-lg);
-  background: color-mix(in srgb, var(--ui-bg) 72%, transparent);
-}
-.drop-card {
+/* 标签条：Windows 11 那种紧凑页签，激活项有底色和底部主色线 */
+.tabs-bar {
+  position: relative;
+  flex: none;
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: var(--ui-sp-1);
-  padding: var(--ui-sp-4) var(--ui-sp-5);
-  border-radius: var(--ui-r-md);
+  height: 40px;
+  padding: 0 var(--ui-sp-2);
+  border-bottom: 1px solid var(--ui-border);
+}
+.tabs-scroll {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  height: 28px;
+  padding: 0 var(--ui-sp-2);
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-12);
+  white-space: nowrap;
+  transition: background var(--ui-dur-1) var(--ui-ease), color var(--ui-dur-1) var(--ui-ease);
+}
+.tab:hover {
+  background: var(--ui-hover);
+  color: var(--ui-text);
+}
+.tab.on {
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
+}
+.tab-title {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--ui-r-sm);
+  color: var(--ui-text-3);
+  opacity: 0;
+  transition: opacity var(--ui-dur-1) var(--ui-ease);
+}
+.tab:hover .tab-close,
+.tab.on .tab-close {
+  opacity: 1;
+}
+.tab-close:hover {
+  background: var(--ui-active);
+  color: var(--ui-text);
+}
+.tabs-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.tab-act {
+  height: 26px;
+  padding: 0 var(--ui-sp-2);
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-12);
+}
+.tab-act:hover {
+  background: var(--ui-hover);
+  color: var(--ui-text);
+}
+
+/* 「+」菜单 */
+.add-menu {
+  position: absolute;
+  top: 38px;
+  right: var(--ui-sp-2);
+  z-index: 20;
+  min-width: 148px;
+  padding: var(--ui-sp-1);
   background: var(--ui-raised);
   border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-md);
   box-shadow: var(--ui-shadow);
+  animation: menu-in var(--ui-dur-1) var(--ui-ease);
 }
-.drop-title {
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.add-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-2);
+  width: 100%;
+  padding: var(--ui-sp-2);
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
+  text-align: left;
+}
+.add-item:hover {
+  background: var(--ui-hover);
+}
+.add-empty {
+  margin: 0;
+  padding: var(--ui-sp-2);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-3);
+}
+
+/* 面板区 */
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+.pane {
+  height: 100%;
+  overflow: hidden;
+}
+/* 过渡期：标签条已经给了标题和关闭按钮，面板自带的 .panel-header 先隐藏；
+   目标/执行记录的头部里还有「新建/刷新」，保留不动 */
+.dock :deep(.panel-header) {
+  display: none;
+}
+
+/* 过渡期：五个面板都还自带 position:fixed / 固定宽度 / 自己的一层外框，
+   先统一压成「本体内嵌」，等「各面板」批次重做时再删掉这段 */
+.dock :deep(.memory-panel),
+.dock :deep(.plugin-panel),
+.dock :deep(.toolbox-panel),
+.dock :deep(.goals-panel),
+.dock :deep(.audit-panel) {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  z-index: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* ---------- 卡片总览（Edge 手机版标签页 / iOS 清后台） ---------- */
+.overview {
+  position: fixed;
+  inset: 0;
+  z-index: 560;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-3);
+  padding: var(--ui-sp-5) var(--ui-sp-6);
+  background: color-mix(in srgb, var(--ui-bg) 82%, transparent);
+  backdrop-filter: blur(10px);
+}
+.ov-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-3);
+  flex: none;
+}
+.ov-title {
   font-size: var(--ui-fs-14);
   color: var(--ui-text);
 }
-.drop-hint {
+.ov-done {
+  margin-left: auto;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-4);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
+}
+.ov-done:hover {
+  background: var(--ui-hover);
+}
+.ov-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-auto-rows: 148px;
+  gap: var(--ui-sp-4);
+  align-content: start;
+}
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+  background: var(--ui-panel);
+  box-shadow: var(--ui-shadow);
+  cursor: pointer;
+  transition: transform var(--ui-dur-1) var(--ui-ease), border-color var(--ui-dur-1) var(--ui-ease);
+}
+.ov-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--ui-border-strong);
+}
+.ov-card.on {
+  border-color: var(--ui-accent-line);
+  box-shadow: inset 0 -2px 0 var(--ui-accent), var(--ui-shadow);
+}
+.ov-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
+}
+.ov-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-card-x {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-hover);
+  color: var(--ui-text-2);
+}
+.ov-card-x:hover {
+  background: var(--ui-err);
+  color: #fff;
+}
+.ov-card-body {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--ui-sp-3);
+}
+.ov-card-desc {
   font-size: var(--ui-fs-12);
   color: var(--ui-text-3);
+  text-align: center;
+  line-height: var(--ui-line);
+}
+
+/* 总览层进场 / 卡片缩放（近似 iOS 应用切换器的手感） */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--ui-dur-2) var(--ui-ease);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.card-enter-active,
+.card-leave-active {
+  transition: transform var(--ui-dur-2) var(--ui-ease), opacity var(--ui-dur-2) var(--ui-ease);
+}
+.card-enter-from {
+  opacity: 0;
+  transform: scale(0.92);
+}
+.card-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+/* ---------- 拖放提示：只一圈虚线，不挡视线、不压颜色 ---------- */
+.drop-layer {
+  position: fixed;
+  inset: var(--ui-sp-2);
+  z-index: 600;
+  pointer-events: none;
+  border: 2px dashed var(--ui-accent-line);
+  border-radius: var(--ui-r-lg);
 }
 
 /* ---------- 设置页 ---------- */
