@@ -1,5 +1,4 @@
-<!-- 《铃·记忆体》工具箱面板（AI-6 任务 7 / 4.2）
-     九宫格布局：图标 + 名称；点击执行系统命令；底部添加工具；长按/右键删除 -->
+<!-- 《铃·记忆体》工具箱面板：抽屉内流式布局，工具网格自适应列数，弹窗统一用令牌 -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useDesktopStore } from '../stores/desktopStore'
@@ -7,6 +6,10 @@ import { useSettingStore } from '../stores/settingStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
 import { assetUrl, checkDependency, decodeQrcode, deleteForgedTool, generateQrcode, getMemories, listForgedTools, ocrImage, openUrl, setForgedToolEnabled } from '../utils/tauri'
 import type { ForgedTool, ToolboxItem } from '../types'
+import TheIcon from './TheIcon.vue'
+import AppButton from './ui/AppButton.vue'
+import AppTabs from './ui/AppTabs.vue'
+import AppStatusDot from './ui/AppStatusDot.vue'
 import PixelArtPanel from './PixelArtPanel.vue'
 import RegexTester from './RegexTester.vue'
 
@@ -16,8 +19,24 @@ const milestone = useMilestoneStore()
 const forgedTools = ref<ForgedTool[]>([])
 const expandedForgedId = ref<string | null>(null)
 
-// 关闭工具箱（父组件监听后隐藏）
-const emit = defineEmits<{ (e: 'close'): void }>()
+// 关闭由抽屉标签条处理；仍声明 close，避免父组件的监听落到根元素上
+defineEmits<{ (e: 'close'): void }>()
+
+// —— 内置工具 id → 图标名（只用仓库里的 SVG 图标，不用 emoji）——
+const TOOL_ICONS: Record<string, string> = {
+  explorer: 'file', 'open-file': 'file', 'open-app': 'search', 'open-cmd': 'command', 'open-powershell': 'command',
+  calc: 'calculator', notepad: 'edit', 'batch-rename': 'edit', taskmgr: 'monitor', bsod: 'monitor', vm: 'monitor',
+  lock: 'lock', 'wifi-pwd': 'lock', encrypt: 'lock', decrypt: 'lock', xor: 'lock',
+  'shutdown-1h': 'power', 'cancel-shutdown': 'power', 'power-saver': 'power', 'power-balanced': 'power', 'power-high': 'power',
+  'clean-temp': 'clean', 'clean-memory': 'clean', 'empty-recycle-bin': 'delete', shred: 'delete', 'format-disk': 'delete',
+  screenshot: 'screenshot', network: 'network', 'lan-ip': 'network', ping: 'network', speedtest: 'network', 'port-list': 'network',
+  'ip-lookup': 'search', regex: 'search', ocr: 'search', 'qrcode-decode': 'search',
+  'cpu-test': 'diagnostic', benchmark: 'diagnostic', clicker: 'floating', 'pixel-art': 'customize',
+  'clipboard-history': 'file', alarm: 'music', ffmpeg: 'music', fortune: 'sponsor',
+  compress: 'save', uncompress: 'save', 'qrcode-gen': 'save',
+  'install-python': 'plugin', 'install-jdk': 'plugin',
+}
+function toolIcon(id: string) { return TOOL_ICONS[id] ?? 'toolbox' }
 
 const executingId = ref<string | null>(null)
 const feedback = ref<{ ok: boolean; text: string } | null>(null)
@@ -106,7 +125,7 @@ const qrImageUrl = ref<string | null>(null)
 
 // —— 添加/编辑弹窗 ——
 const showEditor = ref(false)
-const editingItem = ref<ToolboxItem>({ id: '', name: '', icon: '🔧', command: '', enabled: true })
+const editingItem = ref<ToolboxItem>({ id: '', name: '', icon: '', command: '', enabled: true })
 const editorError = ref('')
 // —— v0.6 组合工具（模块化，模仿快捷指令）——
 const editorKind = ref<'cmd' | 'combo'>('cmd')
@@ -201,7 +220,7 @@ async function recheckDep() {
     if (st.installed) {
       showDepGuide.value = false
       depGuide.value = null
-      feedback.value = { ok: true, text: `✓ ${st.name} 已就绪，请重新点击工具执行` }
+      feedback.value = { ok: true, text: `${st.name} 已就绪，请重新点击工具执行` }
     } else {
       depGuide.value = { id: st.id, name: st.name, hint: `此功能需要安装 ${st.name}`, install: st.install, url: st.url }
     }
@@ -214,9 +233,9 @@ async function runItem(item: ToolboxItem) {
   if (executingId.value) return
   // 格式化硬盘：毁灭性操作，双确认（输入盘符 + 确认不可恢复）
   if (item.id === 'format-disk') {
-    const drv = prompt('⚠️ 格式化硬盘（不可恢复！）\n\n输入要格式化的盘符（单个字母，如 D）：', 'D')
+    const drv = prompt('注意：格式化硬盘（不可恢复！）\n\n输入要格式化的盘符（单个字母，如 D）：', 'D')
     if (drv === null) return
-    const ok = confirm(`⚠️ 再次确认：将格式化 ${drv.trim().replace(/:$/, '')}: 盘\n该操作会删除磁盘上所有数据，且无法恢复！\n\n确定继续吗？`)
+    const ok = confirm(`注意：再次确认，将格式化 ${drv.trim().replace(/:$/, '')}: 盘\n该操作会删除磁盘上所有数据，且无法恢复！\n\n确定继续吗？`)
     if (!ok) return
     // 直接执行（命令内部读 TOOLBOX_INPUT），不再弹通用输入框
     formatDiskInput.value = drv.trim().replace(/:$/, '')
@@ -225,14 +244,14 @@ async function runItem(item: ToolboxItem) {
   // WiFi 密码工具：提前声明（仅解自己的 + 不上传）
   if (item.id === 'wifi-pwd') {
     const ok = confirm(
-      '⚠️ WiFi 密码查看声明：\n\n· 仅查看本机已保存的 WiFi 密码（你自己的网络）\n· 所有处理均在本机完成，不会上传任何数据\n\n是否继续？'
+      '看 WiFi 密码前先确认：\n\n· 仅查看本机已保存的 WiFi 密码（你自己的网络）\n· 所有处理均在本机完成，不会上传任何数据\n\n是否继续？'
     )
     if (!ok) return
   }
   // XOR 破解声明（仅限授权数据）
   if (item.id === 'xor') {
     const ok = confirm(
-      '⚠️ XOR 破解声明：\n\n· 仅用于破解你拥有或获授权测试的加密数据\n· 请勿用于非法破解他人数据\n\n是否继续？'
+      'XOR 破解前先确认：\n\n· 仅用于破解你拥有或获授权测试的加密数据\n· 请勿用于非法破解他人数据\n\n是否继续？'
     )
     if (!ok) return
   }
@@ -255,13 +274,13 @@ async function runItem(item: ToolboxItem) {
     qrImageUrl.value = null
     try {
       const path = await generateQrcode(v)
-      feedback.value = { ok: true, text: '✓ 二维码已生成' }
-      outputTitle.value = '📱 二维码生成成功'
+      feedback.value = { ok: true, text: '二维码已生成' }
+      outputTitle.value = '二维码生成成功'
       outputContent.value = `已保存到：\n${path}`
       qrImageUrl.value = assetUrl(path)
       showOutput.value = true
     } catch (e) {
-      outputTitle.value = '✗ 二维码生成失败'
+      outputTitle.value = '二维码生成失败'
       outputContent.value = String(e)
       showOutput.value = true
     } finally {
@@ -277,12 +296,12 @@ async function runItem(item: ToolboxItem) {
     feedback.value = null
     try {
       const content = await decodeQrcode(v)
-      feedback.value = { ok: true, text: '✓ 二维码识别成功' }
-      outputTitle.value = '✅ 二维码识别结果'
+      feedback.value = { ok: true, text: '二维码识别成功' }
+      outputTitle.value = '二维码识别结果'
       outputContent.value = content
       showOutput.value = true
     } catch (e) {
-      outputTitle.value = '✗ 二维码识别失败'
+      outputTitle.value = '二维码识别失败'
       outputContent.value = String(e)
       showOutput.value = true
     } finally {
@@ -298,12 +317,12 @@ async function runItem(item: ToolboxItem) {
     feedback.value = null
     try {
       const r = await ocrImage(v)
-      feedback.value = { ok: true, text: '✓ 识别成功' }
-      outputTitle.value = r.engine === 'tesseract' ? '🔤 Tesseract OCR 识别结果' : '👁️ Windows OCR 识别结果'
+      feedback.value = { ok: true, text: '识别成功' }
+      outputTitle.value = r.engine === 'tesseract' ? 'OCR 识别结果（Tesseract）' : 'OCR 识别结果（Windows）'
       outputContent.value = r.text
       showOutput.value = true
     } catch (e) {
-      outputTitle.value = '✗ OCR 识别失败'
+      outputTitle.value = 'OCR 识别失败'
       outputContent.value = String(e)
       showOutput.value = true
     } finally {
@@ -361,22 +380,22 @@ async function runItem(item: ToolboxItem) {
     showDepGuide.value = true
   }
   if (result?.error) {
-    feedback.value = { ok: false, text: `✗ ${item.name} 没有完成` }
+    feedback.value = { ok: false, text: `「${item.name}」没有完成` }
     // 失败也弹窗显示完整原因
-    outputTitle.value = `✗ ${item.name} · 失败`
+    outputTitle.value = `${item.name} · 失败`
     outputContent.value = result.error
     // P2：错误恢复——按错误类型生成"下一步"动作
     errorActions.value = buildErrorActions(item.name, result.error)
     showOutput.value = true
   } else if (result?.output) {
-    feedback.value = { ok: true, text: `✓ ${item.name} 完成啦（点查看输出）` }
+    feedback.value = { ok: true, text: `「${item.name}」完成啦（点查看输出）` }
     // 有输出则弹独立窗口完整展示，避免顶部小区域视觉盲区
-    outputTitle.value = `📄 ${item.name} · 输出`
+    outputTitle.value = `${item.name} · 输出`
     outputContent.value = result.output
     errorActions.value = []
     showOutput.value = true
   } else {
-    feedback.value = { ok: true, text: `✓ ${item.name} 完成啦` }
+    feedback.value = { ok: true, text: `「${item.name}」完成啦` }
     errorActions.value = []
   }
   // P3：第一次使用工具箱里程碑（幂等）+ 每日日记工具计数
@@ -392,18 +411,18 @@ async function runItem(item: ToolboxItem) {
 
 // —— 添加 ——
 function openAdd() {
-  initEditor({ id: `user_${Date.now()}`, name: '', icon: '🔧', command: '', enabled: true }, 'cmd')
+  initEditor({ id: `user_${Date.now()}`, name: '', icon: '', command: '', enabled: true }, 'cmd')
 }
 
 /** 添加组合工具（模块化多步） */
 function openAddCombo() {
-  initEditor({ id: `user_${Date.now()}`, name: '', icon: '🔧', command: '', enabled: true, steps: [] }, 'combo')
+  initEditor({ id: `user_${Date.now()}`, name: '', icon: '', command: '', enabled: true, steps: [] }, 'combo')
 }
 
 /** 双击自定义工具 → 编辑（内置 preset 不可编辑） */
 function editItem(item: ToolboxItem) {
   if (!item.id.startsWith('user_')) {
-    feedback.value = { ok: false, text: '内置工具不可编辑，可点 ＋ 创建自己的组合工具' }
+    feedback.value = { ok: false, text: '内置工具不可编辑，可点「命令工具」创建自己的工具' }
     return
   }
   initEditor(item, (item.steps?.length ?? 0) > 0 ? 'combo' : 'cmd')
@@ -432,7 +451,7 @@ async function saveItem() {
     it.steps = []
   }
   try {
-    await desktop.addOrUpdateToolboxItem({ ...it, icon: it.icon.trim() || '🔧' })
+    await desktop.addOrUpdateToolboxItem(it)
     showEditor.value = false
   } catch (e) {
     editorError.value = String(e)
@@ -457,128 +476,142 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div class="toolbox-panel">
-    <!-- 像素画板（批次3，全屏遮罩） -->
+  <div class="toolbox-panel" role="region" aria-label="工具箱">
+    <!-- 像素画板 / 正则测试器（独立遮罩组件，自身就是 fixed 层） -->
     <PixelArtPanel v-if="showPixelArt" @close="showPixelArt = false" />
-    <!-- 正则测试器（批次4，全屏遮罩） -->
     <RegexTester v-if="showRegex" @close="showRegex = false" />
-    <div class="panel-header">
-      <span class="panel-title">铃的工具箱<span class="title-sub">（{{ desktop.toolboxItems.length }} 个工具）</span></span>
-      <div class="header-btns">
-        <button class="add-btn" title="添加命令工具" @click="openAdd">＋</button>
-        <button class="add-btn combo-add" title="添加组合工具（多步模块化）" @click="openAddCombo">⚙</button>
-        <button class="close-btn" title="关闭工具箱" @click="emit('close')">✕</button>
+
+    <!-- 轻量操作条：标题与关闭已在抽屉标签条上，这里只留新增按钮 -->
+    <div class="panel-bar">
+      <AppButton size="sm" @click="openAdd">
+        <TheIcon name="add" :size="14" />命令工具
+      </AppButton>
+      <AppButton size="sm" @click="openAddCombo">
+        <TheIcon name="customize" :size="14" />组合工具
+      </AppButton>
+      <span class="bar-meta">{{ desktop.toolboxItems.length }} 个工具</span>
+    </div>
+
+    <div class="panel-body">
+      <!-- 执行反馈 -->
+      <div v-if="feedback" class="feedback" :class="feedback.ok ? 'ok' : 'err'" role="status">
+        <AppStatusDot :state="feedback.ok ? 'ok' : 'err'" />
+        <span class="feedback-text">{{ feedback.text }}</span>
       </div>
-    </div>
-
-    <!-- 执行反馈 -->
-    <div v-if="feedback" class="feedback" :class="feedback.ok ? 'ok' : 'err'">
-      {{ feedback.text }}
-    </div>
-    <!-- D 批次：执行中动态提示（铃正在努力…） -->
-    <div v-if="executingText" class="executing-hint">
-      <span class="exec-spinner">⏳</span>
-      <span class="exec-text">{{ executingText }}</span>
-      <span v-if="phaseText" class="exec-phase">{{ phaseText }}</span>
-    </div>
-    <!-- 记忆×工具联动（概率事件）：铃提起相关记忆 -->
-    <div v-if="memoryEcho" class="memory-echo">
-      <span class="echo-text">{{ memoryEcho }}</span>
-      <button class="echo-close" title="关闭" @click="memoryEcho = null">✕</button>
-    </div>
-
-    <!-- 九宫格 -->
-    <div class="grid">
-      <div
-        v-for="item in desktop.toolboxItems"
-        :key="item.id"
-        class="cell"
-        :class="{ running: executingId === item.id, disabled: !item.enabled, combo: (item.steps?.length ?? 0) > 0 }"
-        :title="item.id.startsWith('user_') ? '左键执行 · 双击编辑' : '左键执行'"
-        @click="runItem(item)"
-        @dblclick="editItem(item)"
-        @contextmenu.prevent="requestDelete(item)"
-      >
-        <span v-if="setting.emojiMode !== 'off'" class="cell-icon">{{ item.icon }}</span>
-        <span class="cell-name">{{ item.name }}</span>
-        <span v-if="(item.steps?.length ?? 0) > 0" class="cell-badge">×{{ item.steps!.length }}</span>
-        <span v-if="executingId === item.id" class="spinner">⏳</span>
+      <!-- D 批次：执行中动态提示（铃正在努力…） -->
+      <div v-if="executingText" class="executing-hint" role="status">
+        <span class="spin-ring" aria-hidden="true" />
+        <span class="exec-text">{{ executingText }}</span>
+        <span v-if="phaseText" class="exec-phase">{{ phaseText }}</span>
       </div>
-      <div v-if="desktop.toolboxLoading" class="cell loading-cell">加载中…</div>
+      <!-- 记忆×工具联动（概率事件）：铃提起相关记忆 -->
+      <div v-if="memoryEcho" class="memory-echo">
+        <AppStatusDot state="ok" />
+        <span class="echo-text">{{ memoryEcho }}</span>
+        <button type="button" class="icon-btn" title="收起" @click="memoryEcho = null">
+          <TheIcon name="close" :size="12" />
+        </button>
+      </div>
+
+      <!-- 工具网格：列数随抽屉宽度自适应，380px 下不横向滚动 -->
+      <div class="grid">
+        <button
+          v-for="item in desktop.toolboxItems"
+          :key="item.id"
+          type="button"
+          class="cell"
+          :class="{ running: executingId === item.id, disabled: !item.enabled, combo: (item.steps?.length ?? 0) > 0 }"
+          :title="item.id.startsWith('user_') ? '左键执行 · 双击编辑 · 右键删除' : '左键执行'"
+          @click="runItem(item)"
+          @dblclick="editItem(item)"
+          @contextmenu.prevent="requestDelete(item)"
+        >
+          <span class="cell-icon">
+            <span v-if="executingId === item.id" class="spin-ring" aria-hidden="true" />
+            <TheIcon v-else :name="toolIcon(item.id)" :size="18" />
+          </span>
+          <span class="cell-name">{{ item.name }}</span>
+          <span v-if="(item.steps?.length ?? 0) > 0" class="cell-badge">×{{ item.steps!.length }}</span>
+        </button>
+        <div v-if="desktop.toolboxLoading" class="cell loading-cell">加载中…</div>
+      </div>
+
+      <!-- 自制工具 -->
+      <section class="forged-section">
+        <div class="forged-title">自制工具</div>
+        <p v-if="!setting.agentAllowToolForge" class="forged-hint">需在设置里授权 Agent 自己编写小工具</p>
+        <div v-if="forgedTools.length === 0" class="forged-empty">暂无自制工具</div>
+        <article v-for="tool in forgedTools" :key="tool.id" class="forged-card">
+          <div class="forged-card-head">
+            <strong class="forged-name">{{ tool.name }}</strong>
+            <label class="forged-toggle">
+              <input type="checkbox" :checked="tool.enabled" @change="toggleForgedTool(tool)" />启用
+            </label>
+          </div>
+          <div class="forged-description">{{ tool.description }}</div>
+          <div class="forged-meta">{{ tool.language }} · {{ forgedCreatedAt(tool.created_at) }} · 调用 {{ tool.call_count }} 次</div>
+          <div class="forged-actions">
+            <AppButton size="sm" @click="expandedForgedId = expandedForgedId === tool.id ? null : tool.id">
+              {{ expandedForgedId === tool.id ? '收起源码' : '查看源码' }}
+            </AppButton>
+            <AppButton v-if="expandedForgedId === tool.id" size="sm" @click="copyForgedCode(tool)">复制源码</AppButton>
+            <AppButton size="sm" variant="text" @click="removeForgedTool(tool)">删除</AppButton>
+          </div>
+          <pre v-if="expandedForgedId === tool.id" class="forged-source">{{ tool.code }}</pre>
+          <div v-if="tool.last_error" class="forged-error">最近失败：{{ tool.last_error }}</div>
+        </article>
+      </section>
+
+      <p class="panel-footer">清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</p>
     </div>
 
-    <section class="forged-section">
-      <div class="forged-title">自制工具</div>
-      <p v-if="!setting.agentAllowToolForge" class="forged-hint">需在设置里授权 Agent 自己编写小工具</p>
-      <div v-if="forgedTools.length === 0" class="forged-empty">暂无自制工具</div>
-      <article v-for="tool in forgedTools" :key="tool.id" class="forged-card">
-        <div class="forged-card-head">
-          <strong>{{ tool.name }}</strong>
-          <label class="forged-toggle"><input type="checkbox" :checked="tool.enabled" @change="toggleForgedTool(tool)" />启用</label>
-        </div>
-        <div class="forged-description">{{ tool.description }}</div>
-        <div class="forged-meta">{{ tool.language }} · {{ forgedCreatedAt(tool.created_at) }} · 调用 {{ tool.call_count }} 次</div>
-        <div class="forged-actions">
-          <button class="btn" type="button" @click="expandedForgedId = expandedForgedId === tool.id ? null : tool.id">{{ expandedForgedId === tool.id ? '收起源码' : '查看源码' }}</button>
-          <button v-if="expandedForgedId === tool.id" class="btn" type="button" @click="copyForgedCode(tool)">复制源码</button>
-          <button class="btn danger" type="button" @click="removeForgedTool(tool)">删除</button>
-        </div>
-        <pre v-if="expandedForgedId === tool.id" class="forged-source">{{ tool.code }}</pre>
-        <div v-if="tool.last_error" class="forged-error">最近失败：{{ tool.last_error }}</div>
-      </article>
-    </section>
-
-    <div class="panel-footer">清理内存＝释放所有进程工作集＋清系统缓存（管理员模式更强）· 右键工具可删除（仅自定义）</div>
-
+    <!-- 弹窗：固定遮罩层，不进抽屉内容区，避免被抽屉宽度裁切 -->
     <!-- 输出弹窗：完整显示命令输出（端口/清理等），可滚动，无视觉盲区 -->
     <div v-if="showOutput" class="modal-mask" @click.self="showOutput = false">
-      <div class="modal output-modal">
+      <div class="modal output-modal" role="dialog" aria-modal="true" :aria-label="outputTitle">
         <div class="modal-title">{{ outputTitle }}</div>
         <img v-if="qrImageUrl && outputTitle.includes('二维码生成')" :src="qrImageUrl" class="qr-preview" alt="二维码预览" />
         <pre class="output-pre">{{ outputContent }}</pre>
         <!-- P2：错误恢复动作（仅失败时显示） -->
         <div v-if="errorActions.length > 0" class="error-actions">
-          <span class="error-actions-title">💡 可以试试：</span>
-          <button v-for="(a, i) in errorActions" :key="i" class="btn action-btn" @click="doErrorAction(a)">
+          <span class="error-actions-title">可以试试：</span>
+          <button v-for="(a, i) in errorActions" :key="i" type="button" class="action-btn" @click="doErrorAction(a)">
             {{ a.label }}
           </button>
         </div>
         <div class="modal-actions">
-          <button class="btn confirm" @click="showOutput = false">关闭</button>
+          <AppButton @click="showOutput = false">关闭</AppButton>
+        </div>
+      </div>
+    </div>
+
+    <!-- 依赖缺失引导弹窗 -->
+    <div v-if="showDepGuide" class="modal-mask" @click.self="showDepGuide = false">
+      <div class="modal dep-box" role="dialog" aria-modal="true">
+        <div class="modal-title">缺少依赖：{{ depGuide?.name }}</div>
+        <p class="dep-hint">{{ depGuide?.hint }}</p>
+        <p class="dep-install">{{ depGuide?.install }}</p>
+        <div class="modal-actions">
+          <AppButton v-if="depGuide?.url" variant="primary" @click="openGuideUrl(depGuide.url)">打开下载页</AppButton>
+          <AppButton v-if="depGuide?.id" @click="recheckDep">重新检查</AppButton>
+          <AppButton variant="text" @click="showDepGuide = false">知道了</AppButton>
         </div>
       </div>
     </div>
 
     <!-- 添加/编辑弹窗 -->
-    <!-- 依赖缺失引导弹窗 -->
-    <div v-if="showDepGuide" class="modal-mask" @click.self="showDepGuide = false">
-      <div class="modal-box dep-box">
-        <h4 class="dep-title">缺少依赖：{{ depGuide?.name }}</h4>
-        <p class="dep-hint">{{ depGuide?.hint }}</p>
-        <p class="dep-install">{{ depGuide?.install }}</p>
-        <div class="modal-actions">
-          <button v-if="depGuide?.url" class="btn confirm" @click="openGuideUrl(depGuide.url)">打开下载页</button>
-          <button v-if="depGuide?.id" class="btn" @click="recheckDep">重新检查</button>
-          <button class="btn cancel" @click="showDepGuide = false">知道了</button>
-        </div>
-      </div>
-    </div>
-
     <div v-if="showEditor" class="modal-mask" @click.self="showEditor = false">
-      <div class="modal">
+      <div class="modal editor-modal" role="dialog" aria-modal="true">
         <div class="modal-title">{{ editingItem.id.startsWith('user_') && !editingItem.name ? '添加工具' : '编辑工具' }}</div>
         <!-- 类型切换 -->
-        <div class="editor-tabs">
-          <div class="etab" :class="{ active: editorKind === 'cmd' }" @click="editorKind = 'cmd'">命令工具</div>
-          <div class="etab" :class="{ active: editorKind === 'combo' }" @click="editorKind = 'combo'">组合工具</div>
-        </div>
+        <AppTabs
+          :items="[{ id: 'cmd', label: '命令工具' }, { id: 'combo', label: '组合工具' }]"
+          :model-value="editorKind"
+          @update:modelValue="editorKind = $event === 'combo' ? 'combo' : 'cmd'"
+        />
         <label class="field">
           <span>名称</span>
           <input v-model="editingItem.name" placeholder="如：晚安模式 / 打开我的世界" />
-        </label>
-        <label class="field">
-          <span>图标（emoji）</span>
-          <input v-model="editingItem.icon" placeholder="如：🎮" />
         </label>
 
         <!-- 命令模式 -->
@@ -594,27 +627,27 @@ async function confirmDelete() {
           <div class="field">
             <span>动作模块（点击追加为一步）</span>
             <div class="module-chips">
-              <button v-for="m in SYS_MODULES" :key="m.tool" type="button" class="chip" @click="addSysStep(m)">{{ m.label }}</button>
+              <AppButton v-for="m in SYS_MODULES" :key="m.tool" size="sm" @click="addSysStep(m)">{{ m.label }}</AppButton>
             </div>
             <div class="tool-pick">
               <select v-model="pickedToolId" class="pick-select">
-                <option value="">— 从工具箱选一个已有工具 —</option>
+                <option value="">从工具箱选一个已有工具</option>
                 <option v-for="it in desktop.toolboxItems.filter((i) => i.id !== editingItem.id)" :key="it.id" :value="it.id">{{ it.name }}</option>
               </select>
-              <button type="button" class="chip chip-add" :disabled="!pickedToolId" @click="addToolStep">追加</button>
+              <AppButton size="sm" :disabled="!pickedToolId" @click="addToolStep">追加</AppButton>
             </div>
           </div>
           <div class="field">
             <span>执行顺序（{{ (editingItem.steps ?? []).length }} 步）</span>
-            <div v-if="(editingItem.steps ?? []).length === 0" class="step-empty">还没有步骤，从上方模块添加～</div>
+            <div v-if="(editingItem.steps ?? []).length === 0" class="step-empty">还没有步骤，从上方模块添加</div>
             <div v-for="(s, i) in editingItem.steps ?? []" :key="i" class="step-row">
               <span class="step-idx">{{ i + 1 }}</span>
               <span class="step-name">{{ stepName(s.tool) }}</span>
               <input v-if="s.tool === 'volume'" v-model="s.input" class="step-input" placeholder="音量 0-100" />
               <div class="step-ops">
-                <button type="button" class="op" :disabled="i === 0" @click="moveStep(i, -1)">↑</button>
-                <button type="button" class="op" :disabled="i === (editingItem.steps ?? []).length - 1" @click="moveStep(i, 1)">↓</button>
-                <button type="button" class="op del" @click="removeStep(i)">✕</button>
+                <button type="button" class="op" :disabled="i === 0" @click="moveStep(i, -1)">上</button>
+                <button type="button" class="op" :disabled="i === (editingItem.steps ?? []).length - 1" @click="moveStep(i, 1)">下</button>
+                <button type="button" class="op op-del" @click="removeStep(i)">删</button>
               </div>
             </div>
           </div>
@@ -623,19 +656,19 @@ async function confirmDelete() {
 
         <div v-if="editorError" class="editor-error">{{ editorError }}</div>
         <div class="modal-actions">
-          <button class="btn cancel" @click="showEditor = false">取消</button>
-          <button class="btn confirm" @click="saveItem">保存</button>
+          <AppButton variant="text" @click="showEditor = false">取消</AppButton>
+          <AppButton variant="primary" @click="saveItem">保存</AppButton>
         </div>
       </div>
     </div>
 
     <!-- 删除确认 -->
     <div v-if="showDeleteConfirm" class="modal-mask" @click.self="showDeleteConfirm = false">
-      <div class="modal small">
+      <div class="modal modal-small" role="dialog" aria-modal="true">
         <div class="modal-title">删除这个工具？</div>
         <div class="modal-actions">
-          <button class="btn cancel" @click="showDeleteConfirm = false">取消</button>
-          <button class="btn danger" @click="confirmDelete">删除</button>
+          <AppButton variant="text" @click="showDeleteConfirm = false">取消</AppButton>
+          <button type="button" class="btn-danger" @click="confirmDelete">删除</button>
         </div>
       </div>
     </div>
@@ -643,448 +676,559 @@ async function confirmDelete() {
 </template>
 
 <style scoped>
+/* 流式布局：占满抽屉内容区，滚动交给内容区自己 */
 .toolbox-panel {
-  position: fixed;
-  right: 16px;
-  bottom: 100px;
-  width: 300px;
-  max-height: 82vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-bar, rgba(30, 28, 32, 0.92));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 14px;
-  padding: 12px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  z-index: 500;
-  color: var(--text-main, #eee6e7);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--ui-text);
+  font-size: var(--ui-fs-13);
 }
-.panel-header {
+
+/* 轻量操作条 */
+.panel-bar {
+  flex: none;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  flex-shrink: 0;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-bottom: 1px solid var(--ui-border);
 }
-.header-btns { display: flex; gap: 6px; }
-.panel-title {
-  font-weight: 600;
-  font-size: var(--fs-14);
+.bar-meta {
+  margin-left: auto;
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
 }
-.title-sub { font-size: var(--fs-11); color: var(--text-secondary); font-weight: 400; margin-left: 4px; }
-.add-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  border: none;
-  background: var(--accent, #ff7a94);
-  color: var(--text-user);
-  font-size: var(--fs-16);
-  cursor: pointer;
-}
-.close-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  border: none;
-  background: rgba(128, 128, 128, 0.2);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-14);
-  line-height: 1;
-  cursor: pointer;
-}
-.close-btn:hover { background: var(--danger-bg); color: var(--danger); }
 
-/* ===== v0.6 组合工具：徽标/编辑器 ===== */
-.combo-add { background: color-mix(in srgb, var(--info, #6db3ff) 70%, transparent); }
-.combo-add:hover { background: var(--info, #6db3ff); }
-.cell.combo { border-color: color-mix(in srgb, var(--accent, #ff7a94) 55%, transparent); }
+/* 内容区：唯一滚动容器 */
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-3);
+}
+
+/* —— 反馈 / 执行中 / 记忆联动 —— */
+.feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
+  min-height: 28px;
+}
+.feedback-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback.ok {
+  background: color-mix(in srgb, var(--ui-ok) 10%, transparent);
+  color: var(--ui-text);
+  border-left: 3px solid var(--ui-ok);
+}
+.feedback.err {
+  background: color-mix(in srgb, var(--ui-err) 10%, transparent);
+  color: var(--ui-text);
+  border-left: 3px solid var(--ui-err);
+}
+.executing-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-accent-soft);
+  border: 1px solid var(--ui-accent-line);
+  font-size: var(--ui-fs-12);
+  min-height: 28px;
+}
+.exec-text {
+  color: var(--ui-accent);
+  font-weight: 500;
+}
+.exec-phase {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-11);
+}
+.memory-echo {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  background: color-mix(in srgb, var(--ui-ok) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ui-ok) 28%, transparent);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
+}
+.echo-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 转圈：替代原来的文字符号 */
+.spin-ring {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--ui-r-pill);
+  border: 2px solid var(--ui-accent-soft);
+  border-top-color: var(--ui-accent);
+  animation: tb-spin 700ms linear infinite;
+}
+@keyframes tb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 小图标按钮 */
+.icon-btn {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+}
+.icon-btn:hover {
+  background: var(--ui-hover);
+  color: var(--ui-text);
+}
+
+/* —— 工具网格：自适应列数 —— */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--ui-sp-2);
+}
+.cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-sp-1);
+  min-height: 66px;
+  padding: var(--ui-sp-2) var(--ui-sp-1);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-md);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+  transition: background var(--ui-dur-1) var(--ui-ease), border-color var(--ui-dur-1) var(--ui-ease);
+}
+.cell:hover {
+  background: var(--ui-hover);
+  border-color: var(--ui-border-strong);
+}
+.cell.combo {
+  border-color: var(--ui-accent-line);
+}
+.cell.running,
+.cell.disabled {
+  opacity: 0.55;
+}
+.cell-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  color: var(--ui-text-2);
+}
+.cell-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
 .cell-badge {
   position: absolute;
   top: 3px;
   right: 3px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent, #ff7a94);
-  color: #fff;
-  font-size: var(--fs-10);
+  padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+  font-size: var(--ui-fs-11);
   line-height: 14px;
 }
-.editor-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.etab {
-  flex: 1;
-  text-align: center;
-  padding: 6px 0;
-  border-radius: 8px;
-  font-size: var(--fs-12);
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--input-bg, #2a272b) 80%, transparent);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
-  cursor: pointer;
-}
-.etab.active {
-  color: #fff;
-  background: var(--accent, #ff7a94);
-  border-color: var(--accent, #ff7a94);
-  font-weight: 600;
-}
-.module-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
-  background: color-mix(in srgb, var(--input-bg, #2a272b) 80%, transparent);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-12);
-  cursor: pointer;
-}
-.chip:hover { border-color: var(--accent, #ff7a94); color: var(--accent, #ff7a94); }
-.tool-pick { display: flex; gap: 6px; }
-.pick-select {
-  flex: 1;
-  min-width: 0;
-  padding: 5px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
-  background: var(--input-bg, #2a272b);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-12);
-  font-family: inherit;
-}
-.chip-add:disabled { opacity: 0.4; cursor: not-allowed; }
-.step-empty {
-  padding: 10px;
-  border: 1px dashed var(--border, rgba(255, 255, 255, 0.15));
-  border-radius: 8px;
-  font-size: var(--fs-12);
-  color: var(--text-secondary);
-  text-align: center;
-}
-.step-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 6px;
-  margin-bottom: 4px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--input-bg, #2a272b) 70%, transparent);
-  font-size: var(--fs-12);
-}
-.step-idx {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent, #ff7a94);
-  color: #fff;
-  font-size: var(--fs-11);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.step-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.step-input {
-  width: 84px;
-  padding: 3px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
-  background: var(--input-bg, #2a272b);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-11);
-  font-family: inherit;
-}
-.step-ops { display: flex; gap: 2px; flex-shrink: 0; }
-.op {
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 5px;
-  background: rgba(128, 128, 128, 0.2);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-11);
-  line-height: 1;
-  cursor: pointer;
-}
-.op:disabled { opacity: 0.3; cursor: not-allowed; }
-.op.del { color: var(--danger, #ff6b6b); }
-.combo-hint {
-  margin-top: 2px;
-  font-size: var(--fs-11);
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-.feedback {
-  flex-shrink: 0; /* 防止被九宫格挤压，保证文字完整显示 */
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: var(--fs-12);
-  word-break: break-all;
-  max-height: 80px;
-  overflow-y: auto;
-}
-.feedback.ok { background: var(--success-bg); color: var(--success); }
-.feedback.err { background: var(--danger-bg); color: var(--danger); }
-/* —— D 批次：执行中"铃正在努力"动态提示 —— */
-.executing-hint {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: rgba(255, 122, 148, 0.08);
-  border: 1px solid rgba(255, 122, 148, 0.2);
-  font-size: var(--fs-12);
-  color: var(--text-main);
-  min-height: 32px;
-}
-.exec-spinner {
-  display: inline-block;
-  animation: exec-rotate 1s linear infinite;
-  font-size: var(--fs-13);
-}
-.exec-text { color: var(--accent, #ff7a94); font-weight: 500; }
-.exec-phase { color: var(--text-secondary); font-size: var(--fs-11); }
-@keyframes exec-rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-/* —— 记忆×工具联动（概率事件）提示条 —— */
-.memory-echo {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: rgba(76, 175, 80, 0.08);
-  border: 1px solid rgba(76, 175, 80, 0.25);
-  font-size: var(--fs-12);
-  color: var(--text-main);
-  min-height: 32px;
-}
-.echo-text { flex: 1; line-height: 1.6; }
-.echo-close {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: var(--fs-11);
-  padding: 2px 4px;
-  flex-shrink: 0;
-}
-.echo-close:hover { color: var(--danger); }
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  flex: 1;
-  overflow-y: auto;
-  padding-right: 2px;
-  min-height: 0;
-}
-.cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 14px 6px;
-  min-height: 82px;
-  border-radius: 12px;
-  background: var(--input-bg, #2a272b);
-  cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease;
-  position: relative;
-}
-.cell:hover {
-  transform: translateY(-2px);
-  background: rgba(255, 138, 171, 0.18);
-}
-.cell.running { opacity: 0.6; }
-.cell.disabled { opacity: 0.4; }
-.cell-icon {
-  font-size: var(--fs-32);
-  line-height: 1;
-}
-.cell-name {
-  font-size: var(--fs-13);
-  text-align: center;
-  word-break: break-all;
-}
-.spinner {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  font-size: var(--fs-12);
-}
 .loading-cell {
-  color: var(--text-secondary, #9a9294);
-  font-size: var(--fs-12);
+  justify-content: center;
+  color: var(--ui-text-3);
+  cursor: default;
 }
-.forged-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border, rgba(255,255,255,.12)); }
-.forged-title { font-weight: 600; margin-bottom: 6px; }
-.forged-hint, .forged-empty, .forged-meta { color: var(--text-secondary); font-size: var(--fs-11); }
-.forged-card { padding: 8px 0; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
-.forged-card-head, .forged-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.forged-description { margin-top: 4px; font-size: var(--fs-12); line-height: 1.35; }
-.forged-meta { margin-top: 4px; }
-.forged-toggle { display: flex; align-items: center; gap: 4px; font-size: var(--fs-11); color: var(--text-secondary); }
-.forged-actions { justify-content: flex-start; margin-top: 6px; }
-.forged-source { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; user-select: text; background: var(--input-bg, #2a272b); border-radius: 6px; font-size: var(--fs-11, 11px); }
-.forged-error { margin-top: 5px; color: var(--danger, #ff6b6b); font-size: var(--fs-11); }
+
+/* —— 自制工具 —— */
+.forged-section {
+  margin-top: var(--ui-sp-2);
+  padding-top: var(--ui-sp-2);
+  border-top: 1px solid var(--ui-border);
+}
+.forged-title {
+  font-size: var(--ui-fs-13);
+  font-weight: 600;
+  margin-bottom: var(--ui-sp-1);
+}
+.forged-hint,
+.forged-empty,
+.forged-meta {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-11);
+  line-height: var(--ui-line);
+}
+.forged-card {
+  padding: var(--ui-sp-2) 0;
+  border-top: 1px solid var(--ui-border);
+}
+.forged-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-sp-2);
+}
+.forged-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.forged-description {
+  margin-top: var(--ui-sp-1);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
+  overflow-wrap: anywhere;
+}
+.forged-meta {
+  margin-top: var(--ui-sp-1);
+}
+.forged-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  flex: none;
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-2);
+}
+.forged-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-2);
+}
+.forged-source {
+  max-height: 180px;
+  overflow: auto;
+  margin: var(--ui-sp-2) 0 0;
+  padding: var(--ui-sp-2);
+  white-space: pre-wrap;
+  user-select: text;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: var(--ui-fs-11);
+  line-height: var(--ui-line);
+  color: var(--ui-text);
+}
+.forged-error {
+  margin-top: var(--ui-sp-1);
+  color: var(--ui-err);
+  font-size: var(--ui-fs-11);
+  overflow-wrap: anywhere;
+}
 .panel-footer {
-  margin-top: 10px;
+  margin: var(--ui-sp-2) 0 0;
   text-align: center;
-  font-size: var(--fs-11);
-  color: var(--text-secondary, #9a9294);
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
 }
+
+/* —— 弹窗（传送到 body）—— */
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  z-index: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 600;
-  padding: 16px;
-  box-sizing: border-box;
+  padding: var(--ui-sp-4);
+  background: color-mix(in srgb, var(--ui-bg) 78%, transparent);
 }
 .modal {
-  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-2);
+  width: min(360px, 92vw);
   max-height: 88vh;
   overflow-y: auto;
-  box-sizing: border-box;
-  background: var(--bg-bar, #262328);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
-  border-radius: 14px;
-  padding: 18px;
+  padding: var(--ui-sp-4);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-lg);
+  box-shadow: var(--ui-shadow);
 }
-.modal.small { width: 240px; }
-.output-modal { width: 560px; max-width: 90vw; }
+.modal.output-modal {
+  width: min(560px, 92vw);
+}
+.modal.editor-modal {
+  width: min(400px, 92vw);
+}
+.modal.modal-small {
+  width: min(260px, 88vw);
+}
+.modal-title {
+  font-size: var(--ui-fs-14);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-2);
+}
+.qr-preview {
+  display: block;
+  margin: 0 auto;
+  width: 200px;
+  height: 200px;
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+}
+.output-pre {
+  margin: 0;
+  padding: var(--ui-sp-3);
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
+  color: var(--ui-text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* P2：错误恢复动作栏 */
 .error-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 152, 0, 0.08);
-  border: 1px solid rgba(255, 152, 0, 0.25);
+  gap: var(--ui-sp-2);
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  background: color-mix(in srgb, var(--ui-warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ui-warn) 28%, transparent);
 }
 .error-actions-title {
-  font-size: var(--fs-12);
-  color: var(--warning, #f0ad4e);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-warn);
   font-weight: 600;
 }
 .action-btn {
-  font-size: var(--fs-11);
-  padding: 3px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  padding: 0 var(--ui-sp-3);
+  height: 26px;
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border-strong);
   background: transparent;
-  color: var(--text-main);
-  cursor: pointer;
-  transition: all 0.15s;
+  color: var(--ui-text);
+  font-size: var(--ui-fs-11);
+  transition: border-color var(--ui-dur-1) var(--ui-ease), color var(--ui-dur-1) var(--ui-ease);
 }
-.action-btn:hover { border-color: var(--accent, #ff7a94); color: var(--accent, #ff7a94); }
-.qr-preview {
-  display: block;
-  margin: 0 auto 12px;
-  width: 200px;
-  height: 200px;
-  border-radius: 8px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  image-rendering: pixelated;
-  background: #ffffff; /* 输出预览区固定白色 */
+.action-btn:hover {
+  border-color: var(--ui-accent-line);
+  color: var(--ui-accent);
 }
-.output-pre {
-  margin: 0 0 12px;
-  padding: 10px;
-  max-height: 60vh;
-  overflow: auto;
-  background: var(--input-bg, #1e1c20);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
+
+/* 依赖引导 */
+.dep-hint {
+  margin: 0;
+  font-size: var(--ui-fs-13);
+  color: var(--ui-text-2);
+  line-height: var(--ui-line);
+}
+.dep-install {
+  margin: 0;
+  padding: var(--ui-sp-2) var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-active);
+  color: var(--ui-text);
   font-family: Consolas, 'Courier New', monospace;
-  font-size: var(--fs-12);
-  line-height: 1.6;
-  color: var(--text-main, #eee6e7);
+  font-size: var(--ui-fs-12);
+  line-height: var(--ui-line);
   white-space: pre-wrap;
   word-break: break-all;
 }
-.modal-title {
-  font-weight: 600;
-  margin-bottom: 14px;
-}
+
+/* 编辑器表单 */
 .field {
-  display: block;
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-sp-1);
+  min-width: 0;
 }
-.field span {
-  display: block;
-  font-size: var(--fs-12);
-  color: var(--text-secondary, #9a9294);
-  margin-bottom: 4px;
+.field > span {
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-2);
 }
 .field input,
 .field textarea {
   width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
-  background: var(--input-bg, #2a272b);
-  color: var(--text-main, #eee6e7);
-  font-size: var(--fs-13);
+  min-width: 0;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-2);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-r-sm);
+  font-size: var(--ui-fs-13);
+}
+.field textarea {
+  height: auto;
+  padding: var(--ui-sp-2);
+  line-height: var(--ui-line);
   resize: vertical;
 }
-.editor-error {
-  color: var(--danger);
-  font-size: var(--fs-12);
-  margin-bottom: 10px;
+.field input:focus,
+.field textarea:focus,
+.pick-select:focus,
+.step-input:focus {
+  border-color: var(--ui-accent);
 }
-.dep-box { text-align: left; }
-.dep-title { margin: 0 0 10px; color: var(--text-main, #eee); font-size: var(--fs-16); }
-.dep-hint { margin: 0 0 8px; color: var(--text-secondary, #aaa); font-size: var(--fs-13); }
-.dep-install {
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.12);
-  color: var(--text-main, #eee);
-  font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: var(--fs-12);
-  word-break: break-all;
-  white-space: pre-wrap;
-}
-.modal-actions {
+.module-chips {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-1);
 }
-.btn {
-  padding: 6px 16px;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  font-size: var(--fs-13);
+.tool-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-2);
+  margin-top: var(--ui-sp-1);
 }
-.btn.cancel { background: rgba(128, 128, 128, 0.2); color: var(--text-main); }
-.btn.confirm { background: var(--accent, #ff7a94); color: var(--text-user); }
-.btn.danger { background: var(--danger); color: var(--text-user); }
+.pick-select {
+  flex: 1;
+  min-width: 0;
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-12);
+}
+.step-empty {
+  padding: var(--ui-sp-3);
+  border: 1px dashed var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  font-size: var(--ui-fs-12);
+  color: var(--ui-text-3);
+  text-align: center;
+}
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  padding: var(--ui-sp-1) var(--ui-sp-2);
+  margin-top: var(--ui-sp-1);
+  border-radius: var(--ui-r-sm);
+  background: var(--ui-hover);
+  font-size: var(--ui-fs-12);
+}
+.step-idx {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+  font-size: var(--ui-fs-11);
+}
+.step-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.step-input {
+  width: 76px;
+  flex: none;
+  height: 24px;
+  padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-11);
+}
+.step-ops {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.op {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-r-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-11);
+  line-height: 1;
+}
+.op:hover:not(:disabled) {
+  background: var(--ui-active);
+  color: var(--ui-text);
+}
+.op:disabled {
+  opacity: 0.4;
+}
+.op-del:hover:not(:disabled) {
+  color: var(--ui-err);
+}
+.combo-hint {
+  font-size: var(--ui-fs-11);
+  color: var(--ui-text-3);
+  line-height: var(--ui-line);
+}
+.editor-error {
+  color: var(--ui-err);
+  font-size: var(--ui-fs-12);
+  margin-top: var(--ui-sp-1);
+}
+.btn-danger {
+  height: var(--ui-ctl-h);
+  padding: 0 var(--ui-sp-3);
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-err);
+  background: color-mix(in srgb, var(--ui-err) 14%, transparent);
+  color: var(--ui-err);
+  font-size: var(--ui-fs-13);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--ui-err) 22%, transparent);
+}
 </style>
