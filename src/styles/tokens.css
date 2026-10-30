@@ -1,0 +1,160 @@
+/* ============================================================
+   设计令牌（语义层）
+   ------------------------------------------------------------
+   原则：
+   1. 颜色令牌不写字面值，只把「现有主题变量」映射成语义名。主题变量定义在
+      `.app-root.<theme>` 上（App.vue），所以映射也必须挂在 `.app-root` 上，
+      否则在 :root 上解析不到 --bg-main，整层会失效。
+   2. 尺度（字号/间距/圆角/动效/尺寸）与主题无关，直接给固定值。
+   3. 组件里只允许用 var(--ui-*)，不允许写字面颜色和魔法数字；
+      需要新令牌先在这里加，再去用。
+   ============================================================ */
+
+/* ============================================================
+   一、尺度与尺寸（与主题无关）
+   ============================================================ */
+:root {
+  /* —— 间距（4 的倍数，禁止 5/18 这类）—— */
+  --ui-sp-1: 4px;
+  --ui-sp-2: 8px;
+  --ui-sp-3: 12px;
+  --ui-sp-4: 16px;
+  --ui-sp-5: 20px;
+  --ui-sp-6: 24px;
+
+  /* —— 圆角（三档 + 胶囊）—— */
+  --ui-r-sm: 6px;
+  --ui-r-md: 10px;
+  --ui-r-lg: 14px;
+  --ui-r-pill: 99px;
+
+  /* —— 字号（六档；正文行高 1.6）—— */
+  --ui-fs-11: 11px;
+  --ui-fs-12: 12px;
+  --ui-fs-13: 13px;
+  --ui-fs-14: 14px;
+  --ui-fs-16: 16px;
+  --ui-fs-20: 20px;
+  --ui-line: 1.6;
+
+  /* —— 动效 —— */
+  --ui-dur-1: 120ms;
+  --ui-dur-2: 180ms;
+  --ui-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* —— 布局尺寸 —— */
+  --ui-rail-w: 60px;
+  --ui-rail-btn: 36px;
+  --ui-dock-w: 360px;
+  --ui-head-h: 52px;
+  --ui-ctl-h: 30px;
+  --ui-thread-max: 780px;
+}
+
+/* ============================================================
+   二、语义色（从当前主题派生；7 套主题自动继承）
+   ============================================================ */
+.app-root {
+  /* 表面 */
+  --ui-bg: var(--bg-main, #1d1b1f);
+  --ui-panel: var(--bg-bar, rgba(34, 32, 36, 0.85));
+  --ui-raised: var(--input-bg, #2a272b);
+  --ui-hover: color-mix(in srgb, var(--text-main, #eee) 7%, transparent);
+  --ui-active: color-mix(in srgb, var(--text-main, #eee) 11%, transparent);
+
+  /* 描边 */
+  --ui-border: var(--border, rgba(255, 255, 255, 0.12));
+  --ui-border-strong: color-mix(in srgb, var(--text-main, #eee) 20%, transparent);
+
+  /* 文字 */
+  --ui-text: var(--text-main, #eee6e7);
+  --ui-text-2: var(--text-secondary, #9a9294);
+  --ui-text-3: color-mix(in srgb, var(--text-secondary, #9a9294) 70%, transparent);
+
+  /* 强调与状态 */
+  --ui-accent: var(--accent, #ff7a94);
+  --ui-accent-soft: color-mix(in srgb, var(--accent, #ff7a94) 16%, transparent);
+  --ui-accent-line: color-mix(in srgb, var(--accent, #ff7a94) 55%, transparent);
+  --ui-ok: var(--success, #7fd99a);
+  --ui-warn: var(--warning, #ffb26b);
+  --ui-err: var(--danger, #ff6b6b);
+
+  /* 阴影 */
+  --ui-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --ui-shadow-drawer: -8px 0 24px rgba(0, 0, 0, 0.16);
+
+  /* 焦点环（键盘可达性：不许去掉 outline 却不给替代） */
+  --ui-focus: 0 0 0 2px var(--bg-main, #1d1b1f), 0 0 0 3px var(--ui-accent-line);
+}
+
+/* ============================================================
+   三、全局基础行为（只写「所有页面都该一致」的部分）
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+/* 焦点：鼠标点击不显环，键盘 Tab 显环 */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-focus);
+  border-radius: var(--ui-r-sm);
+}
+
+/* 选中文字用主色浅底，不用浏览器默认蓝 */
+::selection {
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
+}
+
+/* 滚动条：细、无轨道背景 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-main, #eee) 22%, transparent);
+  border-radius: var(--ui-r-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-main, #eee) 34%, transparent);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 控件基础行为统一 */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 只给读屏的隐藏类 */
+.ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
