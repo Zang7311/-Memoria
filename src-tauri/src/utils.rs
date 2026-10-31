@@ -22,3 +22,28 @@ pub fn normalize_v1_url(base: &str) -> String {
         format!("{b}/v1")
     }
 }
+
+/// Emoji 显示档位 → 给模型的一句指令（设置页「Emoji 显示」用）
+/// off（默认）/partial/all 三档；未知值按 off 处理。
+pub fn emoji_guidance(mode: Option<&str>) -> &'static str {
+    match mode {
+        Some("all") => "【emoji】可以适度多用 emoji 和颜文字来表达情绪。",
+        Some("partial") => "【emoji】可以少量使用 emoji，一句话最多一个。",
+        _ => "【emoji】回复里不要使用 emoji，也不要颜文字，纯文字表达。",
+    }
+}
+
+#[cfg(test)]
+mod emoji_tests {
+    use super::emoji_guidance;
+
+    #[test]
+    fn emoji_三档给出不同指令() {
+        assert!(emoji_guidance(None).contains("不要使用"));
+        assert!(emoji_guidance(Some("off")).contains("不要使用"));
+        assert!(emoji_guidance(Some("partial")).contains("少量"));
+        assert!(emoji_guidance(Some("all")).contains("多用"));
+        // 未来多出别的值也不能崩
+        assert!(emoji_guidance(Some("weird")).contains("不要使用"));
+    }
+}

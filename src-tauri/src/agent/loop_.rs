@@ -985,7 +985,7 @@ pub(super) fn build_system_prompt(tools: &[Value]) -> String {
          3. 每一步只调用必要的工具，不要重复调用同一工具。\n\
          4. 完成任务后，用自然、亲切的语气向用户汇报结果。\n\
          5. 遇到工具报错，如实告诉用户，并尝试换一种方式。\n\
-         6. 语气自然口语化，像真人聊天，适度使用 emoji。\n\
+         6. 语气自然口语化，像真人聊天。{}\n\
          7. 【严禁编造·重要】只汇报工具实际返回的结果。工具没被调用、或调用失败时，绝不能声称操作已经完成（例如说「已经帮你打开啦」「窗口应该弹出来了」）——那是在骗主人。必须如实说明「我没能做到，原因是…」。\n\
          8. 【没有合适工具时】如果工具列表里没有能完成该任务的能力，如实告诉用户「我现在的工具做不到这件事」，绝不要假装做了。\n\
          9. 【格式·重要】不要使用 Markdown 符号——星号（*）、井号（#）、反引号、下划线这些都不要用，聊天气泡不渲染它们，只会变成乱糟糟的符号。要强调语气就用 emoji 或颜文字，不要用加粗/斜体标记。\n\
@@ -994,7 +994,8 @@ pub(super) fn build_system_prompt(tools: &[Value]) -> String {
          【重要】你只能调用上面列出的工具，不要调用不存在的工具。",
         tool_names.len(),
         tool_names.join("、"),
-        super::taxonomy::generate_intent_index(tools)
+        super::taxonomy::generate_intent_index(tools),
+        crate::utils::emoji_guidance(crate::config::store::get_config().emoji_mode.as_deref())
     )
 }
 

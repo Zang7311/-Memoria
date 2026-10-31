@@ -651,6 +651,20 @@ fn load_config_bounce() -> bool {
 }
 
 /// Live2D 开关：pet-config.txt 里 `live2d=0` 时强制用 PNG 头像（默认开）
+/// 模型目录名（live2d/Resources 下的子目录）；没配置就用官方样例 Haru
+fn load_config_model() -> String {
+    let Some(text) = config_text() else { return "Haru".to_string() };
+    for line in text.lines() {
+        if let Some(v) = line.trim().strip_prefix("model=") {
+            let name = v.trim();
+            if !name.is_empty() {
+                return name.to_string();
+            }
+        }
+    }
+    "Haru".to_string()
+}
+
 fn load_config_live2d() -> bool {
     let Some(text) = config_text() else { return true };
     for line in text.lines() {
@@ -1032,7 +1046,11 @@ fn main() {
         // Live2D：DLL 缺失/加载失败就静默退回 PNG
         let l2d_wanted = load_config_live2d();
         let l2d = if l2d_wanted {
-            live2d::Live2D::init(exe_dir.as_deref().unwrap_or(std::path::Path::new(".")), role_phys)
+            live2d::Live2D::init(
+                exe_dir.as_deref().unwrap_or(std::path::Path::new(".")),
+                role_phys,
+                &load_config_model(),
+            )
         } else {
             println!("[pet] 配置里关了 Live2D（live2d=0），用 PNG 头像");
             None

@@ -85,7 +85,8 @@ fn axis_map(dest: i32, crop_off: i32) -> Vec<(u32, u32, f32)> {
 impl Live2D {
     /// 尝试加载 <exe目录>/live2d/PetL2D.dll 并载入模型。任一步失败返回 None（调用方退回 PNG）。
     /// dest = 角色区物理边长（窗口宽度），决定裁剪缩放后的输出尺寸。
-    pub unsafe fn init(exe_dir: &Path, dest: i32) -> Option<Live2D> {
+    /// model = 模型目录名（live2d/Resources 下的子目录，例如 "Haru"）
+    pub unsafe fn init(exe_dir: &Path, dest: i32, model: &str) -> Option<Live2D> {
         let dir = exe_dir.join("live2d");
         let dll_path = dir.join("PetL2D.dll");
         if !dll_path.exists() {
@@ -121,7 +122,9 @@ impl Live2D {
             return None;
         }
         let t0 = Instant::now();
-        let ok = load(MODEL_NAME.as_ptr() as *const i8, RESOURCES_DIR.as_ptr() as *const i8, SRC_W, SRC_H);
+        // 模型名来自 pet-config.txt 的 model=，缺省 Haru；模型目录由 DLL 在 Resources/ 下按名字解析
+        let model_c = std::ffi::CString::new(model.replace('/', "")).ok()?;
+        let ok = load(model_c.as_ptr(), RESOURCES_DIR.as_ptr() as *const i8, SRC_W, SRC_H);
         let ms = t0.elapsed().as_millis();
         if let Some(old) = old_cwd {
             let _ = std::env::set_current_dir(old);
@@ -130,7 +133,7 @@ impl Live2D {
             println!("[pet] pet_l2d_load 失败（用时 {ms} ms）");
             return None;
         }
-        println!("[pet] Live2D 模型就绪：Haru {SRC_W}x{SRC_H}，加载 {ms} ms");
+        println!("[pet] Live2D 模型就绪：{model} {SRC_W}x{SRC_H}，加载 {ms} ms");
 
         let mut l2d = Live2D {
             render,

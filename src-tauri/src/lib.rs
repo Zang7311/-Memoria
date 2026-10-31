@@ -102,6 +102,17 @@ pub fn run() {
 
             log::info!("[setup] 铃·记忆体 启动，配置与日志系统已就绪");
 
+            // 诊断用：主窗口被销毁/请求关闭时留一条日志。
+            // 2026-10-31 测试中主窗口曾两次“无声消失”（进程还在、窗口没了、无报错），
+            // 有了这条日志下次能立刻分清是业务代码关的、还是 WebView 崩了之后被收掉的。
+            if let Some(win) = app.get_webview_window("main") {
+                win.on_window_event(|event| match event {
+                    tauri::WindowEvent::Destroyed => log::warn!("[window] 主窗口被销毁（Destroyed）"),
+                    tauri::WindowEvent::CloseRequested { .. } => log::info!("[window] 主窗口收到关闭请求"),
+                    _ => {}
+                });
+            }
+
             // 主窗口尺寸按屏幕自适应：高缩放的笔记本上不会顶出屏幕、底部图标被任务栏挡住
             desktop::window_fit::fit_main_window(app.handle());
 
