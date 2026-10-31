@@ -104,6 +104,12 @@ async function refreshNativePet() {
     nativePet.value = null
   }
 }
+/** 回话冒气泡开关：直接写配置，桌宠侧通过 UDP 实时收 */
+async function onNativePetSpeech(value: boolean) {
+  setting.nativePetSpeech = value
+  await setting.update({ native_pet_speech: value }).catch((e) => toastErr(`保存失败：${e}`))
+}
+
 async function onNativePet(value: boolean) {
   setting.nativePetEnabled = value
   await saveNativePet()
@@ -378,6 +384,12 @@ onMounted(async () => {
         :model-value="setting.nativePetEnabled"
         label="随应用启动"
         @update:model-value="onNativePet"
+      />
+      <AppSwitch
+        :model-value="setting.nativePetSpeech"
+        label="回话时头顶冒气泡"
+        hint="铃在聊天里回你时，桌宠会把它说的话冒在头顶（点一下桌宠也会有反应）"
+        @update:model-value="onNativePetSpeech"
       />
       <p v-if="nativePet && !nativePet.found" class="muted">
         没找到桌宠程序 pet\pet-native.exe：这份安装包里可能没带上它（开发版常见），用正式安装包装一次就有。

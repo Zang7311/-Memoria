@@ -47,6 +47,7 @@ pub fn default_config() -> AppConfig {
         // 原生桌宠默认开：它是这一版的主打功能，装了就该看见；不想看就在设置页关掉。
         // 没打包资源（开发态）或找不到程序时只是不启动，不会报错弹窗。
         native_pet_enabled: true,
+        native_pet_speech: true,
         monitor_enabled: true,
         monitor_frequency: 3,
         // ⚠️ 架构债务：monitor_rules / toolbox_items 归 AI-6 管理，AI-7 默认空

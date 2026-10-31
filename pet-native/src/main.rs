@@ -33,10 +33,22 @@ use winapi::um::wingdi::*;
 use winapi::um::winnt::SYNCHRONIZE;
 use winapi::um::winuser::*;
 
+/// 应用推消息过来的本机端口（改这里要同步改 ling-mem 的 desktop/pet_talk.rs）
+const PET_PORT: u16 = 46180;
+/// 自定义消息：收到一条聊天气泡（lparam = Box<ChatBubble> 裸指针）
+const WM_APP_PET_SAY: UINT = WM_APP + 21;
+
+/// 应用推过来的一条气泡（主线程接管所有权，处理完 drop）
+struct ChatBubble {
+    text: String,
+    ttl: f32,
+    mood: u8,
+}
+
 /// 角色区逻辑尺寸（150% 下物理 225）
 const ROLE: i32 = 150;
-/// 顶部气泡区逻辑高度（物理 67.5 → 67）
-const BUBBLE_H: i32 = 45;
+/// 顶部气泡区逻辑高度：够放三行 12px 文字（物理 93 → 93）
+const BUBBLE_H: i32 = 70;
 
 const FALL_GRAVITY: f32 = 2.5;
 const SLEEP_AFTER_SECS: u64 = 300;
@@ -130,6 +142,53 @@ unsafe fn spawn_parent_watchdog(parent_pid: u32, hwnd: HWND) {
     });
 }
 
+/// 起一个后台线程收应用推来的气泡。
+/// 应用没起来、端口被占都只是「没有联动」，不影响桌宠本体，所以失败只打日志。
+unsafe fn spawn_talk_listener(hwnd: HWND) {
+    let hwnd_addr = hwnd as usize;
+    std::thread::spawn(move || {
+        let sock = match std::net::UdpSocket::bind(("127.0.0.1", PET_PORT)) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("[pet] 联动端口 {PET_PORT} 绑定失败（{e}），本次不会显示聊天气泡");
+                return;
+            }
+        };
+        println!("[pet] 联动通道就绪：127.0.0.1:{PET_PORT}");
+        let mut buf = [0u8; 4096];
+        loop {
+            let (n, _from) = match sock.recv_from(&mut buf) {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            let text = String::from_utf8_lossy(&buf[..n]).to_string();
+            // 协议：v1\t<mood>\t<ttl>\t<正文>
+            let mut it = text.splitn(4, '\t');
+            if it.next() != Some("v1") {
+                continue;
+            }
+            let mood = match it.next().unwrap_or("calm") {
+                "happy" => 1,
+                "sad" => 2,
+                "angry" => 3,
+                "curious" => 4,
+                _ => 0,
+            };
+            let ttl = it.next().and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(6.0);
+            let body = it.next().unwrap_or("").trim().to_string();
+            if body.is_empty() {
+                continue;
+            }
+            let boxed = Box::new(ChatBubble { text: body, ttl, mood });
+            // 窗口先没了就没人接这个 Box，就地回收，别泄漏
+            if PostMessageW(hwnd_addr as HWND, WM_APP_PET_SAY, 0, Box::into_raw(boxed) as LPARAM) == 0 {
+                break;
+            }
+        }
+        println!("[pet] 联动通道已关闭");
+    });
+}
+
 #[derive(PartialEq, Clone, Copy)]
 enum State {
     Idle,
@@ -169,6 +228,8 @@ struct Pet {
     bounce_enabled: bool,
     last_active: Instant,
     click_through: bool,
+    /// 气泡底色情绪：0 平静 1 开心 2 难过 3 生气 4 好奇
+    bubble_mood: u8,
     zzz_phase: f32,
     /// 底边淡出当前值 / 目标值（0 = 硬切，1 = 下摆化掉）
     fade: f32,
@@ -466,17 +527,27 @@ unsafe fn draw_frame(p: &mut Pet) {
         let by = (6.0 * p.scale) as i32;
         let bw = w - bx * 2;
         let bh = p.bubble_phys_h - by - (8.0 * p.scale) as i32;
-        fill_round_rect(p.bits, w, bx, by, bw, bh, (14.0 * p.scale) as i32, (34, 32, 36));
-        // 文字用 GDI 画，再把气泡区 alpha 补齐
+        // 情绪底色：只调气泡底色，不动角色画面（0 平静 / 1 开心 / 2 难过 / 3 生气 / 4 好奇）
+        let bubble_color = match p.bubble_mood {
+            1 => (44, 32, 38),
+            2 => (32, 34, 44),
+            3 => (46, 30, 32),
+            4 => (30, 40, 38),
+            _ => (34, 32, 36),
+        };
+        fill_round_rect(p.bits, w, bx, by, bw, bh, (14.0 * p.scale) as i32, bubble_color);
+        // 文字用 GDI 画，再把气泡区 alpha 补齐。
+        // 字多就换小一号并用自动换行：150px 宽的窗口一行只放得下七八个汉字
+        let font_px = if p.bubble.chars().count() > 12 { 12.0 } else { 15.0 };
         let font = CreateFontW(
-            -((15.0 * p.scale) as i32), 0, 0, 0, FW_NORMAL as i32, 0, 0, 0, DEFAULT_CHARSET,
+            -((font_px * p.scale) as i32), 0, 0, 0, FW_NORMAL as i32, 0, 0, 0, DEFAULT_CHARSET,
             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, wide("Microsoft YaHei").as_ptr(),
         );
         let old = SelectObject(p.mem_dc, font as *mut _);
         SetBkMode(p.mem_dc, TRANSPARENT as i32);
         SetTextColor(p.mem_dc, RGB(238, 230, 231));
-        let mut rect = RECT { left: bx + 8, top: by + 4, right: bx + bw - 8, bottom: by + bh - 4 };
-        DrawTextW(p.mem_dc, wide(&p.bubble).as_ptr(), -1, &mut rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        let mut rect = RECT { left: bx + 6, top: by + 3, right: bx + bw - 6, bottom: by + bh - 3 };
+        DrawTextW(p.mem_dc, wide(&p.bubble).as_ptr(), -1, &mut rect, DT_CENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
         SelectObject(p.mem_dc, old);
         DeleteObject(font as *mut _);
         // GDI 写字会把 alpha 写 0：只把「圆角矩形内部」的 alpha 补成 255；
@@ -522,8 +593,15 @@ unsafe fn draw_frame(p: &mut Pet) {
 }
 
 unsafe fn say(text: &str, secs: f32) {
+    // 本地反应（点一下、摸头、打瞌睡）一律用平静底色
+    say_with_mood(text, secs, 0);
+}
+
+/// 冒一条气泡，并按情绪给气泡上色（0 平静 / 1 开心 / 2 难过 / 3 生气 / 4 好奇）
+unsafe fn say_with_mood(text: &str, secs: f32, mood: u8) {
     if let Some(p) = &mut PET {
         p.bubble = text.to_string();
+        p.bubble_mood = mood;
         p.bubble_until = Some(Instant::now() + std::time::Duration::from_secs_f32(secs));
         p.state = State::Talk;
         draw_frame(p);
@@ -743,6 +821,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
                     }
                 }
             }
+            0
+        }
+        WM_APP_PET_SAY => {
+            // 应用推来的聊天气泡：接管 lparam 上的 Box，处理完自动释放
+            let msg = Box::from_raw(lparam as *mut ChatBubble);
+            if let Some(p) = &mut PET {
+                p.last_active = Instant::now();
+            }
+            // 兜底截断：应用那边会先压到 26 字，这里再保一道，免得别的发送方塞进来一长串把气泡撑破
+            const MAX_SHOW: usize = 24;
+            let shown = if msg.text.chars().count() > MAX_SHOW {
+                let mut s: String = msg.text.chars().take(MAX_SHOW).collect();
+                s.push('…');
+                s
+            } else {
+                msg.text.clone()
+            };
+            say_with_mood(&shown, msg.ttl, msg.mood);
             0
         }
         WM_TIMER => {
@@ -994,6 +1090,8 @@ fn main() {
             println!("[pet] 由应用托管（父进程 {pid}），它退出时我会跟着关");
             spawn_parent_watchdog(pid, hwnd);
         }
+        // 应用 → 桌宠 的单向通道：铃回话时把内容推过来，这里冒气泡
+        spawn_talk_listener(hwnd);
 
         let mem_dc = CreateCompatibleDC(hdc);
         let mut pet = Box::new(Pet {
@@ -1026,6 +1124,7 @@ fn main() {
             bounce_enabled: bounce_enabled_init,
             last_active: Instant::now(),
             click_through: false,
+            bubble_mood: 0,
             zzz_phase: 0.0,
             fade: 0.0,
             fade_target: 0.0,

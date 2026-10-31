@@ -374,6 +374,7 @@ pub fn run() {
             desktop::native_pet::native_pet_status,
             desktop::native_pet::native_pet_sync,
             desktop::native_pet::native_pet_restart,
+            desktop::pet_talk::native_pet_say,
             // —— 拖放附件 ——
             commands::read_dropped_file::read_dropped_file,
             // —— VBIL 虚拟形象互联层命令 ——

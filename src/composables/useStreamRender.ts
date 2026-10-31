@@ -11,7 +11,7 @@ import { useSettingStore } from '../stores/settingStore'
 import { useDesktopStore } from '../stores/desktopStore'
 import { useQuickCommandStore } from '../stores/quickCommandStore'
 import { useMilestoneStore } from '../stores/milestoneStore'
-import { sendMessage, agentRun, agentCancel, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute, onSubAgentStarted, onSubAgentFinished, onAgentPlanRequest } from '../utils/tauri'
+import { sendMessage, agentRun, agentCancel, nativePetSay, onChatChunk, onChatEnd, onChatError, onChatUsage, onChatRoute, onSubAgentStarted, onSubAgentFinished, onAgentPlanRequest } from '../utils/tauri'
 import type { AgentPlanRequest, Attachment, ChatRouteInfo, ChatUsage, QuickCommand, SubAgentEvent } from '../types'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { confirmDialog } from '../utils/dialog'
@@ -136,7 +136,12 @@ export function useStreamRender() {
     if (delegationActive && activeRequestId) return
     // 兼容旧 mock：计划卡状态是可选的，没有 store 方法时不能把收尾流程弄崩
     chat.clearPlan?.()
-    if (activeId) chat.finishStream(activeId)
+    if (activeId) {
+      // 桌宠联动：把铃这次说的话推给桌宠窗口（开关关掉时后端直接忽略）
+      const answered = chat.messages.find((m) => m.id === activeId)
+      if (answered?.content) void nativePetSay(answered.content).catch(() => { /* 桌宠没起来，忽略 */ })
+      chat.finishStream(activeId)
+    }
     activeId = null
     activeRequestId = null
     // 流式结束后把当前会话保存到后端（多会话持久化）

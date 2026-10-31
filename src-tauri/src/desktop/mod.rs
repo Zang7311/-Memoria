@@ -4,6 +4,7 @@ pub mod autostart;
 pub mod hotkey;
 pub mod monitor;
 pub mod native_pet;
+pub mod pet_talk;
 pub mod toolbox;
 pub mod tray;
 pub mod window_fit;

@@ -627,6 +627,9 @@ pub struct AppConfig {
     /// 原生桌宠（随安装包分发的 pet-native.exe，Live2D 独立进程）是否随应用启动
     #[serde(default)]
     pub native_pet_enabled: bool,
+    /// 铃回话时让桌宠头顶冒气泡（默认开）
+    #[serde(default = "default_true")]
+    pub native_pet_speech: bool,
     pub monitor_enabled: bool,
     /// 屏幕监测频率（秒）
     pub monitor_frequency: u32,

@@ -337,6 +337,8 @@ export interface AppConfig {
    * 跟上面的悬浮球不是一回事：悬浮球是应用内 WebView 小窗，这个是随安装包分发的独立程序。
    */
   native_pet_enabled?: boolean
+  /** 铃回话时让桌宠头顶冒气泡 */
+  native_pet_speech?: boolean
   monitor_enabled: boolean
   monitor_frequency: number
   monitor_rules: ScreenMonitorRule[]

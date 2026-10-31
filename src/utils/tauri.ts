@@ -769,6 +769,11 @@ export function nativePetRestart(): Promise<NativePetStatus> {
   return invoke<NativePetStatus>('native_pet_restart')
 }
 
+/// 铃回话后把内容推给桌宠，让它头顶冒气泡（桌宠没起来时后端静默忽略）
+export function nativePetSay(text: string): Promise<void> {
+  return invoke<void>('native_pet_say', { text })
+}
+
 // ==================== Agent 模式 IPC 封装 ====================
 import type { AgentRunRequest, AgentRunResponse } from '../types'
 
