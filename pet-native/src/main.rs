@@ -65,6 +65,9 @@ struct RunOpts {
 
 static OPTS: std::sync::OnceLock<RunOpts> = std::sync::OnceLock::new();
 
+/// 冒不冒气泡（应用通过 cfg 帧同步；关掉后连点击/摸头的本地反应也不说话）
+static SPEECH_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 /// 解析 `--data-dir <目录>` / `--parent-pid <pid>`（`--key=value` 写法也认）
 fn parse_args() -> RunOpts {
     fn take(inline: Option<String>, args: &mut std::iter::Skip<std::env::Args>) -> Option<String> {
@@ -167,7 +170,27 @@ unsafe fn spawn_talk_listener(hwnd: HWND) {
             if it.next() != Some("v1") {
                 continue;
             }
-            let mood = match it.next().unwrap_or("calm") {
+            // 配置帧：v1 \t cfg \t speech=0/1
+            let second = it.next().unwrap_or("calm");
+            if second == "cfg" {
+                let payload = it.next().unwrap_or("");
+                if let Some(v) = payload.trim().strip_prefix("speech=") {
+                    let on = v.trim() != "0";
+                    SPEECH_ON.store(on, std::sync::atomic::Ordering::Relaxed);
+                    println!("[pet] 冒气泡开关 → {}", if on { "开" } else { "关" });
+                    // 关掉的瞬间把正在显示的气泡清掉
+                    if !on {
+                        if let Some(p) = &mut PET {
+                            p.bubble.clear();
+                            p.bubble_until = None;
+                            p.state = State::Idle;
+                            draw_frame(p);
+                        }
+                    }
+                }
+                continue;
+            }
+            let mood = match second {
                 "happy" => 1,
                 "sad" => 2,
                 "angry" => 3,
@@ -593,7 +616,10 @@ unsafe fn draw_frame(p: &mut Pet) {
 }
 
 unsafe fn say(text: &str, secs: f32) {
-    // 本地反应（点一下、摸头、打瞌睡）一律用平静底色
+    // 本地反应（点一下、摸头、打瞌睡）：开关关掉就完全不出气泡
+    if !SPEECH_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     say_with_mood(text, secs, 0);
 }
 

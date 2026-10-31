@@ -13,7 +13,7 @@ import VBILSettings from '../../views/VBILSettings.vue'
 import { useMilestoneStore } from '../../stores/milestoneStore'
 import { useSettingStore } from '../../stores/settingStore'
 import { toastErr, toastOk } from '../../utils/toast'
-import { nativePetRestart, nativePetStatus, nativePetSync, saveUiImage, type NativePetStatus } from '../../utils/tauri'
+import { nativePetConfig, nativePetRestart, nativePetStatus, nativePetSync, saveUiImage, type NativePetStatus } from '../../utils/tauri'
 import { useDesktopStore } from '../../stores/desktopStore'
 import { ensureSettingsLoaded } from './shared'
 
@@ -106,10 +106,11 @@ async function refreshNativePet() {
     nativePet.value = null
   }
 }
-/** 回话冒气泡开关：直接写配置，桌宠侧通过 UDP 实时收 */
+/** 冒气泡开关：写配置 + 立刻用 UDP 通知桌宠进程（关掉后连点它的本地反应也不说话） */
 async function onNativePetSpeech(value: boolean) {
   setting.nativePetSpeech = value
   await setting.update({ native_pet_speech: value }).catch((e) => toastErr(`保存失败：${e}`))
+  await nativePetConfig(value).catch(() => { /* 桌宠没起来，忽略 */ })
 }
 
 async function restartNativePet() {
@@ -316,6 +317,8 @@ async function onUserAvatarFile(e: Event) {
 }
 
 onMounted(async () => {
+  // 桌宠进程重启后默认是「开」，这里把应用的当前值对齐过去
+  void nativePetConfig(setting.nativePetSpeech).catch(() => { /* 忽略 */ })
   await ensureSettingsLoaded()
   mixRate.value = setting.languageMixRate
   selfName.value = setting.selfName
@@ -366,8 +369,8 @@ onMounted(async () => {
       <template v-if="petStyle === 'live2d'">
         <AppSwitch
           :model-value="setting.nativePetSpeech"
-          label="回话时头顶冒气泡"
-          hint="铃在聊天里回你时，桌宠会把它说的话冒在头顶（点一下桌宠也会有反应）"
+          label="冒气泡"
+          hint="聊天回话和点它时都会冒。关掉后两种情况都不冒泡，只保留动作。"
           @update:model-value="onNativePetSpeech"
         />
         <p v-if="nativePet && !nativePet.found" class="muted">

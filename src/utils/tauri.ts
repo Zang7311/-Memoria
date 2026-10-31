@@ -774,6 +774,11 @@ export function nativePetSay(text: string): Promise<void> {
   return invoke<void>('native_pet_say', { text })
 }
 
+/// 把「冒不冒气泡」同步给桌宠进程（关掉后连点击它的反应也不说话）
+export function nativePetConfig(speech: boolean): Promise<void> {
+  return invoke<void>('native_pet_config', { speech })
+}
+
 // ==================== Agent 模式 IPC 封装 ====================
 import type { AgentRunRequest, AgentRunResponse } from '../types'
 

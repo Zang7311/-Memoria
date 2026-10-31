@@ -82,6 +82,24 @@ pub fn say(text: &str) -> Result<&'static str, String> {
     Ok(mood)
 }
 
+/// 把「冒不冒气泡」同步给桌宠（cfg 帧）。
+/// 桌宠自己是独立进程，光改应用的配置它不知道，所以这里也发一帧过去。
+pub fn send_speech_enabled(enabled: bool) -> Result<(), String> {
+    let sock = UdpSocket::bind("127.0.0.1:0").map_err(|e| format!("分配本机端口失败：{e}"))?;
+    let frame = format!("v1\tcfg\tspeech={}\t", if enabled { 1 } else { 0 });
+    sock.send_to(frame.as_bytes(), ("127.0.0.1", PET_PORT))
+        .map_err(|e| format!("发给桌宠失败：{e}"))?;
+    Ok(())
+}
+
+/// 设置页切换「冒气泡」时调用：同步给桌宠后，聊天气泡的开关由 native_pet_say 自己拦。
+#[tauri::command]
+pub fn native_pet_config(speech: bool) -> Result<(), String> {
+    // 桌宠没起来时发送会静默失败，不算错
+    let _ = send_speech_enabled(speech);
+    Ok(())
+}
+
 /// 前端在铃回话结束时调用（设置里关掉「桌宠气泡」就不发）
 #[tauri::command]
 pub fn native_pet_say(text: String) -> Result<(), String> {
