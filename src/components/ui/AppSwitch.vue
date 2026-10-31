@@ -66,9 +66,9 @@ function toggle() {
   color: var(--ui-text-3);
   line-height: var(--ui-line);
 }
-/* 原生 checkbox 隐藏但保留键盘可达 */
+/* 原生 checkbox 隐藏但保留键盘可达；用 fixed 定位，聚焦时不会把祖先滚动容器滚走 */
 .native {
-  position: absolute;
+  position: fixed;
   opacity: 0;
   width: 1px;
   height: 1px;

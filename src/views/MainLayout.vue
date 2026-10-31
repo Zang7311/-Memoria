@@ -427,7 +427,7 @@ function openSettings() {
 .layout {
   height: 100vh;
   display: flex;
-  overflow: hidden;
+  overflow: clip;
   background: var(--ui-bg);
   color: var(--ui-text);
 }
@@ -674,7 +674,7 @@ function openSettings() {
   flex: none;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: clip;
   display: flex;
   flex-direction: column;
   background: var(--ui-panel);
@@ -836,11 +836,11 @@ function openSettings() {
   flex: 1;
   min-height: 0;
   position: relative;
-  overflow: hidden;
+  overflow: clip;
 }
 .pane {
   height: 100%;
-  overflow: hidden;
+  overflow: clip;
 }
 
 /* ---------- 卡片总览（Edge 手机版标签页 / iOS 清后台） ---------- */
@@ -997,7 +997,7 @@ function openSettings() {
   width: 860px;
   max-width: calc(100vw - 48px);
   height: 86vh;
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-r-lg);
   background: var(--ui-bg);
