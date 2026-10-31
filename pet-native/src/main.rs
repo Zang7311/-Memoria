@@ -254,6 +254,12 @@ struct Pet {
     /// 气泡底色情绪：0 平静 1 开心 2 难过 3 生气 4 好奇
     bubble_mood: u8,
     zzz_phase: f32,
+    /// 多帧形象：待机循环帧（assets/frames/idle/*.png，预乘 BGRA，role_phys²）
+    idle_frames: Vec<Vec<u8>>,
+    /// 说话循环帧（assets/frames/talk/*.png）；没有就用待机帧
+    talk_frames: Vec<Vec<u8>>,
+    /// 帧循环起点
+    frame_clock: Instant,
     /// 底边淡出当前值 / 目标值（0 = 硬切，1 = 下摆化掉）
     fade: f32,
     fade_target: f32,
@@ -324,6 +330,55 @@ fn load_avatar(path: &str, size: i32) -> Vec<u8> {
             vec![0u8; (size * size * 4) as usize]
         }
     }
+}
+
+/// 载入一张形象帧：等比铺满 + 预乘 alpha（BGRA）。
+/// 和头像不同：**不做**圆形裁剪、也不把深色抠掉——帧是端好背景的透明 PNG。
+fn load_frame(path: &str, size: i32) -> Vec<u8> {
+    match image::open(path) {
+        Ok(img) => {
+            let rgba = img
+                .resize_exact(size as u32, size as u32, FilterType::Lanczos3)
+                .to_rgba8()
+                .into_raw();
+            let mut out = vec![0u8; rgba.len()];
+            for i in (0..rgba.len()).step_by(4) {
+                let a = rgba[i + 3] as u32;
+                out[i] = (rgba[i + 2] as u32 * a / 255) as u8;
+                out[i + 1] = (rgba[i + 1] as u32 * a / 255) as u8;
+                out[i + 2] = (rgba[i] as u32 * a / 255) as u8;
+                out[i + 3] = rgba[i + 3];
+            }
+            out
+        }
+        Err(e) => {
+            println!("[pet] 帧加载失败 {path}: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// 扫某个目录下的 png 帧并按文件名排序（idle_00.png、idle_01.png…）
+fn load_frames_dir(dir: &std::path::Path, size: i32) -> Vec<Vec<u8>> {
+    let mut files: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|x| x.eq_ignore_ascii_case("png")).unwrap_or(false))
+            .collect(),
+        Err(_) => return Vec::new(),
+    };
+    files.sort();
+    files
+        .iter()
+        .filter_map(|p| {
+            let f = load_frame(p.to_str()?, size);
+            if f.is_empty() {
+                None
+            } else {
+                Some(f)
+            }
+        })
+        .collect()
 }
 
 /// 点是否在圆角矩形内（与 fill_round_rect 同一套判定，用来补 alpha 时避让圆角外）
@@ -507,12 +562,44 @@ unsafe fn draw_frame(p: &mut Pet) {
     } else {
         p.fade += (p.fade_target - p.fade) * 0.25;
     }
-    // 优先 Live2D：让 DLL 画一帧，裁剪缩放后直接写进 DIB（预乘 BGRA）
+    // 多帧形象优先：有 frames/ 就用帧循环（铃自己的立绘），没有才走 Live2D / PNG 头像
     let mut drew = false;
-    if let Some(l2d) = p.l2d.as_mut() {
-        if l2d.render() {
-            l2d.composite(p.bits, w, h, 0, role_top + float_off, p.fade);
+    {
+        let using_talk = p.state == State::Talk && !p.talk_frames.is_empty();
+        let frames: &Vec<Vec<u8>> = if using_talk { &p.talk_frames } else { &p.idle_frames };
+        if let Some(frame) = frames.get({
+            let fps = if using_talk { 8.0 } else { 3.0 };
+            let elapsed = Instant::now().duration_since(p.frame_clock).as_secs_f32();
+            (elapsed * fps) as usize % frames.len().max(1)
+        }) {
+            for y in 0..p.role_phys {
+                let dy = role_top + y + float_off;
+                if dy < 0 || dy >= h {
+                    continue;
+                }
+                for x in 0..p.role_phys.min(w) {
+                    let si = ((y * p.role_phys + x) * 4) as usize;
+                    let di = ((dy * w + x) * 4) as usize;
+                    if si + 3 >= frame.len() || di + 3 >= (w * h * 4) as usize {
+                        continue;
+                    }
+                    *p.bits.add(di) = frame[si];
+                    *p.bits.add(di + 1) = frame[si + 1];
+                    *p.bits.add(di + 2) = frame[si + 2];
+                    *p.bits.add(di + 3) = frame[si + 3];
+                }
+            }
             drew = true;
+        }
+    }
+    // 其次 Live2D：让 DLL 画一帧，裁剪缩放后直接写进 DIB（预乘 BGRA）
+    // 只有没画帧时才走 Live2D（否则 Haru 会把帧盖掉）
+    if !drew {
+        if let Some(l2d) = p.l2d.as_mut() {
+            if l2d.render() {
+                l2d.composite(p.bits, w, h, 0, role_top + float_off, p.fade);
+                drew = true;
+            }
         }
     }
     if p.l2d.as_ref().map_or(false, |l| l.broken()) {
@@ -1070,6 +1157,22 @@ fn main() {
         println!("[pet] 头像: {} ({} 字节, 非透明像素 {})", avatar_path.display(), avatar.len(), opaque);
 
         // Live2D：DLL 缺失/加载失败就静默退回 PNG
+        // 多帧形象：assets/frames/idle 与 assets/frames/talk（有就优先于 Live2D）
+        let frames_root = exe_dir
+            .as_deref()
+            .unwrap_or(std::path::Path::new("."))
+            .join("assets")
+            .join("frames");
+        let idle_frames = load_frames_dir(&frames_root.join("idle"), role_phys);
+        let talk_frames = load_frames_dir(&frames_root.join("talk"), role_phys);
+        if !idle_frames.is_empty() {
+            println!(
+                "[pet] 多帧形象：待机 {} 帧 / 说话 {} 帧（优先于 Live2D）",
+                idle_frames.len(),
+                talk_frames.len()
+            );
+        }
+
         let l2d_wanted = load_config_live2d();
         let l2d = if l2d_wanted {
             live2d::Live2D::init(
@@ -1170,6 +1273,9 @@ fn main() {
             click_through: false,
             bubble_mood: 0,
             zzz_phase: 0.0,
+            idle_frames,
+            talk_frames,
+            frame_clock: Instant::now(),
             fade: 0.0,
             fade_target: 0.0,
         });
@@ -1180,7 +1286,11 @@ fn main() {
             draw_frame(p);
         }
         SetTimer(hwnd, 1, 33, None);
-        let mode = if PET.as_ref().and_then(|p| p.l2d.as_ref()).is_some() { "Live2D" } else { "PNG 头像" };
+        let mode = match PET.as_ref() {
+            Some(p) if !p.idle_frames.is_empty() => "多帧形象",
+            Some(p) if p.l2d.is_some() => "Live2D",
+            _ => "PNG 头像",
+        };
         println!("[pet] 就绪（{mode}）：单击说话，长按摸头，拖动后松手会掉到屏幕底，右键菜单");
 
         let mut msg: MSG = std::mem::zeroed();
