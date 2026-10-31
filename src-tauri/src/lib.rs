@@ -102,6 +102,9 @@ pub fn run() {
 
             log::info!("[setup] 铃·记忆体 启动，配置与日志系统已就绪");
 
+            // 主窗口尺寸按屏幕自适应：高缩放的笔记本上不会顶出屏幕、底部图标被任务栏挡住
+            desktop::window_fit::fit_main_window(app.handle());
+
             // 用户开启「始终以管理员运行」且当前非管理员 → 自动提权重启（弹一次 UAC）
             if config::store::get_config().run_as_admin && !commands::admin::is_admin() {
                 log::info!("[setup] 「始终以管理员运行」已开启且当前为普通权限，自动提权重启…");

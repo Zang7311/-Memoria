@@ -6,6 +6,7 @@ pub mod monitor;
 pub mod native_pet;
 pub mod toolbox;
 pub mod tray;
+pub mod window_fit;
 
 use std::path::PathBuf;
 

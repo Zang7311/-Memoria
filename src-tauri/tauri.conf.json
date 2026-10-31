@@ -15,8 +15,8 @@
         "title": "铃·记忆体",
         "width": 1200,
         "height": 720,
-        "minWidth": 1200,
-        "minHeight": 720
+        "minWidth": 960,
+        "minHeight": 560
       }
     ],
     "security": {
