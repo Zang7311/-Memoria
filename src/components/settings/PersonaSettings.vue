@@ -1,5 +1,5 @@
 <!-- 设置 · 形象
-     VBIL 虚拟形象（既有组件整页嵌入） / 个性化 / 桌宠（悬浮球） / 桌面伙伴（原生桌宠） / 外观与主题组合 -->
+     VBIL 虚拟形象（既有组件整页嵌入） / 个性化 / 桌宠（Live2D 或圆球，二选一） / 外观与主题组合 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AppButton from '../ui/AppButton.vue'
@@ -14,10 +14,12 @@ import { useMilestoneStore } from '../../stores/milestoneStore'
 import { useSettingStore } from '../../stores/settingStore'
 import { toastErr, toastOk } from '../../utils/toast'
 import { nativePetRestart, nativePetStatus, nativePetSync, saveUiImage, type NativePetStatus } from '../../utils/tauri'
+import { useDesktopStore } from '../../stores/desktopStore'
 import { ensureSettingsLoaded } from './shared'
 
 const setting = useSettingStore()
 const milestone = useMilestoneStore()
+const desktop = useDesktopStore()
 
 // ==================== 个性化 ====================
 const mixRate = ref(8)
@@ -69,10 +71,10 @@ async function resetBallPosition() {
   toastOk('位置已重置（下次启动生效）')
 }
 
+// 圆球只有两种样子；Live2D 是另一种「形态」，不在这里选
 const BALL_MODES = [
-  { id: 'avatar', label: '头像（推荐）' },
+  { id: 'avatar', label: '头像' },
   { id: 'simple', label: '纯文字' },
-  { id: 'live2d', label: 'Live2D（实验）' },
 ]
 function onBallMode(id: string) {
   setting.floatingBallMode = id as 'avatar' | 'simple' | 'live2d'
@@ -110,19 +112,6 @@ async function onNativePetSpeech(value: boolean) {
   await setting.update({ native_pet_speech: value }).catch((e) => toastErr(`保存失败：${e}`))
 }
 
-async function onNativePet(value: boolean) {
-  setting.nativePetEnabled = value
-  await saveNativePet()
-}
-async function saveNativePet() {
-  await setting.update({ native_pet_enabled: setting.nativePetEnabled })
-  try {
-    nativePet.value = await nativePetSync()
-    nativePetMsg.value = nativePet.value?.message ?? ''
-  } catch (e) {
-    nativePetMsg.value = `操作失败：${e}`
-  }
-}
 async function restartNativePet() {
   try {
     nativePet.value = await nativePetRestart()
@@ -130,6 +119,49 @@ async function restartNativePet() {
   } catch (e) {
     nativePetMsg.value = `重启失败：${e}`
   }
+}
+
+// ==================== 桌宠形态（Live2D / 圆球 / 不显示） ====================
+type PetStyle = 'live2d' | 'ball' | 'off'
+const PET_STYLES = [
+  { id: 'live2d', label: 'Live2D 桌宠' },
+  { id: 'ball', label: '圆球桌宠' },
+  { id: 'off', label: '不显示' },
+]
+/** 当前形态由两个开关推导，保证界面上永远只有一个「选中」 */
+const petStyle = computed<PetStyle>(() => {
+  if (setting.nativePetEnabled) return 'live2d'
+  if (setting.floatingBallEnabled) return 'ball'
+  return 'off'
+})
+/** 切换形态：两个开关互斥写回，再分别启停桌宠进程 / 圆球窗口 */
+async function onPetStyle(id: string) {
+  const style = id as PetStyle
+  setting.nativePetEnabled = style === 'live2d'
+  setting.floatingBallEnabled = style === 'ball'
+  try {
+    await setting.update({
+      native_pet_enabled: setting.nativePetEnabled,
+      floating_ball_enabled: setting.floatingBallEnabled,
+    })
+  } catch (e) {
+    toastErr(`保存失败：${e}`)
+    return
+  }
+  // 桌宠进程：配置开着就拉起，关着就收掉（同一只不会开出第二份）
+  try {
+    nativePet.value = await nativePetSync()
+    nativePetMsg.value = nativePet.value?.message ?? ''
+  } catch (e) {
+    nativePetMsg.value = `切换失败：${e}`
+  }
+  // 圆球窗口：只有选「圆球」时才显示
+  try {
+    await desktop.setFloatingBallVisibility(style === 'ball')
+  } catch { /* 悬浮球窗口没建好时忽略 */ }
+  toastOk(
+    style === 'live2d' ? '已切换到 Live2D 桌宠' : style === 'ball' ? '已切换到圆球桌宠' : '已隐藏桌宠',
+  )
 }
 
 // ==================== 外观 ====================
@@ -321,30 +353,42 @@ onMounted(async () => {
       </div>
     </AppCard>
 
-    <!-- 桌宠（悬浮球） -->
-    <AppCard title="桌宠（悬浮球）">
+    <!-- 桌宠：形态三选一（Live2D 独立小窗 / 应用内圆球 / 不显示） -->
+    <AppCard title="桌宠">
       <p class="muted">
-        桌面上陪你工作的小铃：会自己动一动、偶尔说话，点一下有反应，摸头会长呼噜，拖动可以被拎起来。
+        桌面上陪你工作的小铃。只有一种会跑：Live2D 是全身体、独立小窗；圆球是应用内的圆形小窗。两个都不会同时开。
       </p>
-      <p class="muted">
-        已知问题：在高缩放（如 150%）屏幕上，小铃的画面可能偏出窗口一角 —— 这是 Tauri 透明窗口 + WebView2
-        的渲染问题，正在处理。
-      </p>
-      <AppSwitch
-        :model-value="setting.floatingBallEnabled"
-        label="显示桌宠"
-        @update:model-value="(v) => setBallFlag('floatingBallEnabled', v)"
-      />
-      <template v-if="setting.floatingBallEnabled">
-        <AppField
-          label="形象"
-          :hint="
-            setting.floatingBallMode === 'live2d'
-              ? 'Live2D 形象是实验功能：在 150% 等高缩放屏幕上，模型可能比窗口大、被裁掉一部分。显示不对就切回头像。'
-              : ''
-          "
-        >
-          <AppTabs :items="BALL_MODES" :model-value="setting.floatingBallMode" @update:model-value="onBallMode" />
+      <AppField label="形态">
+        <AppTabs :items="PET_STYLES" :model-value="petStyle" @update:model-value="onPetStyle" />
+      </AppField>
+
+      <!-- Live2D 桌宠 -->
+      <template v-if="petStyle === 'live2d'">
+        <AppSwitch
+          :model-value="setting.nativePetSpeech"
+          label="回话时头顶冒气泡"
+          hint="铃在聊天里回你时，桌宠会把它说的话冒在头顶（点一下桌宠也会有反应）"
+          @update:model-value="onNativePetSpeech"
+        />
+        <p v-if="nativePet && !nativePet.found" class="muted">
+          没找到桌宠程序 pet\pet-native.exe：这份安装包里可能没带上它（开发版常见），用正式安装包装一次就有。
+        </p>
+        <template v-else>
+          <div class="status-line">
+            <span>状态</span>
+            <AppStatusDot :state="nativePet?.running ? 'ok' : 'idle'" :text="nativePet?.running ? '运行中' : '未运行'" />
+            <span v-if="nativePetMsg" class="muted">{{ nativePetMsg }}</span>
+          </div>
+          <div class="row">
+            <AppButton :disabled="!setting.nativePetEnabled" @click="restartNativePet">重启桌宠</AppButton>
+          </div>
+        </template>
+      </template>
+
+      <!-- 圆球桌宠 -->
+      <template v-else-if="petStyle === 'ball'">
+        <AppField label="样子">
+          <AppTabs :items="BALL_MODES" :model-value="setting.floatingBallMode === 'simple' ? 'simple' : 'avatar'" @update:model-value="onBallMode" />
         </AppField>
         <AppField label="大小（像素）">
           <AppTabs :items="SIZE_ITEMS" :model-value="String(setting.floatingBallSize)" @update:model-value="onBallSize" />
@@ -372,38 +416,9 @@ onMounted(async () => {
           <AppButton @click="resetBallPosition">重置位置</AppButton>
         </div>
       </template>
-    </AppCard>
 
-    <!-- 桌面伙伴（原生桌宠） -->
-    <AppCard title="桌面伙伴（原生桌宠）">
-      <p class="muted">
-        随安装包一起装到电脑上的独立小铃：不经过网页内核，透明背景、Live2D 动作，能拖动、摸头、说话，还能自己掉到屏幕底。
-        在桌面双击「铃桌宠」也能单独启动，不会和这里重复开出两只。
-      </p>
-      <AppSwitch
-        :model-value="setting.nativePetEnabled"
-        label="随应用启动"
-        @update:model-value="onNativePet"
-      />
-      <AppSwitch
-        :model-value="setting.nativePetSpeech"
-        label="回话时头顶冒气泡"
-        hint="铃在聊天里回你时，桌宠会把它说的话冒在头顶（点一下桌宠也会有反应）"
-        @update:model-value="onNativePetSpeech"
-      />
-      <p v-if="nativePet && !nativePet.found" class="muted">
-        没找到桌宠程序 pet\pet-native.exe：这份安装包里可能没带上它（开发版常见），用正式安装包装一次就有。
-      </p>
-      <template v-else>
-        <div class="status-line">
-          <span>状态</span>
-          <AppStatusDot :state="nativePet?.running ? 'ok' : 'idle'" :text="nativePet?.running ? '运行中' : '未运行'" />
-          <span v-if="nativePetMsg" class="muted">{{ nativePetMsg }}</span>
-        </div>
-        <div class="row">
-          <AppButton :disabled="!setting.nativePetEnabled" @click="restartNativePet">重启桌宠</AppButton>
-        </div>
-      </template>
+      <!-- 都不显示 -->
+      <p v-else class="muted">两种形态都不显示；聊天、记忆和桌宠气泡联动都会跟着停。</p>
     </AppCard>
 
     <!-- 外观 -->
